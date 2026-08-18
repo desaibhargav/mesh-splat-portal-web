@@ -43,7 +43,7 @@ export function useAuth() {
 }
 
 function LoginPanel({ onAuthenticated }: { onAuthenticated(): Promise<unknown> }) {
-  const [username, setUsername] = useState("professor");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
