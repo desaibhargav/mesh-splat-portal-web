@@ -79,4 +79,18 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
+After the server has been configured once, future frontend deployments can be run from an SSH session on the frontend gateway:
+
+```bash
+./scripts/deploy-server.sh
+```
+
+To install or update same-origin proxy routes at the same time, provide the backend origin from the shell instead of committing it:
+
+```bash
+BACKEND_ORIGIN=http://BACKEND_PRIVATE_IP:3000 ./scripts/deploy-server.sh
+```
+
+The script pulls the latest `main`, installs dependencies from the lockfile, builds the Vite app, publishes `dist/` to `/var/www/mesh-splat-portal`, installs or updates the Nginx site, validates Nginx, and reloads it. It does not contain SSH keys, passwords, IP addresses, or other secrets.
+
 If the portal loads but says the artifact service is unavailable, the static frontend is working and the next step is to configure the `/api/` and `/files/` reverse proxy routes to the backend instance.
