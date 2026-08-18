@@ -91,6 +91,22 @@ To install or update same-origin proxy routes at the same time, provide the back
 BACKEND_ORIGIN=http://BACKEND_PRIVATE_IP:3000 ./scripts/deploy-server.sh
 ```
 
+`BACKEND_PRIVATE_IP` is the private IPv4 address of the backend EC2 instance, not its public SSH address. In the AWS console, select the backend instance and copy **Private IPv4 address**. From an SSH session on the backend instance, the same value can be obtained with:
+
+```bash
+hostname -I
+```
+
+Use the `172.x.x.x` private address that belongs to the VPC. The frontend gateway uses this address for internal AWS traffic; the browser never sees it.
+
+Script inputs:
+
+| Variable | Default | How to choose it |
+| --- | --- | --- |
+| `BACKEND_ORIGIN` | empty | Set to `http://BACKEND_PRIVATE_IP:3000` when the gateway should proxy `/api/` and `/files/` to the backend. |
+| `WEB_ROOT` | `/var/www/mesh-splat-portal` | Change only if Nginx should serve the built frontend from a different directory. |
+| `SITE_NAME` | `mesh-splat-portal` | Change only if this server needs a different Nginx site filename. |
+
 The script pulls the latest `main`, installs dependencies from the lockfile, builds the Vite app, publishes `dist/` to `/var/www/mesh-splat-portal`, installs or updates the Nginx site, validates Nginx, and reloads it. It does not contain SSH keys, passwords, IP addresses, or other secrets.
 
 If the portal loads but says the artifact service is unavailable, the static frontend is working and the next step is to configure the `/api/` and `/files/` reverse proxy routes to the backend instance.
