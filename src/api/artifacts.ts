@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { ApiClient } from "./apiClient";
-import { browserSessionAuthClient } from "../auth/AuthClient";
 
 const artifactTypeSchema = z.enum(["mesh", "splat"]);
 
@@ -22,7 +21,7 @@ const artifactPageSchema = z.object({
 export type Artifact = z.infer<typeof artifactSchema>;
 export type ArtifactType = z.infer<typeof artifactTypeSchema>;
 
-const apiClient = new ApiClient(browserSessionAuthClient);
+const apiClient = new ApiClient();
 
 export interface ArtifactSearch {
   query?: string;

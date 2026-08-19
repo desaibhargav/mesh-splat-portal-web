@@ -1,5 +1,3 @@
-import type { AuthClient } from "../auth/AuthClient";
-
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -10,18 +8,10 @@ export class ApiError extends Error {
 }
 
 export class ApiClient {
-  constructor(
-    private readonly authClient: AuthClient,
-    private readonly baseUrl = "/api/v1"
-  ) {}
+  constructor(private readonly baseUrl = "/api/v1") {}
 
   async get(path: string, signal?: AbortSignal): Promise<unknown> {
-    const token = await this.authClient.getAccessToken();
     const headers = new Headers({ Accept: "application/json" });
-
-    if (token) {
-      headers.set("Authorization", `Bearer ${token}`);
-    }
 
     const response = await fetch(`${this.baseUrl}${path}`, {
       credentials: "same-origin",
