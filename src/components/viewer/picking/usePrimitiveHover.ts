@@ -5,16 +5,16 @@ export interface PrimitiveHit { part: number; index: number }
 
 // Coalesce pointer motion into one GPU readback at a time and keep only the
 // latest requested pixel. Mesh and splat controllers provide the same picker.
-export function usePrimitiveHover(handle: SelectionHandle, active: boolean) {
+export function usePrimitiveHover(handle: SelectionHandle, active: boolean, delay = 0) {
   const [hit, setHit] = useState<PrimitiveHit | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     setHit(null); setError(null);
     if (!active) return;
     const canvas = handle.app.graphicsDevice.canvas as HTMLCanvasElement;
-    let pending = false, cancelled = false, sequence = 0, frame = 0;
+    let pending = false, cancelled = false, sequence = 0, frame = 0, timer = 0;
     let latest: { u: number; v: number; token: number } | null = null;
-    function clear() { sequence++; latest = null; setHit(null); }
+    function clear() { sequence++; latest = null; clearTimeout(timer); cancelAnimationFrame(frame); setHit(null); }
     async function sample() {
       if (pending || !latest || cancelled) return;
       const { u, v, token } = latest; latest = null; pending = true;
@@ -32,15 +32,17 @@ export function usePrimitiveHover(handle: SelectionHandle, active: boolean) {
       const u = (event.clientX - bounds.left) / bounds.width, v = (event.clientY - bounds.top) / bounds.height;
       if (u < 0 || u >= 1 || v < 0 || v >= 1) { clear(); return; }
       latest = { u, v, token: ++sequence };
-      cancelAnimationFrame(frame); frame = requestAnimationFrame(sample);
+      clearTimeout(timer); cancelAnimationFrame(frame);
+      const schedule = () => { frame = requestAnimationFrame(sample); };
+      if (delay) timer = window.setTimeout(schedule, delay); else schedule();
     }
     canvas.addEventListener("pointermove", move); canvas.addEventListener("pointerleave", clear);
     canvas.addEventListener("pointerdown", clear); canvas.addEventListener("wheel", clear);
     return () => {
-      cancelled = true; cancelAnimationFrame(frame);
+      cancelled = true; clearTimeout(timer); cancelAnimationFrame(frame);
       canvas.removeEventListener("pointermove", move); canvas.removeEventListener("pointerleave", clear);
       canvas.removeEventListener("pointerdown", clear); canvas.removeEventListener("wheel", clear);
     };
-  }, [handle, active]);
+  }, [handle, active, delay]);
   return { hit, error };
 }

@@ -136,6 +136,7 @@ a { color: #536d7d; }
 
 .annotation-overlay { position: absolute; inset: calc(42px + var(--selection-toolbar-height)) 0 31px; z-index: 2; pointer-events: none; overflow: hidden; }
 .annotation-overlay[data-interactive="true"] .pc-annotation-hotspot { pointer-events: auto; }
+.annotation-overlay .pc-annotation-hotspot[data-moving="true"] { cursor: grab; touch-action: none; }
 .annotation-overlay .pc-annotation { max-width: min(200px, 55%); white-space: pre-wrap; }
 .annotation-actions { width: min(270px, calc(100% - 24px)); max-height: calc(100% - var(--selection-toolbar-height) - 100px); overflow-y: auto; font-size: .75rem; }
 .annotation-actions form { display: flex; flex-direction: column; gap: 6px; }

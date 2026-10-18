@@ -58,7 +58,8 @@ export function AnnotationLayer({ handle, records, interactive, hoverRegions, mo
       handle.app.root.addChild(entity); entity.addComponent("script");
       const color = new Color().fromString(getComputedStyle(container.current!).getPropertyValue("--gold").trim());
       const annotationManager = entity.script!.create(ViewerAnnotationManager, { properties: {
-        container: container.current!, viewCamera: handle.camera().entity, hotspotColor: color, hoverColor: Color.WHITE
+        container: container.current!, viewCamera: handle.camera().entity, hotspotColor: color,
+        hoverColor: Color.WHITE, behindOpacity: 1
       } }) as unknown as ViewerAnnotationManager;
       manager.current = annotationManager;
       setReady(value => value + 1);
@@ -105,15 +106,13 @@ export function AnnotationLayer({ handle, records, interactive, hoverRegions, mo
     if (!entity || !record) return;
     const { id, region } = record;
     const annotation = entity.script!.get("annotation") as unknown as Annotation;
-    const hotspot = manager.current.hotspot(annotation);
-    if (!hotspot) return;
+    const overlay = container.current!;
+    const armed = manager.current.hotspot(annotation);
+    if (armed) armed.dataset.moving = "true";
     const picker = new SurfacePicker(handle.app, handle.selection.layers);
     const original = entity.getPosition().clone(), preview = new Vec3();
     const canvas = handle.app.graphicsDevice.canvas as HTMLCanvasElement;
-    const previousCursor = hotspot.style.cursor, previousTouchAction = hotspot.style.touchAction;
-    const previousPointerEvents = hotspot.style.pointerEvents;
-    hotspot.style.cursor = "grab"; hotspot.style.touchAction = "none"; hotspot.style.pointerEvents = "auto";
-    let pointer: number | null = null, depth = 0, cancelled = false;
+    let pointer: number | null = null, depth = 0, cancelled = false, hotspot: HTMLDivElement | null = null;
 
     function coordinates(event: PointerEvent) {
       const bounds = canvas.getBoundingClientRect();
@@ -122,9 +121,12 @@ export function AnnotationLayer({ handle, records, interactive, hoverRegions, mo
     }
     function down(event: PointerEvent) {
       if (!event.isPrimary || event.button !== 0 || pointer !== null) return;
+      const target = manager.current?.hotspot(annotation);
+      if (!target || event.target !== target) return;
       event.preventDefault(); event.stopImmediatePropagation();
+      hotspot = target;
       pointer = event.pointerId; depth = handle.camera().entity.getPosition().distance(entity!.getPosition());
-      hotspot!.style.cursor = "grabbing"; hotspot!.setPointerCapture(pointer);
+      hotspot.style.cursor = "grabbing"; hotspot.setPointerCapture(pointer);
     }
     function move(event: PointerEvent) {
       if (event.pointerId !== pointer) return;
@@ -157,18 +159,17 @@ export function AnnotationLayer({ handle, records, interactive, hoverRegions, mo
       event.preventDefault(); event.stopImmediatePropagation();
       pointer = null; entity!.setPosition(original); hotspot!.style.cursor = "grab";
     }
-    hotspot.addEventListener("pointerdown", down, true);
-    hotspot.addEventListener("pointermove", move, true);
-    hotspot.addEventListener("pointerup", up, true);
-    hotspot.addEventListener("pointercancel", cancel, true);
+    overlay.addEventListener("pointerdown", down, true);
+    overlay.addEventListener("pointermove", move, true);
+    overlay.addEventListener("pointerup", up, true);
+    overlay.addEventListener("pointercancel", cancel, true);
     return () => {
       cancelled = true; picker.destroy(); entity.setPosition(original);
-      hotspot.style.cursor = previousCursor; hotspot.style.touchAction = previousTouchAction;
-      hotspot.style.pointerEvents = previousPointerEvents;
-      hotspot.removeEventListener("pointerdown", down, true);
-      hotspot.removeEventListener("pointermove", move, true);
-      hotspot.removeEventListener("pointerup", up, true);
-      hotspot.removeEventListener("pointercancel", cancel, true);
+      if (armed) delete armed.dataset.moving;
+      overlay.removeEventListener("pointerdown", down, true);
+      overlay.removeEventListener("pointermove", move, true);
+      overlay.removeEventListener("pointerup", up, true);
+      overlay.removeEventListener("pointercancel", cancel, true);
     };
   }, [handle, records, ready, movingId]);
   return <><div ref={container} className="annotation-overlay" data-interactive={interactive} />
