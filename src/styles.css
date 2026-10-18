@@ -139,6 +139,7 @@ a { color: #536d7d; }
 .annotation-overlay .pc-annotation { max-width: min(200px, 55%); white-space: pre-wrap; }
 .annotation-actions { width: min(270px, calc(100% - 24px)); max-height: calc(100% - var(--selection-toolbar-height) - 100px); overflow-y: auto; font-size: .75rem; }
 .annotation-actions form { display: flex; flex-direction: column; gap: 6px; }
+.annotation-kinds { display: flex; flex-direction: column; gap: 6px; }
 .annotation-actions label { max-width: none; gap: 4px; }
 .annotation-actions input, .annotation-actions textarea { width: 100%; padding: 6px; border: 1px solid #666; border-radius: 3px; color: #eee; background: #181818; font: inherit; }
 .annotation-actions textarea { resize: vertical; }

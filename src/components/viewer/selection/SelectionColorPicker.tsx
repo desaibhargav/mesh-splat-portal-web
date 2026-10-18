@@ -7,6 +7,7 @@ export function SelectionColorPicker({ onApply, onReset, disabled }: {
 }) {
   const [expanded, setExpanded] = useState(false);
   const [color, setColor] = useState("#e53935");
+  const valid = /^#[0-9a-f]{6}$/i.test(color);
   return <fieldset className="selection-palette" disabled={disabled}>
     <legend>Color selection</legend>
     <div className="selection-swatches">{selectionColors.map(entry => <button type="button" key={entry.name} title={entry.name}
@@ -16,7 +17,7 @@ export function SelectionColorPicker({ onApply, onReset, disabled }: {
     {expanded && <div className="selection-custom-color">
       <HexColorPicker color={color} onChange={setColor} />
       <label>Hex color<HexColorInput color={color} onChange={setColor} prefixed /></label>
-      <button type="button" onClick={() => onApply(color)} style={{ borderColor: color }}>Apply color</button>
+      <button type="button" disabled={!valid} onClick={() => onApply(color)} style={{ borderColor: valid ? color : undefined }}>Apply color</button>
     </div>}
     <button type="button" title="Restore original color in selection" aria-label="Restore original color in selection" onClick={onReset}>Restore original</button>
   </fieldset>;

@@ -16,6 +16,7 @@ const modifier = {
   glsl: `
 uniform sampler2D portalSelection;
 uniform sampler2D portalPaint;
+uniform sampler2D portalPreview;
 uniform vec4 portalSelectionTint;
 uniform float portalSelectionVisible;
 uniform float portalIsolate;
@@ -28,11 +29,14 @@ void modifySplatColor(vec3 center, inout vec4 color) {
     }
     float selected = texelFetch(portalSelection, splat.uv, 0).r;
     color.rgb = mix(color.rgb, portalSelectionTint.rgb, selected * portalSelectionTint.a * portalSelectionVisible * step(paint.a, 0.0));
+    float previewed = texelFetch(portalPreview, splat.uv, 0).r;
+    color.rgb = mix(color.rgb, vec3(1.0), previewed * portalSelectionTint.a);
     color.a *= mix(1.0, selected, portalIsolate);
 }`,
   wgsl: `
 var portalSelection: texture_2d<f32>;
 var portalPaint: texture_2d<f32>;
+var portalPreview: texture_2d<f32>;
 uniform portalSelectionTint: vec4f;
 uniform portalSelectionVisible: f32;
 uniform portalIsolate: f32;
@@ -46,12 +50,15 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
     let selected = textureLoad(portalSelection, vec2i(splat.uv), 0).r;
     (*color) = vec4f(mix((*color).rgb, uniform.portalSelectionTint.rgb, selected * uniform.portalSelectionTint.a * uniform.portalSelectionVisible * step(paint.a, 0.0)),
         (*color).a * mix(1.0, selected, uniform.portalIsolate));
+    let previewed = textureLoad(portalPreview, vec2i(splat.uv), 0).r;
+    (*color) = vec4f(mix((*color).rgb, vec3f(1.0), previewed * uniform.portalSelectionTint.a), (*color).a);
 }`
 };
 
 export class SplatSelection {
   private readonly texture: Texture;
   private readonly paintTexture: Texture;
+  private readonly previewTexture: Texture;
   private paintState: PaintState;
   private uploadedColors: Uint32Array;
   private readonly centers: Float32Array;
@@ -82,7 +89,13 @@ export class SplatSelection {
       format: PIXELFORMAT_RGBA8, mipmaps: false, minFilter: FILTER_NEAREST, magFilter: FILTER_NEAREST
     });
     (this.paintTexture.lock() as Uint8Array).fill(0); this.paintTexture.unlock();
+    this.previewTexture = new Texture(resource.device, {
+      name: "Portal selection preview", width: resource.textureDimensions.x, height: resource.textureDimensions.y,
+      format: PIXELFORMAT_R8, mipmaps: false, minFilter: FILTER_NEAREST, magFilter: FILTER_NEAREST
+    });
+    (this.previewTexture.lock() as Uint8Array).fill(0); this.previewTexture.unlock();
     component.setParameter("portalPaint", this.paintTexture);
+    component.setParameter("portalPreview", this.previewTexture);
     component.setParameter("portalSelection", this.texture);
     component.setParameter("portalSelectionTint", new Float32Array([tint.r, tint.g, tint.b, tint.a]));
     component.setParameter("portalSelectionVisible", 1);
@@ -145,6 +158,16 @@ export class SplatSelection {
     return selectionAreaAt(this.selectionAreas.filter(area => area.visible), part, index) ??
       (this.currentArea && snapshotContains(this.currentArea.snapshot, part, index) ? this.currentArea : null);
   }
+  previewArea(area: SelectionArea | null) {
+    const pixels = this.previewTexture.lock() as Uint8Array;
+    pixels.fill(0);
+    const mask = area?.snapshot.masks[0];
+    if (mask) for (let index = 0; index < mask.length; index++) {
+      if (mask.bits[index >> 3]! & (1 << (index & 7))) pixels[index] = 255;
+    }
+    this.previewTexture.unlock();
+    this.component.workBufferUpdate = WORKBUFFER_UPDATE_ONCE;
+  }
   renameArea(id: number, name: string): SelectionSummary {
     const value = name.trim();
     if (value && this.selectionAreas.find(area => area.id === id)?.name !== value) {
@@ -186,9 +209,9 @@ export class SplatSelection {
     this.texture.unlock();
     const displayColors = visiblePaint(this.paintState, this.selectionAreas)[0]!;
     if (this.uploadedColors !== displayColors) {
-      this.uploadedColors = displayColors;
       const pixels = this.paintTexture.lock() as Uint8Array, shades = new Map<number, number[]>();
-      this.uploadedColors.forEach((value, i) => {
+      displayColors.forEach((value, i) => {
+        if (value === this.uploadedColors[i]) return;
         let rgba = shades.get(value);
         if (!rgba) {
           const color = value ? new Color().fromString(decodeColor(value)).linear() : new Color(0, 0, 0, 0);
@@ -200,6 +223,7 @@ export class SplatSelection {
         pixels[offset + 2] = rgba[2]!; pixels[offset + 3] = rgba[3]!;
       });
       this.paintTexture.unlock();
+      this.uploadedColors = displayColors;
     }
     this.component.setParameter("portalIsolate", this.isolated ? 1 : 0);
     this.component.setParameter("portalSelectionVisible", !this.isolated || (this.currentArea?.visible && !this.currentArea.color) ? 1 : 0);
@@ -211,7 +235,7 @@ export class SplatSelection {
     this.disposed = true;
     this.picker?.destroy(); this.releasePicking();
     this.component.setWorkBufferModifier(null);
-    for (const name of ["portalSelection", "portalSelectionTint", "portalSelectionVisible", "portalIsolate", "portalPaint"]) this.component.deleteParameter(name);
-    this.texture.destroy(); this.paintTexture.destroy();
+    for (const name of ["portalSelection", "portalSelectionTint", "portalSelectionVisible", "portalIsolate", "portalPaint", "portalPreview"]) this.component.deleteParameter(name);
+    this.texture.destroy(); this.paintTexture.destroy(); this.previewTexture.destroy();
   }
 }

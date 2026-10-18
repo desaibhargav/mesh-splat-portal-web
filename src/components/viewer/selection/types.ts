@@ -20,6 +20,7 @@ export interface SelectionController {
   readonly colors: PaintState;
   readonly areas: readonly SelectionArea[];
   areaAt(part: number, index: number): SelectionArea | null;
+  previewArea(area: SelectionArea | null): void;
   renameArea(id: number, name: string): SelectionSummary;
   setAreaVisible(id: number, visible: boolean): SelectionSummary;
   paint(color: number): SelectionSummary;

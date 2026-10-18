@@ -28,6 +28,7 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
   const [xray, setXray] = useState(false);
   const [brushSize, setBrushSize] = useState(32);
   const [busy, setBusy] = useState(false);
+  const [busyLabel, setBusyLabel] = useState("Selecting…");
   const [error, setError] = useState<string | null>(null);
   const [, refreshDocument] = useState(0);
   const generation = useRef(0);
@@ -37,7 +38,7 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
   const annotations = useMemo(() => handle ? new Annotations() : null, [handle]);
   const documentChanged = useCallback(() => refreshDocument(value => value + 1), []);
   useEffect(() => {
-    setSummary(handle?.selection.summary); setError(null); setBusy(false);
+    setSummary(handle?.selection.summary); setError(null); setBusy(false); setBusyLabel("Selecting…");
     return () => { generation.current++; };
   }, [handle]);
   const unavailable = disabled || !handle || busy;
@@ -65,7 +66,7 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
   const onSelect = useCallback(async (region: SelectionRegion, operation: SelectionOperation) => {
     if (!handle || !history) return;
     const token = generation.current;
-    setBusy(true); setError(null);
+    setBusy(true); setBusyLabel("Selecting…"); setError(null);
     try {
       const camera = handle.camera();
       const view = { projectionMatrix: camera.projectionMatrix.clone(), viewMatrix: camera.viewMatrix.clone() };
@@ -78,6 +79,26 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
       if (generation.current === token) setError(failure instanceof Error ? failure.message : String(failure));
     } finally { if (generation.current === token) setBusy(false); }
   }, [handle, history, xray, documentChanged]);
+  const paint = useCallback((color: number) => {
+    if (!handle || !history || busy) return;
+    const token = generation.current;
+    setBusy(true); setBusyLabel("Applying color…"); setError(null);
+    requestAnimationFrame(() => {
+      if (generation.current !== token) return;
+      try {
+        setSummary(history.perform(() => handle.selection.paint(color)));
+        documentChanged();
+      } catch (failure) {
+        setError(failure instanceof Error ? failure.message : String(failure));
+      } finally {
+        if (generation.current === token) setBusy(false);
+      }
+    });
+  }, [handle, history, busy, documentChanged]);
+  const applyColor = useCallback((hex: string) => {
+    try { paint(encodeColor(hex)); }
+    catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)); }
+  }, [paint]);
   const groups: ViewerTreeGroup[] = handle && history && measurement && annotations ? [
     { id: "selections", label: "Selections", items: handle.selection.areas,
       onRename: (id, name) => { setSummary(history.perform(() => handle.selection.renameArea(id, name))); documentChanged(); },
@@ -105,7 +126,7 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
         <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round"
           strokeDasharray={item.tool === "rectangle" ? "3 2" : undefined}><path d={item.path} /></svg>
       </button>)}
-      <span role="status">{busy ? "Selecting…" : summary ? `${summary.selected.toLocaleString()} / ${summary.total.toLocaleString()} selected` : "Preparing selection…"}</span>
+      <span role="status">{busy ? busyLabel : summary ? `${summary.selected.toLocaleString()} / ${summary.total.toLocaleString()} selected` : "Preparing selection…"}</span>
     </div>
     {selecting && <div className="selection-actions" role="group" aria-label="Selection actions">
       {tool === "brush" && <label>Brush size <input aria-label="Brush size" type="range" min="1" max="128" value={brushSize} disabled={busy} onChange={event => setBrushSize(Number(event.target.value))} /></label>}
@@ -114,8 +135,8 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
       <button disabled={unavailable || !summary?.selected} aria-pressed={summary?.isolated ?? false}
         onClick={() => { setSummary(history!.perform(() => handle!.selection.toggleIsolation())); documentChanged(); }}>{summary?.isolated ? "Show all" : "Isolate"}</button>
       <SelectionColorPicker disabled={unavailable || !summary?.selected}
-        onApply={hex => { setSummary(history!.perform(() => handle!.selection.paint(encodeColor(hex)))); documentChanged(); }}
-        onReset={() => { setSummary(history!.perform(() => handle!.selection.paint(0))); documentChanged(); }} />
+        onApply={applyColor}
+        onReset={() => paint(0)} />
       <button disabled={unavailable || !summary?.selected} onClick={() => { setSummary(history!.perform(() => handle!.selection.clear())); documentChanged(); }}>Clear</button>
     </div>}
     {error && <div className="selection-error" role="alert">{error}</div>}

@@ -7,6 +7,10 @@ export function useSelectionAreaPick(handle: SelectionHandle, active: boolean, o
   const area = useMemo(() => hit && handle.selection.areaAt(hit.part, hit.index), [handle, hit]);
   const pick = useEffectEvent(onPick);
   useEffect(() => {
+    handle.selection.previewArea(active ? area : null);
+    return () => handle.selection.previewArea(null);
+  }, [handle, active, area]);
+  useEffect(() => {
     if (!active) return;
     const canvas = handle.app.graphicsDevice.canvas as HTMLCanvasElement;
     const cursor = canvas.style.cursor;

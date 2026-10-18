@@ -49,6 +49,7 @@ export class MeshSelection {
   private paintState: PaintState = [];
   private selectionAreas: readonly SelectionArea[] = [];
   private currentArea: SelectionArea | null = null;
+  private preview: SelectionArea | null = null;
 
   constructor(entity: Entity, app: AppBase, private readonly tint: Color) {
     const device = app.graphicsDevice;
@@ -103,6 +104,10 @@ export class MeshSelection {
   areaAt(part: number, index: number): SelectionArea | null {
     return selectionAreaAt(this.selectionAreas.filter(area => area.visible), part, index) ??
       (this.currentArea && snapshotContains(this.currentArea.snapshot, part, index) ? this.currentArea : null);
+  }
+  previewArea(area: SelectionArea | null) {
+    if (this.preview?.id === area?.id) return;
+    this.preview = area; this.refresh();
   }
   renameArea(id: number, name: string): SelectionSummary {
     const value = name.trim();
@@ -175,12 +180,15 @@ export class MeshSelection {
     this.picker?.invalidate();
     const displayColors = visiblePaint(this.paintState, this.selectionAreas);
     const displaySelections = visibleSelections(this.selectionAreas, this.parts.map(part => part.mask.length));
+    const preview = this.preview?.snapshot.masks ?? [];
     for (const [partIndex, part] of this.parts.entries()) {
       const subsets = new Map<number, number[]>(), colors = displayColors[partIndex]!;
       for (let face = 0; face < part.mask.length; face++) {
         if (this.isolated && !part.mask[face]) continue;
         const highlighted = !!displaySelections[partIndex]![face];
-        const key = (colors[face]! << 1) | Number(highlighted);
+        const previewMask = preview[partIndex];
+        const previewed = !!previewMask && !!(previewMask.bits[face >> 3]! & (1 << (face & 7)));
+        const key = (colors[face]! << 2) | Number(highlighted) | (previewed ? 2 : 0);
         let indices = subsets.get(key);
         if (!indices) { indices = []; subsets.set(key, indices); }
         indices.push(part.indices[face * 3]!, part.indices[face * 3 + 1]!, part.indices[face * 3 + 2]!);
@@ -194,13 +202,14 @@ export class MeshSelection {
       for (const [key, indices] of subsets) {
         let group = part.groups.get(key);
         if (!group) {
-          const color = key >> 1, selected = !!(key & 1);
+          const color = key >> 2, selected = !!(key & 1), previewed = !!(key & 2);
           let material = part.baseMaterial;
-          if (color || selected) {
+          if (color || selected || previewed) {
             material = material.clone();
             const shade = color ? new Color().fromString(decodeColor(color)).linear() : this.tint;
             if (color) material.diffuse.lerp(material.diffuse, shade, this.tint.a);
             if (selected && !color) { material.emissive.copy(shade); material.emissiveIntensity = this.tint.a; }
+            if (previewed) { material.emissive.copy(Color.WHITE); material.emissiveIntensity = 1; }
             material.update();
           }
           const instance = new MeshInstance(new SubsetMesh(part.source.mesh, part.vertices), material, part.source.node);

@@ -3,14 +3,15 @@ import { useSurfacePick } from "../picking/useSurfacePick";
 import { unpackSelection } from "../selection/SelectionHistory";
 import { decodeColor } from "../selection/selectionColors";
 import { focusSelection } from "../selection/focusSelection";
+import { snapshotContains } from "../selection/selectionSnapshot";
 import type { SelectionHandle, SelectionState } from "../selection/types";
 import { AnnotationLayer } from "./AnnotationLayer";
 import { type Annotations, type AnnotationDraft, type AnnotationRecord } from "./Annotations";
 import { useSelectionAreaPick } from "./useSelectionAreaPick";
 
 const newDraft = (): AnnotationDraft => ({ title: "", text: "", position: null, region: null, color: null });
-
-type AnnotationInteraction = "marker" | "selection" | null;
+type AnnotationKind = "selection" | "point";
+type AnnotationStep = "choose" | "selection" | "marker" | "details" | null;
 
 export function AnnotationControls({ handle, annotations, active, interactive, hoverRegions, onChange, onRestore }: {
   handle: SelectionHandle; annotations: Annotations; active: boolean; interactive: boolean; hoverRegions: boolean;
@@ -18,25 +19,18 @@ export function AnnotationControls({ handle, annotations, active, interactive, h
 }) {
   const [, refresh] = useState(0);
   const [draft, setDraft] = useState<AnnotationDraft | null>(null);
-  const [interaction, setInteraction] = useState<AnnotationInteraction>(null);
+  const [kind, setKind] = useState<AnnotationKind | null>(null);
+  const [step, setStep] = useState<AnnotationStep>(null);
   const redraw = () => refresh(value => value + 1);
 
-  function createAnnotation() {
-    setDraft(newDraft());
-    setInteraction("marker");
-  }
+  function createAnnotation() { setDraft(newDraft()); setKind(null); setStep("choose"); }
   function editAnnotation(record: AnnotationRecord) {
-    setDraft({ ...record });
-    setInteraction(null);
+    setDraft({ ...record }); setKind(record.region ? "selection" : "point"); setStep("details");
   }
   function moveAnnotation(record: AnnotationRecord) {
-    setDraft({ ...record });
-    setInteraction("marker");
+    setDraft({ ...record }); setKind(record.region ? "selection" : "point"); setStep("marker");
   }
-  function cancelAnnotation() {
-    setDraft(null);
-    setInteraction(null);
-  }
+  function cancelAnnotation() { setDraft(null); setKind(null); setStep(null); }
   function removeAnnotation(id: number) {
     annotations.remove(id);
     if (draft?.id === id) cancelAnnotation();
@@ -44,37 +38,43 @@ export function AnnotationControls({ handle, annotations, active, interactive, h
   }
   function saveAnnotation(event: FormEvent) {
     event.preventDefault();
-    if (!draft?.position || interaction || busy) return;
-    annotations.save(draft);
-    cancelAnnotation();
-    redraw(); onChange();
+    if (!draft?.position || step !== "details" || busy) return;
+    annotations.save(draft); cancelAnnotation(); redraw(); onChange();
   }
-  function chooseSelection() {
-    if (!draft) return;
-    setInteraction("selection");
+  function chooseKind(next: AnnotationKind) {
+    setDraft(newDraft()); setKind(next); setStep(next === "selection" ? "selection" : "marker");
   }
 
   useEffect(() => {
     if (active) createAnnotation();
     else cancelAnnotation();
   }, [handle, active]);
-  const { busy, message } = useSurfacePick({ handle, active: active && interaction === "marker",
+
+  const { busy, message } = useSurfacePick({
+    handle,
+    active: active && step === "marker",
     acceptsClick: () => !!draft,
-    onPick: position => { setDraft(current => current && { ...current, position }); setInteraction(null); }
+    validateClick: async (u, v) => {
+      if (kind !== "selection" || !draft?.region) return null;
+      const hit = await handle.selection.primitiveAt(handle.app, handle.camera(), u, v);
+      return hit && snapshotContains(draft.region, hit.part, hit.index) ? null : "Place the marker on the chosen selection.";
+    },
+    onPick: position => {
+      setDraft(current => current && { ...current, position });
+      setStep("details");
+    }
   });
-  const areaPick = useSelectionAreaPick(handle, active && interaction === "selection", area => {
+  const areaPick = useSelectionAreaPick(handle, active && step === "selection", area => {
     const color = area.color ? decodeColor(area.color) :
       getComputedStyle(handle.app.graphicsDevice.canvas).getPropertyValue("--gold").trim();
     setDraft(current => current && { ...current, region: area.snapshot, color });
-    setInteraction(null);
+    setStep("marker");
   });
+
   function restoreRegion(region: NonNullable<AnnotationDraft["region"]>) {
     onRestore(unpackSelection(region));
     const bounds = handle.selection.bounds();
     if (bounds) focusSelection(bounds, handle.camera());
-  }
-  function restoreDraftRegion() {
-    if (draft?.region) restoreRegion(draft.region);
   }
   useEffect(() => {
     if (!active) return;
@@ -96,21 +96,25 @@ export function AnnotationControls({ handle, annotations, active, interactive, h
     frame.addEventListener("keydown", keyDown);
     return () => { frame.removeEventListener("keydown", keyDown); };
   }, [handle, active, annotations, busy]);
-  const status = busy ? "Picking surface…" : message ?? areaPick.error ?? (
-    interaction === "selection" ? areaPick.area ? "Click this selection to annotate it" : "Hover over a selection"
-      : interaction === "marker" ? "Click a surface to place the marker"
-        : draft?.position ? "Marker placed" : "Create an annotation"
-  );
+
+  const status = busy ? "Picking surface…" : message ?? areaPick.error ?? ({
+    choose: "Choose an annotation type",
+    selection: areaPick.area ? `Click ${areaPick.area.name} to annotate it` : "Hover over a selection, then click it",
+    marker: kind === "selection" ? "Click the chosen selection to place its marker" : "Click a surface to place the marker",
+    details: "Enter a title and description"
+  } as const)[step ?? "choose"];
   const displayedAnnotations = useMemo(() => {
     const preview = draft?.position ? { ...draft, id: draft.id ?? 0, title: draft.title.trim() || "New annotation",
       text: draft.text.trim(), position: draft.position, visible: true } satisfies AnnotationRecord : null;
     const records = annotations.records.flatMap(record => record.id === preview?.id ? [preview] : record.visible ? [record] : []);
     return preview && draft?.id === undefined ? [...records, preview] : records;
   }, [annotations.records, draft]);
+  const choosing = step === "selection" || step === "marker";
+  const hasSelections = handle.selection.areas.some(area => area.visible);
 
   return <>
     {displayedAnnotations.length > 0 && <AnnotationLayer handle={handle} records={displayedAnnotations}
-      interactive={interactive && !interaction} hoverRegions={hoverRegions && !interaction} />}
+      interactive={interactive && !choosing} hoverRegions={hoverRegions && !choosing} />}
     {active && <div className="annotation-panels">
       {annotations.records.length > 0 && <div className="selection-actions annotation-list" role="group" aria-label="Saved annotations">
         <strong>Annotations</strong>
@@ -126,16 +130,20 @@ export function AnnotationControls({ handle, annotations, active, interactive, h
       <div className="selection-actions annotation-actions" role="group" aria-label="Annotate">
         <strong>Annotate</strong>
         <span role="status">{status}</span>
-        {draft?.position && interaction !== "marker" ? <form onSubmit={saveAnnotation}>
+        {step === "choose" && <div className="annotation-kinds">
+          <button type="button" disabled={!hasSelections} onClick={() => chooseKind("selection")}>Annotate a selection</button>
+          <button type="button" onClick={() => chooseKind("point")}>Annotate with a point</button>
+        </div>}
+        {(step === "selection" || step === "marker") && <button type="button" onClick={cancelAnnotation}>Cancel</button>}
+        {draft?.position && step === "details" && <form onSubmit={saveAnnotation}>
           <label>Title<input name="title" required value={draft.title} onChange={event => setDraft({ ...draft, title: event.target.value })} /></label>
-          <label>Note<textarea name="note" rows={3} value={draft.text} onChange={event => setDraft({ ...draft, text: event.target.value })} /></label>
-          <button type="button" disabled={busy || (!handle.selection.areas.length && !handle.selection.summary.selected)}
-            onClick={chooseSelection}>Annotate a selection</button>
-          {draft.region && <button type="button" onClick={restoreDraftRegion}>Select annotated area</button>}
-          {draft.position && <button type="button" disabled={busy} onClick={() => setInteraction("marker")}>Move marker</button>}
-          <button type="submit" disabled={!draft.title.trim() || !draft.position || !!interaction || busy}>Save annotation</button>
+          <label>Description<textarea name="description" rows={3} value={draft.text} onChange={event => setDraft({ ...draft, text: event.target.value })} /></label>
+          {draft.region && <button type="button" onClick={() => restoreRegion(draft.region!)}>Select annotated area</button>}
+          <button type="button" disabled={busy} onClick={() => setStep("marker")}>Move marker</button>
+          <button type="submit" disabled={!draft.title.trim() || busy}>Save annotation</button>
           <button type="button" onClick={cancelAnnotation}>Cancel</button>
-        </form> : draft ? <button onClick={cancelAnnotation}>Cancel</button> : <button onClick={createAnnotation}>New annotation</button>}
+        </form>}
+        {!draft && <button type="button" onClick={createAnnotation}>New annotation</button>}
         <small>Annotations last until you leave this asset.</small>
       </div>
     </div>}

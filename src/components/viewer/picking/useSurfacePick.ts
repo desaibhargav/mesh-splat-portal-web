@@ -4,13 +4,16 @@ import type { SelectionHandle } from "../selection/types";
 import { SurfacePicker } from "./SurfacePicker";
 
 // Shared click interaction for tools that place points on the visible model.
-export function useSurfacePick({ handle, active, acceptsClick, onPick }: {
+export function useSurfacePick({ handle, active, acceptsClick, validateClick, onPick }: {
   handle: SelectionHandle; active: boolean;
-  acceptsClick(shift: boolean): boolean; onPick(point: Vec3, shift: boolean): void;
+  acceptsClick(shift: boolean): boolean;
+  validateClick?(u: number, v: number): Promise<string | null>;
+  onPick(point: Vec3, shift: boolean): void;
 }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const accepts = useEffectEvent(acceptsClick), apply = useEffectEvent(onPick);
+  const accepts = useEffectEvent(acceptsClick), validate = useEffectEvent(validateClick ?? (async () => null));
+  const apply = useEffectEvent(onPick);
   useEffect(() => {
     if (!active) return;
     const picker = new SurfacePicker(handle.app, handle.selection.layers);
@@ -41,6 +44,8 @@ export function useSurfacePick({ handle, active, acceptsClick, onPick }: {
       if (pending || !accepts(shift) || Math.hypot(event.clientX - click.x, event.clientY - click.y) > 4) return;
       pending = true; setBusy(true); setMessage(null);
       try {
+        const validation = await validate(click.u, click.v);
+        if (validation) { if (!cancelled) setMessage(validation); return; }
         const point = await picker.pick(handle.camera(), click.u, click.v);
         if (!cancelled) {
           if (point) apply(point, shift);
