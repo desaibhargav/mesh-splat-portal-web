@@ -1,8 +1,9 @@
 import {
   Color, Entity, Mat4, Mesh, MeshInstance, PRIMITIVE_TRIANGLES, SEMANTIC_POSITION, StandardMaterial,
   TYPE_INT8, TYPE_INT16, TYPE_UINT8, TYPE_UINT16, VertexBuffer,
-  type AppBase, type CameraComponent, type GraphicsDevice, type RenderComponent
+  type AppBase, type CameraComponent, type Layer, type RenderComponent
 } from "playcanvas";
+import { paintSelection, selectionColors, type PaintState } from "./selectionColors";
 import { applySelection, projectSelection } from "./projectSelection";
 import type { SelectionOperation } from "./rectangle";
 import { MeshPicker } from "./MeshPicker";
@@ -11,7 +12,7 @@ import type { SelectionCamera, SelectionRegion, SelectionState, SelectionSummary
 
 interface Part {
   source: MeshInstance; positions: Float32Array; indices: number[]; centers: Float32Array; mask: Uint8Array;
-  selected: MeshInstance; rest: MeshInstance; material: StandardMaterial;
+  vertices: VertexBuffer; baseMaterial: StandardMaterial; layers: Layer[]; groups: Map<number, { instance: MeshInstance; material: StandardMaterial }>;
 }
 
 export function triangleCenters(positions: ArrayLike<number>, indices: number[], scale = 1, signed = false): Float32Array {
@@ -29,24 +30,25 @@ export function triangleCenters(positions: ArrayLike<number>, indices: number[],
   return centers;
 }
 
-function copyMesh(device: GraphicsDevice, source: Mesh): Mesh {
-  const mesh = new Mesh(device);
-  const buffer = source.vertexBuffer;
-  mesh.vertexBuffer = new VertexBuffer(device, buffer.format, buffer.numVertices, { data: buffer.storage.slice(0) });
-  mesh.aabb.copy(source.aabb);
-  return mesh;
+// Subsets own their index buffers and borrow one vertex buffer per source part.
+class SubsetMesh extends Mesh {
+  constructor(source: Mesh, vertices: VertexBuffer) {
+    super(vertices.device); this.vertexBuffer = vertices; this.aabb.copy(source.aabb);
+  }
+  destroy() { this.vertexBuffer = null!; super.destroy(); }
 }
 
 export class MeshSelection {
-  private readonly display = new Entity("Selection display");
   private readonly originals: { component: RenderComponent; enabled: boolean }[];
   private readonly parts: Part[] = [];
   private selected = 0;
   private isolated = false;
   private disposed = false;
   private picker?: MeshPicker;
+  private paintState: PaintState = [];
 
-  constructor(entity: Entity, device: GraphicsDevice, tint: Color) {
+  constructor(entity: Entity, app: AppBase, private readonly tint: Color) {
+    const device = app.graphicsDevice;
     const components = entity.findComponents("render") as RenderComponent[];
     const instances = components.filter(c => c.enabled && c.entity.enabled).flatMap(c => c.meshInstances).filter(instance => instance.visible);
     // Validate before changing any scene state.
@@ -70,22 +72,17 @@ export class MeshSelection {
         const signed = element.normalize && (element.dataType === TYPE_INT8 || element.dataType === TYPE_INT16);
         const decoded = Float32Array.from(positions, value => signed ? Math.max(-1, value / scale) : value / scale);
         const centers = triangleCenters(decoded, indices);
-        const material = (source.material as StandardMaterial).clone();
-        material.emissive.copy(tint); material.emissiveIntensity = tint.a;
-        material.update();
-        const selected = new MeshInstance(copyMesh(device, mesh), material, source.node);
-        const rest = new MeshInstance(copyMesh(device, mesh), source.material, source.node);
-        selected.castShadow = rest.castShadow = false;
-        this.parts.push({ source, positions: decoded, indices, centers, mask: new Uint8Array(indices.length / 3), selected, rest, material });
+        const buffer = mesh.vertexBuffer;
+        const vertices = new VertexBuffer(device, buffer.format, buffer.numVertices, { data: buffer.storage.slice(0) });
+        this.parts.push({ source, positions: decoded, indices, centers, mask: new Uint8Array(indices.length / 3), vertices, baseMaterial: source.material as StandardMaterial, layers: components.find(component => component.meshInstances.includes(source))!.layers.map(id => app.scene.layers.getLayerById(id)!), groups: new Map() });
       }
+      this.paintState = this.parts.map(part => new Uint8Array(part.mask.length));
       this.refresh();
-      this.display.addComponent("render", { meshInstances: this.parts.flatMap(p => [p.rest, p.selected]) });
-      entity.addChild(this.display);
       for (const { component } of this.originals) component.enabled = false;
     } catch (error) { this.destroy(); throw error; }
   }
 
-  get layers(): readonly number[] { return this.display.render!.layers; }
+  get layers(): readonly number[] { return [...new Set(this.parts.flatMap(part => part.layers.map(layer => layer.id)))]; }
   get summary(): SelectionSummary {
     return { selected: this.selected, total: this.parts.reduce((sum, p) => sum + p.mask.length, 0), isolated: this.isolated };
   }
@@ -94,7 +91,14 @@ export class MeshSelection {
     return this.picker.capture(camera, region, this.isolated);
   }
   get state(): SelectionState { return { masks: this.parts.map(part => part.mask), isolated: this.isolated }; }
-  restore(state: SelectionState): SelectionSummary {
+  get colors(): PaintState { return this.paintState; }
+  paint(color: number): SelectionSummary {
+    const next = paintSelection(this.paintState, this.state.masks, color);
+    if (next !== this.paintState) { this.paintState = next; this.refresh(); }
+    return this.summary;
+  }
+  restore(state: SelectionState, colors: PaintState = this.paintState): SelectionSummary {
+    this.paintState = colors;
     this.selected = 0;
     this.parts.forEach((part, i) => {
       part.mask.set(state.masks[i]!);
@@ -133,15 +137,39 @@ export class MeshSelection {
     this.refresh(); return this.summary;
   }
   private refresh() {
-    for (const part of this.parts) {
-      const selected: number[] = [], rest: number[] = [];
-      for (let i = 0; i < part.mask.length; i++) {
-        const subset = part.mask[i] ? selected : rest;
-        subset.push(part.indices[i * 3]!, part.indices[i * 3 + 1]!, part.indices[i * 3 + 2]!);
+    for (const [partIndex, part] of this.parts.entries()) {
+      const subsets = new Map<number, number[]>(), colors = this.paintState[partIndex]!;
+      for (let face = 0; face < part.mask.length; face++) {
+        const selected = !!part.mask[face];
+        if (this.isolated && !selected) continue;
+        const key = (colors[face]! << 1) | Number(selected);
+        let indices = subsets.get(key);
+        if (!indices) { indices = []; subsets.set(key, indices); }
+        indices.push(part.indices[face * 3]!, part.indices[face * 3 + 1]!, part.indices[face * 3 + 2]!);
       }
-      for (const [instance, indices] of [[part.selected, selected], [part.rest, rest]] as const) {
-        instance.visible = indices.length > 0 && (instance === part.selected || !this.isolated);
-        if (indices.length) { instance.mesh.setIndices(indices); instance.mesh.update(PRIMITIVE_TRIANGLES, false); }
+      for (const [key, { instance, material }] of part.groups) if (!subsets.has(key)) {
+        part.layers.forEach(layer => layer.removeMeshInstances([instance]));
+        instance.destroy();
+        if (material !== part.baseMaterial) material.destroy();
+        part.groups.delete(key);
+      }
+      for (const [key, indices] of subsets) {
+        let group = part.groups.get(key);
+        if (!group) {
+          const color = key >> 1, selected = !!(key & 1);
+          let material = part.baseMaterial;
+          if (color || selected) {
+            material = material.clone();
+            const shade = color ? new Color().fromString(selectionColors[color - 1]!.hex).linear() : this.tint;
+            if (color) material.diffuse.lerp(material.diffuse, shade, this.tint.a);
+            if (selected) { material.emissive.copy(shade); material.emissiveIntensity = this.tint.a; }
+            material.update();
+          }
+          const instance = new MeshInstance(new SubsetMesh(part.source.mesh, part.vertices), material, part.source.node);
+          instance.castShadow = false; group = { instance, material }; part.groups.set(key, group);
+          part.layers.forEach(layer => layer.addMeshInstances([instance]));
+        }
+        group.instance.mesh.setIndices(indices); group.instance.mesh.update(PRIMITIVE_TRIANGLES, false);
       }
     }
   }
@@ -149,10 +177,13 @@ export class MeshSelection {
     if (this.disposed) return;
     this.disposed = true;
     this.picker?.destroy();
-    this.display.destroy();
     for (const part of this.parts) {
-      // Safe even if RenderComponent already destroyed the instances.
-      part.selected.destroy(); part.rest.destroy(); part.material.destroy();
+      for (const { instance, material } of part.groups.values()) {
+        part.layers.forEach(layer => layer.removeMeshInstances([instance]));
+        instance.destroy();
+        if (material !== part.baseMaterial) material.destroy();
+      }
+      part.vertices.destroy();
     }
     for (const { component, enabled } of this.originals) component.enabled = enabled;
   }

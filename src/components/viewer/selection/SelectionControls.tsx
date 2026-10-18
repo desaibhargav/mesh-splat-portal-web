@@ -6,6 +6,7 @@ import { SelectionGesture } from "./SelectionGesture";
 import type { SelectionHandle, SelectionRegion, SelectionTool } from "./types";
 import type { SelectionOperation } from "./rectangle";
 import { SelectionHistory } from "./SelectionHistory";
+import { selectionColors } from "./selectionColors";
 import { focusSelection } from "./focusSelection";
 
 const tools: { tool: SelectionTool; label: string; path: string }[] = [
@@ -76,12 +77,20 @@ export function SelectionControls({ handle, tool, onToolChange, onGestureChange,
       </button>)}
       <span role="status">{busy ? "Selecting…" : summary ? `${summary.selected.toLocaleString()} / ${summary.total.toLocaleString()} selected` : "Preparing selection…"}</span>
     </div>
-    {selecting && <div className="selection-actions" role="group" aria-label="Selection actions">
+    {selecting && <div className="selection-actions" role="group" aria-label="Selection actions" onClick={event => {
+      if ((event.target as HTMLElement).closest("button")) toolbar.current!.closest<HTMLElement>(".viewer-frame")!.focus({ preventScroll: true });
+    }}>
       {tool === "brush" && <label>Brush size <input aria-label="Brush size" type="range" min="1" max="128" value={brushSize} disabled={busy} onChange={event => setBrushSize(Number(event.target.value))} /></label>}
       <button disabled={unavailable} aria-pressed={xray} title={xray ? "Select through the object" : "Select only visible surfaces"}
         onClick={() => setXray(!xray)}>X-ray {xray ? "on" : "off"}</button>
       <button disabled={unavailable || !summary?.selected} aria-pressed={summary?.isolated ?? false}
         onClick={() => setSummary(history!.perform(() => handle!.selection.toggleIsolation()))}>{summary?.isolated ? "Show all" : "Isolate"}</button>
+      <fieldset className="selection-palette" disabled={unavailable || !summary?.selected}><legend>Color selection</legend>
+        {selectionColors.map((color, i) => <button key={color.name} title={color.name} aria-label={`Color selection ${color.name.toLowerCase()}`}
+          style={{ backgroundColor: color.hex }} onClick={() => setSummary(history!.perform(() => handle!.selection.paint(i + 1)))} />)}
+        <button className="selection-color-reset" title="Restore original color in selection" aria-label="Restore original color in selection"
+          onClick={() => setSummary(history!.perform(() => handle!.selection.paint(0)))}>↺</button>
+      </fieldset>
       <button disabled={unavailable || !summary?.selected} onClick={() => onToolChange("annotate")}>Annotate selection</button>
       <button disabled={unavailable || !summary?.selected} onClick={() => setSummary(history!.perform(() => handle!.selection.clear()))}>Clear</button>
     </div>}

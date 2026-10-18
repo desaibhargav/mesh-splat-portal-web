@@ -43,7 +43,11 @@ Selection actions appear at the bottom right while a selection tool is active. *
 
 Shift adds, Ctrl/Cmd removes, and Shift + Ctrl/Cmd intersects. Brush diameter is adjustable. Selections update when the gesture ends. **Isolate** hides unselected geometry; **Show all** restores it while retaining the highlight. **Clear** removes the selection and exits isolation. Further selections while isolated act only on the remaining geometry.
 
-The tools adapt SuperSplat's gesture and modifier conventions ([MIT notice](public/licenses/supersplat.txt)). Splats use an ID-indexed selection texture and the unified renderer's work-buffer modifier API. Static triangle meshes use selected and unselected index subsets with their original vertex attributes and materials. Skinned and morphed meshes are not supported. Isolation changes visibility, not the asset's memory footprint. Selections belong to the current viewer session; no asset bytes or catalog records are modified.
+**Color selection** applies a palette tint to selected triangles or splats. Colors remain when switching tools, clearing the selection, or annotating another region. The reset swatch restores original colors only within the current selection. Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z include paint edits in selection history. Painted selections highlight in their chosen color; unpainted selections use the default highlight. Colors last until leaving the asset and do not modify source files.
+
+Paint uses immutable, one-byte palette-index buffers shared across unchanged undo snapshots. Mesh groups use standard PlayCanvas materials and share one copied vertex buffer per source part; only active index subsets/materials are allocated. Splats reuse the work-buffer modifier with a palette texture and a paint-index texture, uploaded only when colors change. Palette entries live in `selectionColors.ts`; there are no asset-specific colors or shader color literals.
+
+The tools adapt SuperSplat's gesture and modifier conventions ([MIT notice](public/licenses/supersplat.txt)). Splats use an ID-indexed selection texture and the unified renderer's work-buffer modifier API. Static triangle meshes use index subsets grouped by selection and palette color, preserving their vertex attributes and original base materials. Skinned and morphed meshes are not supported. Isolation changes visibility, not the asset's memory footprint. Selections belong to the current viewer session; no asset bytes or catalog records are modified.
 
 ## Measurement
 

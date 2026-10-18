@@ -1,4 +1,5 @@
 import type { AppBase, BoundingBox, CameraComponent } from "playcanvas";
+import type { PaintState } from "./selectionColors";
 import type { SelectionOperation } from "./rectangle";
 
 export type SelectionTool = "navigate" | "rectangle" | "lasso" | "brush" | "measure" | "annotate";
@@ -11,7 +12,9 @@ export interface SelectionController {
   readonly layers: readonly number[];
   hitTest(app: AppBase, camera: CameraComponent, region: SelectionRegion): Promise<Uint8Array[]>;
   readonly state: SelectionState;
-  restore(state: SelectionState): SelectionSummary;
+  readonly colors: PaintState;
+  paint(color: number): SelectionSummary;
+  restore(state: SelectionState, colors?: PaintState): SelectionSummary;
   bounds(): BoundingBox | null;
   readonly summary: SelectionSummary;
   select(region: SelectionRegion, operation: SelectionOperation, camera: SelectionCamera, hits?: Uint8Array[]): SelectionSummary;

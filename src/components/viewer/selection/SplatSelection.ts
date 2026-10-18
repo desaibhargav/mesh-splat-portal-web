@@ -1,7 +1,8 @@
 import {
-  Color, FILTER_NEAREST, Mat4, PIXELFORMAT_R8, Texture, WORKBUFFER_UPDATE_ONCE,
+  Color, FILTER_NEAREST, Mat4, PIXELFORMAT_R8, PIXELFORMAT_RGBA8, Texture, WORKBUFFER_UPDATE_ONCE,
   type AppBase, type CameraComponent, type GSplatComponent
 } from "playcanvas";
+import { paintSelection, selectionColors, type PaintState } from "./selectionColors";
 import type { SelectionOperation } from "./rectangle";
 import { applySelection, projectSelection } from "./projectSelection";
 import { captureDepth, depthTest } from "./SelectionDepth";
@@ -12,30 +13,52 @@ import { SelectionBounds } from "./selectionBounds";
 const modifier = {
   glsl: `
 uniform sampler2D portalSelection;
+uniform sampler2D portalPaint;
+uniform sampler2D portalPalette;
 uniform vec4 portalSelectionTint;
 uniform float portalIsolate;
 void modifySplatCenter(inout vec3 center) {}
 void modifySplatRotationScale(vec3 originalCenter, vec3 modifiedCenter, inout vec4 rotation, inout vec3 scale) {}
 void modifySplatColor(vec3 center, inout vec4 color) {
+    vec3 selectionTint = portalSelectionTint.rgb;
+    int paintIndex = int(round(texelFetch(portalPaint, splat.uv, 0).r * 255.0));
+    if (paintIndex > 0) {
+        vec4 paint = texelFetch(portalPalette, ivec2(paintIndex, 0), 0);
+        color.rgb = mix(color.rgb, paint.rgb, paint.a);
+        selectionTint = paint.rgb;
+    }
     float selected = texelFetch(portalSelection, splat.uv, 0).r;
-    color.rgb = mix(color.rgb, portalSelectionTint.rgb, selected * portalSelectionTint.a);
+    color.rgb = mix(color.rgb, selectionTint, selected * portalSelectionTint.a);
     color.a *= mix(1.0, selected, portalIsolate);
 }`,
   wgsl: `
 var portalSelection: texture_2d<f32>;
+var portalPaint: texture_2d<f32>;
+var portalPalette: texture_2d<f32>;
 uniform portalSelectionTint: vec4f;
 uniform portalIsolate: f32;
 fn modifySplatCenter(center: ptr<function, vec3f>) {}
 fn modifySplatRotationScale(originalCenter: vec3f, modifiedCenter: vec3f, rotation: ptr<function, vec4f>, scale: ptr<function, vec3f>) {}
 fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
+    var selectionTint = uniform.portalSelectionTint.rgb;
+    let paintIndex = i32(round(textureLoad(portalPaint, vec2i(splat.uv), 0).r * 255.0));
+    if (paintIndex > 0) {
+        let paint = textureLoad(portalPalette, vec2i(paintIndex, 0), 0);
+        (*color) = vec4f(mix((*color).rgb, paint.rgb, paint.a), (*color).a);
+        selectionTint = paint.rgb;
+    }
     let selected = textureLoad(portalSelection, vec2i(splat.uv), 0).r;
-    (*color) = vec4f(mix((*color).rgb, uniform.portalSelectionTint.rgb, selected * uniform.portalSelectionTint.a),
+    (*color) = vec4f(mix((*color).rgb, selectionTint, selected * uniform.portalSelectionTint.a),
         (*color).a * mix(1.0, selected, uniform.portalIsolate));
 }`
 };
 
 export class SplatSelection {
   private readonly texture: Texture;
+  private readonly paintTexture: Texture;
+  private readonly palette: Texture;
+  private paintState: PaintState;
+  private uploadedColors: Uint8Array;
   private readonly centers: Float32Array;
   private readonly mask: Uint8Array;
   private disposed = false;
@@ -53,6 +76,20 @@ export class SplatSelection {
     });
     (this.texture.lock() as Uint8Array).fill(0);
     this.texture.unlock();
+    this.paintState = [new Uint8Array(this.mask.length)]; this.uploadedColors = this.paintState[0]!;
+    this.paintTexture = new Texture(resource.device, {
+      name: "Portal paint", width: resource.textureDimensions.x, height: resource.textureDimensions.y,
+      format: PIXELFORMAT_R8, mipmaps: false, minFilter: FILTER_NEAREST, magFilter: FILTER_NEAREST
+    });
+    (this.paintTexture.lock() as Uint8Array).fill(0); this.paintTexture.unlock();
+    const palette = new Uint8Array((selectionColors.length + 1) * 4);
+    selectionColors.forEach((entry, i) => {
+      const color = new Color().fromString(entry.hex).linear();
+      palette.set([color.r, color.g, color.b, tint.a].map(value => Math.round(value * 255)), (i + 1) * 4);
+    });
+    this.palette = new Texture(resource.device, { name: "Portal palette", width: selectionColors.length + 1, height: 1,
+      format: PIXELFORMAT_RGBA8, mipmaps: false, minFilter: FILTER_NEAREST, magFilter: FILTER_NEAREST, levels: [palette] });
+    component.setParameter("portalPaint", this.paintTexture); component.setParameter("portalPalette", this.palette);
     component.setParameter("portalSelection", this.texture);
     component.setParameter("portalSelectionTint", new Float32Array([tint.r, tint.g, tint.b, tint.a]));
     component.setParameter("portalIsolate", 0);
@@ -96,7 +133,14 @@ export class SplatSelection {
 
   get layers(): readonly number[] { return this.component.layers; }
   get state(): SelectionState { return { masks: [this.mask], isolated: this.isolated }; }
-  restore(state: SelectionState): SelectionSummary {
+  get colors(): PaintState { return this.paintState; }
+  paint(color: number): SelectionSummary {
+    const next = paintSelection(this.paintState, [this.mask], color);
+    if (next !== this.paintState) { this.paintState = next; this.update(); }
+    return this.summary;
+  }
+  restore(state: SelectionState, colors: PaintState = this.paintState): SelectionSummary {
+    this.paintState = colors;
     this.mask.set(state.masks[0]!);
     this.selected = this.mask.reduce((sum, value) => sum + (value ? 1 : 0), 0);
     this.isolated = state.isolated; this.update(); return this.summary;
@@ -109,6 +153,10 @@ export class SplatSelection {
   private update() {
     (this.texture.lock() as Uint8Array).set(this.mask);
     this.texture.unlock();
+    if (this.uploadedColors !== this.paintState[0]) {
+      this.uploadedColors = this.paintState[0]!;
+      (this.paintTexture.lock() as Uint8Array).set(this.uploadedColors); this.paintTexture.unlock();
+    }
     this.component.setParameter("portalIsolate", this.isolated ? 1 : 0);
     this.component.workBufferUpdate = WORKBUFFER_UPDATE_ONCE;
   }
@@ -117,7 +165,7 @@ export class SplatSelection {
     if (this.disposed) return;
     this.disposed = true;
     this.component.setWorkBufferModifier(null);
-    for (const name of ["portalSelection", "portalSelectionTint", "portalIsolate"]) this.component.deleteParameter(name);
-    this.texture.destroy();
+    for (const name of ["portalSelection", "portalSelectionTint", "portalIsolate", "portalPaint", "portalPalette"]) this.component.deleteParameter(name);
+    this.texture.destroy(); this.paintTexture.destroy(); this.palette.destroy();
   }
 }

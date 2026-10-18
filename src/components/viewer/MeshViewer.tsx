@@ -37,7 +37,7 @@ export function MeshViewer({ url, onStatus, controlsEnabled, onSelectionReady }:
       try {
         const tint = new Color().fromString(getComputedStyle(app.graphicsDevice.canvas).getPropertyValue("--gold").trim()).linear();
         tint.a = 0.5;
-        selection = new MeshSelection(target, app.graphicsDevice, tint);
+        selection = new MeshSelection(target, app, tint);
         onSelectionReady({ app, selection, camera: () => {
           const camera = app.systems.camera!.cameras[0];
           if (!camera) throw new Error("Viewer camera is unavailable.");

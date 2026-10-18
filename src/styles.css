@@ -86,6 +86,10 @@ a { color: #536d7d; }
 .selection-actions button[aria-pressed="true"] { color: var(--gold); border-color: var(--gold); }
 .selection-actions button:disabled { opacity: .45; cursor: default; }
 .selection-actions label { display: flex; flex-direction: column; max-width: 128px; font-size: .7rem; }
+.selection-palette { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin: 0; padding: 6px; border: 1px solid #666; }
+.selection-palette legend { padding: 0 3px; font-size: .7rem; }
+.selection-palette button { min-height: 25px; padding: 0; }
+.selection-palette button:focus-visible { outline: 2px solid white; outline-offset: 1px; }
 .selection-error { position: absolute; bottom: 43px; left: 12px; right: 160px; z-index: 3; color: #fff; background: #612929; padding: 8px; }
 
 .metadata-panel { margin-top: 1.5rem; padding: 1.5rem; border: 1px solid var(--line); background: #fff; }
