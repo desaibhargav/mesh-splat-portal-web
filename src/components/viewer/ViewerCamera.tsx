@@ -11,14 +11,35 @@ export interface ViewerView {
   fov?: number;
 }
 
-export function ViewerCamera({ view, controlsEnabled = true }: { view: ViewerView; controlsEnabled?: boolean }) {
+// CameraControls 2.21.4 listens for keyup but does not clear modifiers on window blur.
+// Release them through the same DOM events its public input source consumes.
+function releaseModifiers(shift = true, control = true) {
+  if (shift) {
+    window.dispatchEvent(new KeyboardEvent("keyup", { code: "ShiftLeft" }));
+    window.dispatchEvent(new KeyboardEvent("keyup", { code: "ShiftRight" }));
+  }
+  if (control) {
+    window.dispatchEvent(new KeyboardEvent("keyup", { code: "ControlLeft" }));
+    window.dispatchEvent(new KeyboardEvent("keyup", { code: "ControlRight" }));
+  }
+}
+
+export function ViewerCamera({ view }: { view: ViewerView }) {
   const [controls, setControls] = useState<CameraControls | null>(null);
   useEffect(() => {
     if (!controls) return;
     controls.focusPoint = view.focusPoint;
     controls.zoomRange = new Vec2(Math.max(view.radius * 0.02, 0.01), Math.max(view.radius * 100, 100));
   }, [controls, view]);
-  useEffect(() => { if (controls) controls.enabled = controlsEnabled; }, [controls, controlsEnabled]);
+  useEffect(() => {
+    if (!controls) return;
+    const canvas = controls.app.graphicsDevice.canvas;
+    const blur = () => releaseModifiers();
+    const pointerDown = (event: PointerEvent) => releaseModifiers(!event.shiftKey, !event.ctrlKey);
+    window.addEventListener("blur", blur);
+    canvas.addEventListener("pointerdown", pointerDown, true);
+    return () => { window.removeEventListener("blur", blur); canvas.removeEventListener("pointerdown", pointerDown, true); };
+  }, [controls]);
   return <CameraRig view={view} onControls={setControls} />;
 }
 

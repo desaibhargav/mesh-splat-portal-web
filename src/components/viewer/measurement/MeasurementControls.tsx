@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { SelectionHandle } from "../selection/types";
 import { focusSelection } from "../selection/focusSelection";
 import { formatDistance, Measurement } from "./Measurement";
@@ -6,14 +6,13 @@ import { MeasurementVisuals } from "./MeasurementVisuals";
 import { defaultMeasurementStyle } from "./MeasurementRenderer";
 import { useSurfacePick } from "../picking/useSurfacePick";
 
-export function MeasurementControls({ handle, active, onActiveChange }: {
-  handle: SelectionHandle; active: boolean; onActiveChange(active: boolean): void;
+export function MeasurementControls({ handle, measurement, active, onChange }: {
+  handle: SelectionHandle; measurement: Measurement; active: boolean; onChange(): void;
 }) {
-  const measurement = useMemo(() => new Measurement(), [handle]);
   const [style, setStyle] = useState(defaultMeasurementStyle);
   const [, refresh] = useState(0);
-  const redraw = () => refresh(value => value + 1);
-  const { busy, message, clearMessage } = useSurfacePick({ handle, active, onActiveChange,
+  const redraw = () => { refresh(value => value + 1); onChange(); };
+  const { busy, message, clearMessage } = useSurfacePick({ handle, active,
     acceptsClick: shift => measurement.points.length < 2 || shift,
     onPick: (point, shift) => { measurement.add(point, shift); redraw(); }
   });
@@ -38,7 +37,7 @@ export function MeasurementControls({ handle, active, onActiveChange }: {
     return () => { frame.removeEventListener("keydown", keyDown); };
   }, [handle, active, measurement, busy]);
   return <>
-    {measurement.segments.length > 0 && <MeasurementVisuals handle={handle} segments={measurement.segments} style={style} />}
+    {measurement.records.length > 0 && <MeasurementVisuals handle={handle} segments={measurement.visibleSegments} style={style} />}
     {active && <div className="selection-actions measurement-actions" role="group" aria-label="Measurement">
       <span role="status">{busy ? "Picking surface…" : message ?? (measurement.points.length === 0 ? "Click the first surface point" : measurement.points.length === 1 ? "Click the second surface point" : "Shift-click to add another measurement")}</span>
       {measurement.distance !== null && <output aria-label="Measured distance">{formatDistance(measurement.distance)}</output>}

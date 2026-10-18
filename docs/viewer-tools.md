@@ -2,6 +2,8 @@
 
 Mesh and splat viewers supply the same `SelectionController` contract to `SelectionControls`. Rectangle/lasso/brush gestures, modifiers, navigation, shortcuts, palette UI, selection/paint history, measurement state, and annotation editing are shared. `MeshSelection` and `SplatSelection` implement geometry-specific visibility, mask updates, and rendering. Tool components do not branch by asset type to implement operations; the measurement panel only varies its unit explanation.
 
+`ViewerTree` consumes the same small named/visible item contract for selections, measurements, and annotations. Selection masks stay bit-packed; measurement and annotation models own their immutable edit histories. Eye controls affect only derived scene visuals, and renaming does not modify source assets or annotation note content.
+
 | Operation | Reused PlayCanvas API |
 | --- | --- |
 | Orbit, pan, zoom | Bundled `CameraControls` script |
@@ -25,3 +27,5 @@ A spherical brush affects Gaussian centers within a 3D radius around a picked su
 Measurement state and visuals use one implementation for both asset formats and camera modes. White cylinder lines, sphere endpoints, and text are ordinary scene elements; projection and stereo rendering belong to the engine. The browser tool panels and annotation tooltip still require XR presentation and controller bindings when XR sessions are implemented. Those bindings should call the existing shared operations.
 
 The runtime engine remains pinned in `package.json`. Embedded annotation layout has a small adapter around the bundled manager; recheck it when upgrading the engine. No editor framework or additional runtime dependency is imported.
+
+The pinned camera-controls input source does not clear held keyboard modifiers when the browser loses focus. `ViewerCamera` contains the narrow compatibility guard: it releases accumulated Shift/Ctrl state on blur and reconciles it with the next pointer event. Tool gestures consume their own captured pointer events, so they no longer disable and re-enable the complete camera script.

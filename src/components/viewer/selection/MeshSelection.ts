@@ -3,7 +3,7 @@ import {
   TYPE_INT8, TYPE_INT16, TYPE_UINT8, TYPE_UINT16, VertexBuffer,
   type AppBase, type CameraComponent, type Layer, type RenderComponent
 } from "playcanvas";
-import { currentSelectionArea, paintSelection, decodeColor, selectionAreaAt, updateSelectionAreas, type PaintState } from "./selectionColors";
+import { currentSelectionArea, paintSelection, decodeColor, recordSelectionArea, selectionAreaAt, updateSelectionAreas, visiblePaint, visibleSelections, type PaintState } from "./selectionColors";
 import { applySelection, projectSelection } from "./projectSelection";
 import type { SelectionOperation } from "./rectangle";
 import { MeshPicker } from "./MeshPicker";
@@ -101,8 +101,20 @@ export class MeshSelection {
   get colors(): PaintState { return this.paintState; }
   get areas(): readonly SelectionArea[] { return this.selectionAreas; }
   areaAt(part: number, index: number): SelectionArea | null {
-    return selectionAreaAt(this.selectionAreas, part, index) ??
+    return selectionAreaAt(this.selectionAreas.filter(area => area.visible), part, index) ??
       (this.currentArea && snapshotContains(this.currentArea.snapshot, part, index) ? this.currentArea : null);
+  }
+  renameArea(id: number, name: string): SelectionSummary {
+    const value = name.trim();
+    if (value && this.selectionAreas.find(area => area.id === id)?.name !== value) {
+      this.selectionAreas = this.selectionAreas.map(area => area.id === id ? { ...area, name: value } : area);
+    }
+    return this.summary;
+  }
+  setAreaVisible(id: number, visible: boolean): SelectionSummary {
+    if (this.selectionAreas.find(area => area.id === id)?.visible === visible) return this.summary;
+    this.selectionAreas = this.selectionAreas.map(area => area.id === id ? { ...area, visible } : area);
+    this.currentArea = currentSelectionArea(this.state, this.selectionAreas); this.refresh(); return this.summary;
   }
   paint(color: number): SelectionSummary {
     const areas = updateSelectionAreas(this.selectionAreas, this.paintState, this.state.masks, color);
@@ -143,11 +155,15 @@ export class MeshSelection {
         projectSelection(part.centers, part.mask, matrix.data, region, operation, this.isolated);
     }
     if (!this.selected) this.isolated = false;
+    this.selectionAreas = recordSelectionArea(this.selectionAreas, this.state);
     this.currentArea = currentSelectionArea(this.state, this.selectionAreas);
     this.refresh();
     return this.summary;
   }
   clear(): SelectionSummary {
+    if (this.currentArea && !this.currentArea.color) {
+      this.selectionAreas = this.selectionAreas.map(area => area.id === this.currentArea!.id ? { ...area, visible: false } : area);
+    }
     for (const part of this.parts) part.mask.fill(0);
     this.selected = 0; this.isolated = false; this.currentArea = null; this.refresh(); return this.summary;
   }
@@ -157,12 +173,14 @@ export class MeshSelection {
   }
   private refresh() {
     this.picker?.invalidate();
+    const displayColors = visiblePaint(this.paintState, this.selectionAreas);
+    const displaySelections = visibleSelections(this.selectionAreas, this.parts.map(part => part.mask.length));
     for (const [partIndex, part] of this.parts.entries()) {
-      const subsets = new Map<number, number[]>(), colors = this.paintState[partIndex]!;
+      const subsets = new Map<number, number[]>(), colors = displayColors[partIndex]!;
       for (let face = 0; face < part.mask.length; face++) {
-        const selected = !!part.mask[face];
-        if (this.isolated && !selected) continue;
-        const key = (colors[face]! << 1) | Number(selected);
+        if (this.isolated && !part.mask[face]) continue;
+        const highlighted = !!displaySelections[partIndex]![face];
+        const key = (colors[face]! << 1) | Number(highlighted);
         let indices = subsets.get(key);
         if (!indices) { indices = []; subsets.set(key, indices); }
         indices.push(part.indices[face * 3]!, part.indices[face * 3 + 1]!, part.indices[face * 3 + 2]!);

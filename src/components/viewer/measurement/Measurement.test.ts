@@ -43,3 +43,14 @@ it("keeps completed segments when Shift starts another, including undo and redo"
   measurement.clear(); expect(measurement.segments).toHaveLength(0);
   measurement.undo(); expect(measurement.segments).toHaveLength(2);
 });
+
+it("names measurements and independently controls their scene visibility", () => {
+  const measurement = new Measurement();
+  measurement.add(Vec3.ZERO); measurement.add(Vec3.ONE);
+  measurement.add(new Vec3(2, 0, 0), true); measurement.add(new Vec3(3, 0, 0));
+  const first = measurement.records[0]!;
+  measurement.rename(first.id, "Diameter"); measurement.setVisible(first.id, false);
+  expect(measurement.records[0]).toMatchObject({ name: "Diameter", visible: false });
+  expect(measurement.visibleSegments).toEqual([measurement.records[1]!.points]);
+  measurement.undo(); expect(measurement.records[0]!.visible).toBe(true);
+});

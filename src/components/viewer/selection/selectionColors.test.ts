@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { currentSelectionArea, decodeColor, encodeColor, paintSelection, updateSelectionAreas } from "./selectionColors";
+import { currentSelectionArea, decodeColor, encodeColor, paintSelection, recordSelectionArea, updateSelectionAreas, visiblePaint, visibleSelections } from "./selectionColors";
 
 it("paints only selected primitives and keeps previous color buffers immutable", () => {
   const original = [new Uint32Array([0, 1, 0]), new Uint32Array([0, 0])];
@@ -24,4 +24,15 @@ it("keeps an earlier painted area when a later selection overlaps it", () => {
   const areas = updateSelectionAreas([], colors, masks, red);
   expect([...areas[0]!.snapshot.masks[0]!.bits]).toEqual([2]);
   expect([...currentSelectionArea({ masks, isolated: false }, areas)!.snapshot.masks[0]!.bits]).toEqual([1]);
+});
+
+it("records every selection and independently hides its highlight and paint", () => {
+  const red = encodeColor("#ff0000"), state = { masks: [new Uint8Array([255, 0])], isolated: false };
+  const recorded = recordSelectionArea([], state);
+  expect(recorded[0]).toMatchObject({ name: "Selection 1", visible: true, color: 0 });
+  expect([...visibleSelections(recorded, [2])[0]!]).toEqual([255, 0]);
+  const painted = updateSelectionAreas(recorded, [new Uint32Array(2)], state.masks, red);
+  const hidden = painted.map(area => ({ ...area, visible: false }));
+  expect([...visiblePaint([new Uint32Array([red, 0])], hidden)[0]!]).toEqual([0, 0]);
+  expect([...visibleSelections(hidden, [2])[0]!]).toEqual([0, 0]);
 });

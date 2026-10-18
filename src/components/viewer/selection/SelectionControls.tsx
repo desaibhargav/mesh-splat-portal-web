@@ -1,5 +1,8 @@
 import { AnnotationControls } from "../annotations/AnnotationControls";
+import { Annotations } from "../annotations/Annotations";
 import { MeasurementControls } from "../measurement/MeasurementControls";
+import { Measurement } from "../measurement/Measurement";
+import { ViewerTree, type ViewerTreeGroup } from "../ViewerTree";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SelectionGesture } from "./SelectionGesture";
 import type { SelectionHandle, SelectionRegion, SelectionTool } from "./types";
@@ -18,8 +21,8 @@ const tools: { tool: SelectionTool; label: string; path: string }[] = [
   { tool: "annotate", label: "Annotate", path: "M4 4h16v12H9l-5 5zM8 8h8m-8 4h5" }
 ];
 
-export function SelectionControls({ handle, tool, onToolChange, onGestureChange, disabled }: {
-  handle: SelectionHandle | null; tool: SelectionTool; onToolChange(tool: SelectionTool): void; onGestureChange(active: boolean): void; disabled: boolean;
+export function SelectionControls({ handle, tool, onToolChange, disabled }: {
+  handle: SelectionHandle | null; tool: SelectionTool; onToolChange(tool: SelectionTool): void; disabled: boolean;
 }) {
   const [summary, setSummary] = useState(handle?.selection.summary);
   const [color, setColor] = useState("#e53935");
@@ -27,9 +30,13 @@ export function SelectionControls({ handle, tool, onToolChange, onGestureChange,
   const [brushSize, setBrushSize] = useState(32);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [, refreshDocument] = useState(0);
   const generation = useRef(0);
   const toolbar = useRef<HTMLDivElement>(null);
   const history = useMemo(() => handle ? new SelectionHistory(handle.selection) : null, [handle]);
+  const measurement = useMemo(() => handle ? new Measurement() : null, [handle]);
+  const annotations = useMemo(() => handle ? new Annotations() : null, [handle]);
+  const documentChanged = useCallback(() => refreshDocument(value => value + 1), []);
   useEffect(() => {
     setSummary(handle?.selection.summary); setError(null); setBusy(false);
     return () => { generation.current++; };
@@ -64,11 +71,25 @@ export function SelectionControls({ handle, tool, onToolChange, onGestureChange,
       const camera = handle.camera();
       const view = { projectionMatrix: camera.projectionMatrix.clone(), viewMatrix: camera.viewMatrix.clone() };
       const hits = xray ? undefined : await handle.selection.hitTest(handle.app, camera, region);
-      if (generation.current === token) setSummary(history.perform(() => handle.selection.select(region, operation, view, hits)));
+      if (generation.current === token) {
+        setSummary(history.perform(() => handle.selection.select(region, operation, view, hits)));
+        documentChanged();
+      }
     } catch (failure) {
       if (generation.current === token) setError(failure instanceof Error ? failure.message : String(failure));
     } finally { if (generation.current === token) setBusy(false); }
-  }, [handle, history, xray]);
+  }, [handle, history, xray, documentChanged]);
+  const groups: ViewerTreeGroup[] = handle && history && measurement && annotations ? [
+    { id: "selections", label: "Selections", items: handle.selection.areas,
+      onRename: (id, name) => { setSummary(history.perform(() => handle.selection.renameArea(id, name))); documentChanged(); },
+      onVisible: (id, visible) => { setSummary(history.perform(() => handle.selection.setAreaVisible(id, visible))); documentChanged(); } },
+    { id: "measurements", label: "Measurements", items: measurement.records,
+      onRename: (id, name) => { measurement.rename(id, name); documentChanged(); },
+      onVisible: (id, visible) => { measurement.setVisible(id, visible); documentChanged(); } },
+    { id: "annotations", label: "Annotations", items: annotations.records.map(record => ({ id: record.id, name: record.title, visible: record.visible })),
+      onRename: (id, name) => { annotations.rename(id, name); documentChanged(); },
+      onVisible: (id, visible) => { annotations.setVisible(id, visible); documentChanged(); } }
+  ] : [];
   return <>
     <div ref={toolbar} className="selection-toolbar" role="group" aria-label="Selection tools">
       {tools.map(item => <button key={item.tool} title={item.label} aria-label={item.label} disabled={unavailable}
@@ -83,17 +104,18 @@ export function SelectionControls({ handle, tool, onToolChange, onGestureChange,
       <button disabled={unavailable} aria-pressed={xray} title={xray ? "Select through the object" : "Select only visible surfaces"}
         onClick={() => setXray(!xray)}>X-ray {xray ? "on" : "off"}</button>
       <button disabled={unavailable || !summary?.selected} aria-pressed={summary?.isolated ?? false}
-        onClick={() => setSummary(history!.perform(() => handle!.selection.toggleIsolation()))}>{summary?.isolated ? "Show all" : "Isolate"}</button>
+        onClick={() => { setSummary(history!.perform(() => handle!.selection.toggleIsolation())); documentChanged(); }}>{summary?.isolated ? "Show all" : "Isolate"}</button>
       <SelectionColorPicker color={color} onChange={setColor} disabled={unavailable || !summary?.selected}
-        onApply={hex => setSummary(history!.perform(() => handle!.selection.paint(encodeColor(hex))))}
-        onReset={() => setSummary(history!.perform(() => handle!.selection.paint(0)))} />
-      <button disabled={unavailable || !summary?.selected} onClick={() => setSummary(history!.perform(() => handle!.selection.clear()))}>Clear</button>
+        onApply={hex => { setSummary(history!.perform(() => handle!.selection.paint(encodeColor(hex)))); documentChanged(); }}
+        onReset={() => { setSummary(history!.perform(() => handle!.selection.paint(0))); documentChanged(); }} />
+      <button disabled={unavailable || !summary?.selected} onClick={() => { setSummary(history!.perform(() => handle!.selection.clear())); documentChanged(); }}>Clear</button>
     </div>}
     {error && <div className="selection-error" role="alert">{error}</div>}
-    {selecting && !unavailable && <SelectionGesture key={tool} tool={tool} brushSize={brushSize} onActiveChange={onGestureChange} onSelect={onSelect} />}
-    {handle && <AnnotationControls handle={handle} active={tool === "annotate" && !disabled} interactive={tool === "navigate" || tool === "annotate"}
+    {groups.length > 0 && <ViewerTree groups={groups} />}
+    {selecting && !unavailable && <SelectionGesture key={tool} tool={tool} brushSize={brushSize} onSelect={onSelect} />}
+    {handle && annotations && <AnnotationControls handle={handle} annotations={annotations} active={tool === "annotate" && !disabled} interactive={tool === "navigate" || tool === "annotate"}
       hoverRegions={!disabled && tool !== "measure"}
-      onActiveChange={onGestureChange} onRestore={state => setSummary(history!.perform(() => handle.selection.restore(state)))} />}
-    {handle && <MeasurementControls handle={handle} active={tool === "measure" && !disabled} onActiveChange={onGestureChange} />}
+      onChange={documentChanged} onRestore={state => { setSummary(history!.perform(() => handle.selection.restore(state))); documentChanged(); }} />}
+    {handle && measurement && <MeasurementControls handle={handle} measurement={measurement} active={tool === "measure" && !disabled} onChange={documentChanged} />}
   </>;
 }

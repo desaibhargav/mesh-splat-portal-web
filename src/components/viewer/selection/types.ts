@@ -8,7 +8,9 @@ export interface SelectionSummary { selected: number; total: number; isolated: b
 export type SelectionCamera = Pick<CameraComponent, "projectionMatrix" | "viewMatrix">;
 export interface SelectionState { masks: Uint8Array[]; isolated: boolean }
 export interface SelectionSnapshot { masks: { bits: Uint8Array; length: number }[]; isolated: boolean }
-export interface SelectionArea { id: number; snapshot: SelectionSnapshot; color: number }
+export interface SelectionArea {
+  id: number; name: string; visible: boolean; snapshot: SelectionSnapshot; color: number;
+}
 export type VisibilityTest = (id: number, u: number, v: number, w: number, z: number) => boolean;
 export interface SelectionController {
   readonly layers: readonly number[];
@@ -18,6 +20,8 @@ export interface SelectionController {
   readonly colors: PaintState;
   readonly areas: readonly SelectionArea[];
   areaAt(part: number, index: number): SelectionArea | null;
+  renameArea(id: number, name: string): SelectionSummary;
+  setAreaVisible(id: number, visible: boolean): SelectionSummary;
   paint(color: number): SelectionSummary;
   restore(state: SelectionState, colors?: PaintState, areas?: readonly SelectionArea[]): SelectionSummary;
   bounds(): BoundingBox | null;

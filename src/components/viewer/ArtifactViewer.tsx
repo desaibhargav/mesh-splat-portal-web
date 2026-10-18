@@ -14,7 +14,6 @@ export function ArtifactViewer({ artifact }: { artifact: Artifact }) {
   const [fullscreen, setFullscreen] = useState(false);
   const [selection, setSelection] = useState<SelectionHandle | null>(null);
   const [tool, setTool] = useState<SelectionTool>("navigate");
-  const [drawing, setDrawing] = useState(false);
   const selecting = tool !== "navigate";
   function changeTool(next: SelectionTool) {
     setTool(next);
@@ -48,11 +47,11 @@ export function ArtifactViewer({ artifact }: { artifact: Artifact }) {
         <span>{artifact.type === "mesh" ? "Mesh" : "Gaussian splat"}</span>
         <button onClick={() => void toggleFullscreen()}>{fullscreen ? "Exit fullscreen" : "Fullscreen"}</button>
       </div>
-      <SelectionControls handle={selection} tool={tool} onToolChange={changeTool} onGestureChange={setDrawing} disabled={status.loading || Boolean(status.error)} />
+      <SelectionControls handle={selection} tool={tool} onToolChange={changeTool} disabled={status.loading || Boolean(status.error)} />
       <div className="viewer-canvas">
         <Application graphicsDeviceOptions={{ antialias: artifact.type === "mesh" }}>
-          {artifact.type === "mesh" ? <MeshViewer url={artifact.contentUrl} onStatus={setStatus} controlsEnabled={!drawing} onSelectionReady={setSelection} /> :
-            <SplatViewer url={artifact.contentUrl} onStatus={setStatus} controlsEnabled={!drawing} onSelectionReady={setSelection} />}
+          {artifact.type === "mesh" ? <MeshViewer url={artifact.contentUrl} onStatus={setStatus} onSelectionReady={setSelection} /> :
+            <SplatViewer url={artifact.contentUrl} onStatus={setStatus} onSelectionReady={setSelection} />}
         </Application>
       </div>
       {status.loading && <div className="viewer-loading" role="status"><span>Loading 3D asset</span><progress value={status.progress} max={1} /></div>}

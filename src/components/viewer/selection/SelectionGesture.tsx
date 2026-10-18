@@ -2,10 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { rectangleBetween, selectionOperation, type Point, type SelectionOperation } from "./rectangle";
 import type { SelectionRegion, SelectionTool } from "./types";
 
-export function SelectionGesture({ tool, brushSize, onSelect, onActiveChange }: {
+export function SelectionGesture({ tool, brushSize, onSelect }: {
   tool: Exclude<SelectionTool, "navigate" | "measure" | "annotate">; brushSize: number;
   onSelect(region: SelectionRegion, operation: SelectionOperation): void;
-  onActiveChange(active: boolean): void;
 }) {
   const overlay = useRef<HTMLDivElement>(null);
   const [points, setPoints] = useState<Point[]>([]);
@@ -23,7 +22,7 @@ export function SelectionGesture({ tool, brushSize, onSelect, onActiveChange }: 
     }
     function reset() {
       const id = drag?.id;
-      drag = null; setPoints([]); onActiveChange(false);
+      drag = null; setPoints([]);
       if (id !== undefined && canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id);
     }
     function down(event: PointerEvent) {
@@ -34,7 +33,7 @@ export function SelectionGesture({ tool, brushSize, onSelect, onActiveChange }: 
       const bounds = canvas.getBoundingClientRect();
       setSize({ width: bounds.width, height: bounds.height });
       drag = { id: event.pointerId, points: [point(event)] };
-      setPoints([...drag.points]); onActiveChange(true);
+      setPoints([...drag.points]);
     }
     function move(event: PointerEvent) {
       const next = point(event); setCursor(next);
@@ -84,7 +83,7 @@ export function SelectionGesture({ tool, brushSize, onSelect, onActiveChange }: 
       reset();
       canvas.style.cursor = previousCursor; canvas.style.touchAction = previousTouchAction;
     };
-  }, [tool, brushSize, onSelect, onActiveChange]);
+  }, [tool, brushSize, onSelect]);
   const area = points.length ? rectangleBetween(points[0]!, points.at(-1)!) : null;
   return <div ref={overlay} className="selection-overlay" aria-label={`${tool} selection area`}>
     <svg className="selection-drawing" viewBox={`0 0 ${size.width} ${size.height}`} preserveAspectRatio="none">

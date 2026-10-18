@@ -59,7 +59,8 @@ it("ignores no-ops and replaces the redo branch after a new edit", () => {
 
 it("restores persistent colored areas with paint history", () => {
   const { selection, history } = setup();
-  const area = { id: 1, color: 2, snapshot: packSelection({ masks: [new Uint8Array([255]), new Uint8Array(1)], isolated: false }) };
+  const area = { id: 1, name: "Selection 1", visible: true, color: 2,
+    snapshot: packSelection({ masks: [new Uint8Array([255]), new Uint8Array(1)], isolated: false }) };
   history.perform(() => { selection.areas = [area]; return selection.summary; });
   expect(selection.areas).toEqual([area]);
   history.undo(); expect(selection.areas).toEqual([]);

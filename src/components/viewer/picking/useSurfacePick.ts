@@ -4,8 +4,8 @@ import type { SelectionHandle } from "../selection/types";
 import { SurfacePicker } from "./SurfacePicker";
 
 // Shared click interaction for tools that place points on the visible model.
-export function useSurfacePick({ handle, active, onActiveChange, acceptsClick, onPick }: {
-  handle: SelectionHandle; active: boolean; onActiveChange(active: boolean): void;
+export function useSurfacePick({ handle, active, acceptsClick, onPick }: {
+  handle: SelectionHandle; active: boolean;
   acceptsClick(shift: boolean): boolean; onPick(point: Vec3, shift: boolean): void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -20,7 +20,7 @@ export function useSurfacePick({ handle, active, onActiveChange, acceptsClick, o
     let down: { id: number; x: number; y: number; u: number; v: number } | null = null;
     let pending = false, cancelled = false;
     function reset() {
-      const id = down?.id; down = null; onActiveChange(false);
+      const id = down?.id; down = null;
       if (id !== undefined && canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id);
     }
     function pointerDown(event: PointerEvent) {
@@ -29,7 +29,7 @@ export function useSurfacePick({ handle, active, onActiveChange, acceptsClick, o
       const bounds = canvas.getBoundingClientRect();
       down = { id: event.pointerId, x: event.clientX, y: event.clientY,
         u: (event.clientX - bounds.left) / bounds.width, v: (event.clientY - bounds.top) / bounds.height };
-      canvas.setPointerCapture(event.pointerId); onActiveChange(true);
+      canvas.setPointerCapture(event.pointerId);
     }
     function move(event: PointerEvent) {
       if (down?.id === event.pointerId) { event.preventDefault(); event.stopImmediatePropagation(); }
@@ -64,6 +64,6 @@ export function useSurfacePick({ handle, active, onActiveChange, acceptsClick, o
       canvas.removeEventListener("lostpointercapture", reset);
       reset(); canvas.style.cursor = cursor; canvas.style.touchAction = touchAction;
     };
-  }, [handle, active, onActiveChange]);
+  }, [handle, active]);
   return { busy, message, clearMessage: () => setMessage(null) };
 }

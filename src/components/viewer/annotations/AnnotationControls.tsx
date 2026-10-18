@@ -1,22 +1,21 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useSurfacePick } from "../picking/useSurfacePick";
 import { unpackSelection } from "../selection/SelectionHistory";
 import { decodeColor } from "../selection/selectionColors";
 import { focusSelection } from "../selection/focusSelection";
 import type { SelectionHandle, SelectionState } from "../selection/types";
 import { AnnotationLayer } from "./AnnotationLayer";
-import { Annotations, type AnnotationDraft, type AnnotationRecord } from "./Annotations";
+import { type Annotations, type AnnotationDraft, type AnnotationRecord } from "./Annotations";
 import { useSelectionAreaPick } from "./useSelectionAreaPick";
 
 const newDraft = (): AnnotationDraft => ({ title: "", text: "", position: null, region: null, color: null });
 
 type AnnotationInteraction = "marker" | "selection" | null;
 
-export function AnnotationControls({ handle, active, interactive, hoverRegions, onActiveChange, onRestore }: {
-  handle: SelectionHandle; active: boolean; interactive: boolean; hoverRegions: boolean; onActiveChange(active: boolean): void;
-  onRestore(state: SelectionState): void;
+export function AnnotationControls({ handle, annotations, active, interactive, hoverRegions, onChange, onRestore }: {
+  handle: SelectionHandle; annotations: Annotations; active: boolean; interactive: boolean; hoverRegions: boolean;
+  onChange(): void; onRestore(state: SelectionState): void;
 }) {
-  const annotations = useMemo(() => new Annotations(), [handle]);
   const [, refresh] = useState(0);
   const [draft, setDraft] = useState<AnnotationDraft | null>(null);
   const [interaction, setInteraction] = useState<AnnotationInteraction>(null);
@@ -41,14 +40,14 @@ export function AnnotationControls({ handle, active, interactive, hoverRegions, 
   function removeAnnotation(id: number) {
     annotations.remove(id);
     if (draft?.id === id) cancelAnnotation();
-    redraw();
+    redraw(); onChange();
   }
   function saveAnnotation(event: FormEvent) {
     event.preventDefault();
     if (!draft?.position || interaction || busy) return;
     annotations.save(draft);
     cancelAnnotation();
-    redraw();
+    redraw(); onChange();
   }
   function chooseSelection() {
     if (!draft) return;
@@ -60,7 +59,7 @@ export function AnnotationControls({ handle, active, interactive, hoverRegions, 
     if (active) createAnnotation();
     else cancelAnnotation();
   }, [handle, active]);
-  const { busy, message } = useSurfacePick({ handle, active: active && interaction === "marker", onActiveChange,
+  const { busy, message } = useSurfacePick({ handle, active: active && interaction === "marker",
     acceptsClick: () => !!draft,
     onPick: position => { setDraft(current => current && { ...current, position }); setInteraction(null); }
   });
@@ -89,7 +88,7 @@ export function AnnotationControls({ handle, active, interactive, hoverRegions, 
       if (!undo && !focus) return;
       key.preventDefault(); key.stopPropagation();
       if (busy) return;
-      if (undo) { if (key.shiftKey) annotations.redo(); else annotations.undo(); cancelAnnotation(); redraw(); }
+      if (undo) { if (key.shiftKey) annotations.redo(); else annotations.undo(); cancelAnnotation(); redraw(); onChange(); }
       else {
         const bounds = handle.selection.bounds();
         if (bounds) focusSelection(bounds, handle.camera());
@@ -105,7 +104,7 @@ export function AnnotationControls({ handle, active, interactive, hoverRegions, 
   );
 
   return <>
-    {annotations.records.length > 0 && <AnnotationLayer handle={handle} records={annotations.records}
+    {annotations.records.some(record => record.visible) && <AnnotationLayer handle={handle} records={annotations.records.filter(record => record.visible)}
       interactive={interactive && !interaction} hoverRegions={hoverRegions && !interaction} />}
     {active && <div className="annotation-panels">
       {annotations.records.length > 0 && <div className="selection-actions annotation-list" role="group" aria-label="Saved annotations">

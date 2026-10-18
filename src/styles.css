@@ -91,6 +91,23 @@ a { color: #536d7d; }
 .selection-palette button { min-height: 25px; padding: 0; }
 .selection-palette button:focus-visible { outline: 2px solid white; outline-offset: 1px; }
 .selection-error { position: absolute; bottom: 43px; left: 12px; right: 160px; z-index: 3; color: #fff; background: #612929; padding: 8px; }
+.viewer-tree { position: absolute; z-index: 3; left: 0; top: 50%; transform: translateY(-50%); display: flex; align-items: flex-start; max-height: calc(100% - var(--selection-toolbar-height) - 100px); color: #ddd; font-size: .72rem; }
+.viewer-tree button { border: 1px solid #555; color: inherit; background: #292929ed; cursor: pointer; }
+.viewer-tree-toggle { display: flex; align-items: center; gap: 6px; min-height: 36px; padding: 7px; border-radius: 0 4px 4px 0; }
+.viewer-tree-toggle svg, .viewer-tree-eye svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+.viewer-tree-content { width: min(270px, calc(100vw - 70px)); max-height: inherit; margin-left: 6px; overflow: auto; border: 1px solid #555; border-radius: 4px; background: #252525ed; }
+.viewer-tree details + details { border-top: 1px solid #4c4c4c; }
+.viewer-tree summary { display: flex; justify-content: space-between; padding: 8px 10px; cursor: pointer; font-weight: bold; }
+.viewer-tree summary span { color: #aaa; font-weight: normal; }
+.viewer-tree ul { margin: 0; padding: 0 6px 7px; list-style: none; }
+.viewer-tree li { display: flex; align-items: center; min-width: 0; gap: 4px; }
+.viewer-tree li + li { margin-top: 3px; }
+.viewer-tree li input { flex: 1; min-width: 0; width: 100%; padding: 4px 5px; border: 1px solid var(--gold); color: #fff; background: #181818; font: inherit; }
+.viewer-tree-eye, .viewer-tree-rename { flex: none; padding: 4px; border-color: transparent !important; background: transparent !important; }
+.viewer-tree-eye[aria-pressed="false"] { opacity: .42; }
+.viewer-tree-name { flex: 1; min-width: 0; overflow: hidden; padding: 5px; border-color: transparent !important; background: transparent !important; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.viewer-tree-rename { opacity: .7; }
+.viewer-tree p { margin: 0; padding: 0 12px 9px; color: #999; }
 
 .metadata-panel { margin-top: 1.5rem; padding: 1.5rem; border: 1px solid var(--line); background: #fff; }
 .metadata-panel h2 { margin: 0 0 .6rem; font-weight: normal; }

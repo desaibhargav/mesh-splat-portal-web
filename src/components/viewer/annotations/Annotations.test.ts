@@ -31,3 +31,12 @@ it("undoes and redoes annotation creation, edits, and deletion without reusing I
   expect(() => annotations.save({ ...draft, title: " " })).toThrow("Enter an annotation title.");
   expect(() => annotations.save({ ...draft, position: null })).toThrow("Place the annotation marker");
 });
+
+it("renames annotations and controls marker visibility without changing their content", () => {
+  const annotations = new Annotations();
+  annotations.save({ title: "Original", text: "Note", position: new Vec3(), region: null });
+  const id = annotations.records[0]!.id;
+  annotations.rename(id, "Feature"); annotations.setVisible(id, false);
+  expect(annotations.records[0]).toMatchObject({ title: "Feature", text: "Note", visible: false });
+  annotations.undo(); expect(annotations.records[0]!.visible).toBe(true);
+});
