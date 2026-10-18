@@ -1,5 +1,4 @@
 import { AnnotationControls } from "../annotations/AnnotationControls";
-import type { ArtifactType } from "../../../api/artifacts";
 import { MeasurementControls } from "../measurement/MeasurementControls";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SelectionGesture } from "./SelectionGesture";
@@ -19,8 +18,8 @@ const tools: { tool: SelectionTool; label: string; path: string }[] = [
   { tool: "annotate", label: "Annotate", path: "M4 4h16v12H9l-5 5zM8 8h8m-8 4h5" }
 ];
 
-export function SelectionControls({ handle, tool, onToolChange, onGestureChange, disabled, assetType }: {
-  handle: SelectionHandle | null; tool: SelectionTool; onToolChange(tool: SelectionTool): void; onGestureChange(active: boolean): void; disabled: boolean; assetType: ArtifactType;
+export function SelectionControls({ handle, tool, onToolChange, onGestureChange, disabled }: {
+  handle: SelectionHandle | null; tool: SelectionTool; onToolChange(tool: SelectionTool): void; onGestureChange(active: boolean): void; disabled: boolean;
 }) {
   const [summary, setSummary] = useState(handle?.selection.summary);
   const [color, setColor] = useState("#e53935");
@@ -93,7 +92,8 @@ export function SelectionControls({ handle, tool, onToolChange, onGestureChange,
     {error && <div className="selection-error" role="alert">{error}</div>}
     {selecting && !unavailable && <SelectionGesture key={tool} tool={tool} brushSize={brushSize} onActiveChange={onGestureChange} onSelect={onSelect} />}
     {handle && <AnnotationControls handle={handle} active={tool === "annotate" && !disabled} interactive={tool === "navigate" || tool === "annotate"}
+      hoverRegions={!disabled && tool !== "measure"}
       onActiveChange={onGestureChange} onRestore={state => setSummary(history!.perform(() => handle.selection.restore(state)))} />}
-    {handle && <MeasurementControls handle={handle} active={tool === "measure" && !disabled} assetType={assetType} onActiveChange={onGestureChange} />}
+    {handle && <MeasurementControls handle={handle} active={tool === "measure" && !disabled} onActiveChange={onGestureChange} />}
   </>;
 }

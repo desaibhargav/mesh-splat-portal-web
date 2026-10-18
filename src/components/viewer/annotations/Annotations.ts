@@ -1,5 +1,5 @@
 import { Vec3 } from "playcanvas";
-import type { SelectionSnapshot } from "../selection/SelectionHistory";
+import type { SelectionSnapshot } from "../selection/types";
 
 export interface AnnotationRecord {
   id: number; title: string; text: string; position: Vec3; region: SelectionSnapshot | null; color?: string | null;

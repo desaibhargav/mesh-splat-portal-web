@@ -3,12 +3,13 @@ import {
   TYPE_INT8, TYPE_INT16, TYPE_UINT8, TYPE_UINT16, VertexBuffer,
   type AppBase, type CameraComponent, type Layer, type RenderComponent
 } from "playcanvas";
-import { paintSelection, decodeColor, type PaintState } from "./selectionColors";
+import { currentSelectionArea, paintSelection, decodeColor, selectionAreaAt, updateSelectionAreas, type PaintState } from "./selectionColors";
 import { applySelection, projectSelection } from "./projectSelection";
 import type { SelectionOperation } from "./rectangle";
 import { MeshPicker } from "./MeshPicker";
 import { SelectionBounds } from "./selectionBounds";
-import type { SelectionCamera, SelectionRegion, SelectionState, SelectionSummary } from "./types";
+import { snapshotContains } from "./selectionSnapshot";
+import type { SelectionArea, SelectionCamera, SelectionRegion, SelectionState, SelectionSummary } from "./types";
 
 interface Part {
   source: MeshInstance; positions: Float32Array; indices: number[]; centers: Float32Array; mask: Uint8Array;
@@ -46,6 +47,8 @@ export class MeshSelection {
   private disposed = false;
   private picker?: MeshPicker;
   private paintState: PaintState = [];
+  private selectionAreas: readonly SelectionArea[] = [];
+  private currentArea: SelectionArea | null = null;
 
   constructor(entity: Entity, app: AppBase, private readonly tint: Color) {
     const device = app.graphicsDevice;
@@ -96,19 +99,30 @@ export class MeshSelection {
   }
   get state(): SelectionState { return { masks: this.parts.map(part => part.mask), isolated: this.isolated }; }
   get colors(): PaintState { return this.paintState; }
+  get areas(): readonly SelectionArea[] { return this.selectionAreas; }
+  areaAt(part: number, index: number): SelectionArea | null {
+    return selectionAreaAt(this.selectionAreas, part, index) ??
+      (this.currentArea && snapshotContains(this.currentArea.snapshot, part, index) ? this.currentArea : null);
+  }
   paint(color: number): SelectionSummary {
+    const areas = updateSelectionAreas(this.selectionAreas, this.paintState, this.state.masks, color);
     const next = paintSelection(this.paintState, this.state.masks, color);
-    if (next !== this.paintState) { this.paintState = next; this.refresh(); }
+    if (next !== this.paintState) {
+      this.paintState = next; this.selectionAreas = areas;
+      this.currentArea = currentSelectionArea(this.state, areas); this.refresh();
+    }
     return this.summary;
   }
-  restore(state: SelectionState, colors: PaintState = this.paintState): SelectionSummary {
-    this.paintState = colors;
+  restore(state: SelectionState, colors: PaintState = this.paintState, areas: readonly SelectionArea[] = this.selectionAreas): SelectionSummary {
+    this.paintState = colors; this.selectionAreas = areas;
     this.selected = 0;
     this.parts.forEach((part, i) => {
       part.mask.set(state.masks[i]!);
       this.selected += part.mask.reduce((sum, value) => sum + (value ? 1 : 0), 0);
     });
-    this.isolated = state.isolated; this.refresh(); return this.summary;
+    this.isolated = state.isolated;
+    this.currentArea = currentSelectionArea(this.state, this.selectionAreas);
+    this.refresh(); return this.summary;
   }
   bounds() {
     const bounds = new SelectionBounds();
@@ -129,12 +143,13 @@ export class MeshSelection {
         projectSelection(part.centers, part.mask, matrix.data, region, operation, this.isolated);
     }
     if (!this.selected) this.isolated = false;
+    this.currentArea = currentSelectionArea(this.state, this.selectionAreas);
     this.refresh();
     return this.summary;
   }
   clear(): SelectionSummary {
     for (const part of this.parts) part.mask.fill(0);
-    this.selected = 0; this.isolated = false; this.refresh(); return this.summary;
+    this.selected = 0; this.isolated = false; this.currentArea = null; this.refresh(); return this.summary;
   }
   toggleIsolation(): SelectionSummary {
     this.isolated = this.selected > 0 && !this.isolated;
@@ -167,7 +182,7 @@ export class MeshSelection {
             material = material.clone();
             const shade = color ? new Color().fromString(decodeColor(color)).linear() : this.tint;
             if (color) material.diffuse.lerp(material.diffuse, shade, this.tint.a);
-            if (selected) { material.emissive.copy(shade); material.emissiveIntensity = this.tint.a; }
+            if (selected && !color) { material.emissive.copy(shade); material.emissiveIntensity = this.tint.a; }
             material.update();
           }
           const instance = new MeshInstance(new SubsetMesh(part.source.mesh, part.vertices), material, part.source.node);

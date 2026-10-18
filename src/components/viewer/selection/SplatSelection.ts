@@ -2,14 +2,15 @@ import {
   Color, FILTER_NEAREST, Mat4, PIXELFORMAT_R8, PIXELFORMAT_RGBA8, Texture, WORKBUFFER_UPDATE_ONCE,
   type AppBase, type CameraComponent, type GSplatComponent
 } from "playcanvas";
-import { paintSelection, decodeColor, type PaintState } from "./selectionColors";
+import { currentSelectionArea, paintSelection, decodeColor, selectionAreaAt, updateSelectionAreas, type PaintState } from "./selectionColors";
 import type { SelectionOperation } from "./rectangle";
 import { applySelection, projectSelection } from "./projectSelection";
 import { captureDepth, depthTest } from "./SelectionDepth";
-import type { SelectionCamera, SelectionRegion, SelectionState, SelectionSummary } from "./types";
+import type { SelectionArea, SelectionCamera, SelectionRegion, SelectionState, SelectionSummary } from "./types";
 
 import { SplatPicker, configureSplatPicking } from "./SplatPicker";
 import { SelectionBounds } from "./selectionBounds";
+import { snapshotContains } from "./selectionSnapshot";
 
 const modifier = {
   glsl: `
@@ -20,14 +21,12 @@ uniform float portalIsolate;
 void modifySplatCenter(inout vec3 center) {}
 void modifySplatRotationScale(vec3 originalCenter, vec3 modifiedCenter, inout vec4 rotation, inout vec3 scale) {}
 void modifySplatColor(vec3 center, inout vec4 color) {
-    vec3 selectionTint = portalSelectionTint.rgb;
     vec4 paint = texelFetch(portalPaint, splat.uv, 0);
     if (paint.a > 0.0) {
         color.rgb = mix(color.rgb, paint.rgb, paint.a);
-        selectionTint = paint.rgb;
     }
     float selected = texelFetch(portalSelection, splat.uv, 0).r;
-    color.rgb = mix(color.rgb, selectionTint, selected * portalSelectionTint.a);
+    color.rgb = mix(color.rgb, portalSelectionTint.rgb, selected * portalSelectionTint.a * step(paint.a, 0.0));
     color.a *= mix(1.0, selected, portalIsolate);
 }`,
   wgsl: `
@@ -38,14 +37,12 @@ uniform portalIsolate: f32;
 fn modifySplatCenter(center: ptr<function, vec3f>) {}
 fn modifySplatRotationScale(originalCenter: vec3f, modifiedCenter: vec3f, rotation: ptr<function, vec4f>, scale: ptr<function, vec3f>) {}
 fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
-    var selectionTint = uniform.portalSelectionTint.rgb;
     let paint = textureLoad(portalPaint, vec2i(splat.uv), 0);
     if (paint.a > 0.0) {
         (*color) = vec4f(mix((*color).rgb, paint.rgb, paint.a), (*color).a);
-        selectionTint = paint.rgb;
     }
     let selected = textureLoad(portalSelection, vec2i(splat.uv), 0).r;
-    (*color) = vec4f(mix((*color).rgb, selectionTint, selected * uniform.portalSelectionTint.a),
+    (*color) = vec4f(mix((*color).rgb, uniform.portalSelectionTint.rgb, selected * uniform.portalSelectionTint.a * step(paint.a, 0.0)),
         (*color).a * mix(1.0, selected, uniform.portalIsolate));
 }`
 };
@@ -62,6 +59,8 @@ export class SplatSelection {
   private readonly releasePicking: () => void;
   private selected = 0;
   private isolated = false;
+  private selectionAreas: readonly SelectionArea[] = [];
+  private currentArea: SelectionArea | null = null;
 
   constructor(private readonly component: GSplatComponent, private readonly tint: Color) {
     const resource = component.resource;
@@ -111,6 +110,7 @@ export class SplatSelection {
     this.selected = hits ? applySelection(this.mask, hits[0]!, operation, this.isolated) :
       projectSelection(this.centers, this.mask, matrix.data, region, operation, this.isolated);
     if (!this.selected) this.isolated = false;
+    this.currentArea = currentSelectionArea(this.state, this.selectionAreas);
     this.update();
     return this.summary;
   }
@@ -119,6 +119,7 @@ export class SplatSelection {
     this.mask.fill(0);
     this.selected = 0;
     this.isolated = false;
+    this.currentArea = null;
     this.update();
     return this.summary;
   }
@@ -132,16 +133,27 @@ export class SplatSelection {
   get layers(): readonly number[] { return this.component.layers; }
   get state(): SelectionState { return { masks: [this.mask], isolated: this.isolated }; }
   get colors(): PaintState { return this.paintState; }
+  get areas(): readonly SelectionArea[] { return this.selectionAreas; }
+  areaAt(part: number, index: number): SelectionArea | null {
+    return selectionAreaAt(this.selectionAreas, part, index) ??
+      (this.currentArea && snapshotContains(this.currentArea.snapshot, part, index) ? this.currentArea : null);
+  }
   paint(color: number): SelectionSummary {
+    const areas = updateSelectionAreas(this.selectionAreas, this.paintState, [this.mask], color);
     const next = paintSelection(this.paintState, [this.mask], color);
-    if (next !== this.paintState) { this.paintState = next; this.update(); }
+    if (next !== this.paintState) {
+      this.paintState = next; this.selectionAreas = areas;
+      this.currentArea = currentSelectionArea(this.state, areas); this.update();
+    }
     return this.summary;
   }
-  restore(state: SelectionState, colors: PaintState = this.paintState): SelectionSummary {
-    this.paintState = colors;
+  restore(state: SelectionState, colors: PaintState = this.paintState, areas: readonly SelectionArea[] = this.selectionAreas): SelectionSummary {
+    this.paintState = colors; this.selectionAreas = areas;
     this.mask.set(state.masks[0]!);
     this.selected = this.mask.reduce((sum, value) => sum + (value ? 1 : 0), 0);
-    this.isolated = state.isolated; this.update(); return this.summary;
+    this.isolated = state.isolated;
+    this.currentArea = currentSelectionArea(this.state, this.selectionAreas);
+    this.update(); return this.summary;
   }
   bounds() {
     const bounds = new SelectionBounds(), transform = this.component.entity.getWorldTransform();

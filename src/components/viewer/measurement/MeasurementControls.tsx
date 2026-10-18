@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ArtifactType } from "../../../api/artifacts";
 import type { SelectionHandle } from "../selection/types";
 import { focusSelection } from "../selection/focusSelection";
 import { formatDistance, Measurement } from "./Measurement";
 import { MeasurementVisuals } from "./MeasurementVisuals";
+import { defaultMeasurementStyle } from "./MeasurementRenderer";
 import { useSurfacePick } from "../picking/useSurfacePick";
 
-export function MeasurementControls({ handle, active, assetType, onActiveChange }: {
-  handle: SelectionHandle; active: boolean; assetType: ArtifactType; onActiveChange(active: boolean): void;
+export function MeasurementControls({ handle, active, onActiveChange }: {
+  handle: SelectionHandle; active: boolean; onActiveChange(active: boolean): void;
 }) {
   const measurement = useMemo(() => new Measurement(), [handle]);
+  const [style, setStyle] = useState(defaultMeasurementStyle);
   const [, refresh] = useState(0);
   const redraw = () => refresh(value => value + 1);
   const { busy, message, clearMessage } = useSurfacePick({ handle, active, onActiveChange,
@@ -37,11 +38,14 @@ export function MeasurementControls({ handle, active, assetType, onActiveChange 
     return () => { frame.removeEventListener("keydown", keyDown); };
   }, [handle, active, measurement, busy]);
   return <>
-    {measurement.segments.length > 0 && <MeasurementVisuals handle={handle} segments={measurement.segments} />}
+    {measurement.segments.length > 0 && <MeasurementVisuals handle={handle} segments={measurement.segments} style={style} />}
     {active && <div className="selection-actions measurement-actions" role="group" aria-label="Measurement">
       <span role="status">{busy ? "Picking surface…" : message ?? (measurement.points.length === 0 ? "Click the first surface point" : measurement.points.length === 1 ? "Click the second surface point" : "Shift-click to add another measurement")}</span>
-      {measurement.distance !== null && <output aria-label="Measured distance">{formatDistance(measurement.distance)} model units</output>}
-      <small>{assetType === "mesh" ? "GLB convention: meters. Physical scale unverified." : "This splat has no declared physical units."}</small>
+      {measurement.distance !== null && <output aria-label="Measured distance">{formatDistance(measurement.distance)}</output>}
+      <label>Line width<input type="range" min="1" max="8" step="1" value={style.lineWidth}
+        onChange={event => setStyle(current => ({ ...current, lineWidth: Number(event.target.value) }))} /></label>
+      <label>Font size<input type="range" min="10" max="28" step="1" value={style.fontSize}
+        onChange={event => setStyle(current => ({ ...current, fontSize: Number(event.target.value) }))} /></label>
       <button disabled={busy || measurement.points.length === 0} onClick={() => { measurement.clear(); clearMessage(); redraw(); }}>Clear measurements</button>
     </div>}
   </>;

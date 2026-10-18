@@ -33,10 +33,10 @@ class ViewerAnnotationManager extends AnnotationManager {
   }
 }
 
-export function AnnotationLayer({ handle, records, interactive }: {
-  handle: SelectionHandle; records: readonly AnnotationRecord[]; interactive: boolean;
+export function AnnotationLayer({ handle, records, interactive, hoverRegions }: {
+  handle: SelectionHandle; records: readonly AnnotationRecord[]; interactive: boolean; hoverRegions: boolean;
 }) {
-  const { hovered, error } = useAnnotationHover(handle, records, interactive);
+  const { hovered, error } = useAnnotationHover(handle, records, hoverRegions);
   const manager = useRef<ViewerAnnotationManager | null>(null);
   const container = useRef<HTMLDivElement>(null);
   const entities = useRef(new Map<number, Entity>());

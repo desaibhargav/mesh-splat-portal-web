@@ -7,6 +7,8 @@ export interface SelectionRegion { pixels: Uint8ClampedArray; width: number; hei
 export interface SelectionSummary { selected: number; total: number; isolated: boolean }
 export type SelectionCamera = Pick<CameraComponent, "projectionMatrix" | "viewMatrix">;
 export interface SelectionState { masks: Uint8Array[]; isolated: boolean }
+export interface SelectionSnapshot { masks: { bits: Uint8Array; length: number }[]; isolated: boolean }
+export interface SelectionArea { id: number; snapshot: SelectionSnapshot; color: number }
 export type VisibilityTest = (id: number, u: number, v: number, w: number, z: number) => boolean;
 export interface SelectionController {
   readonly layers: readonly number[];
@@ -14,8 +16,10 @@ export interface SelectionController {
   hitTest(app: AppBase, camera: CameraComponent, region: SelectionRegion): Promise<Uint8Array[]>;
   readonly state: SelectionState;
   readonly colors: PaintState;
+  readonly areas: readonly SelectionArea[];
+  areaAt(part: number, index: number): SelectionArea | null;
   paint(color: number): SelectionSummary;
-  restore(state: SelectionState, colors?: PaintState): SelectionSummary;
+  restore(state: SelectionState, colors?: PaintState, areas?: readonly SelectionArea[]): SelectionSummary;
   bounds(): BoundingBox | null;
   readonly summary: SelectionSummary;
   select(region: SelectionRegion, operation: SelectionOperation, camera: SelectionCamera, hits?: Uint8Array[]): SelectionSummary;

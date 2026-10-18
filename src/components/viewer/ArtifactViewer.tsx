@@ -48,7 +48,7 @@ export function ArtifactViewer({ artifact }: { artifact: Artifact }) {
         <span>{artifact.type === "mesh" ? "Mesh" : "Gaussian splat"}</span>
         <button onClick={() => void toggleFullscreen()}>{fullscreen ? "Exit fullscreen" : "Fullscreen"}</button>
       </div>
-      <SelectionControls handle={selection} tool={tool} onToolChange={changeTool} onGestureChange={setDrawing} assetType={artifact.type} disabled={status.loading || Boolean(status.error)} />
+      <SelectionControls handle={selection} tool={tool} onToolChange={changeTool} onGestureChange={setDrawing} disabled={status.loading || Boolean(status.error)} />
       <div className="viewer-canvas">
         <Application graphicsDeviceOptions={{ antialias: artifact.type === "mesh" }}>
           {artifact.type === "mesh" ? <MeshViewer url={artifact.contentUrl} onStatus={setStatus} controlsEnabled={!drawing} onSelectionReady={setSelection} /> :

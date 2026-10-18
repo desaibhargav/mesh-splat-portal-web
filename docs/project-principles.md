@@ -36,7 +36,7 @@ These are conventions to preserve, not a claim that every future tool already im
 
 ## Heritage accuracy and security
 
-Use neutral studio lighting for meshes and preserve splats' captured appearance. Do not infer physical scale from object size or assume a scan is calibrated merely because its format defines units. Label unverified distances as model units; Gaussian surface picks are estimates, not survey measurements. Any future calibration must be explicit per asset.
+Use neutral studio lighting for meshes and preserve splats' captured appearance. Do not infer physical scale from object size or assume a scan is calibrated merely because its format defines units. Display unverified distances without a unit; append mm, m, or another unit only when the asset has explicit calibration. Gaussian surface picks are estimates, not survey measurements.
 
 Preservation masters and private processing manifests remain outside public delivery. Serve only authorized derivatives and thumbnails through the intended gateway. Security must hold even with a public repository and known directory layout; hiding paths or omitting a download button does not protect browser-delivered data. Keep credentials, private records, and environment secrets out of commits and saved-view exports.
 

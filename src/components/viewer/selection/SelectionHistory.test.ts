@@ -1,14 +1,27 @@
 import { expect, it } from "vitest";
 import { SelectionHistory } from "./SelectionHistory";
-import type { SelectionState } from "./types";
+import type { SelectionArea, SelectionState } from "./types";
 import { paintSelection } from "./selectionColors";
+import { packSelection } from "./selectionSnapshot";
+
+interface MockSelection {
+  colors: readonly Uint32Array[]; areas: readonly SelectionArea[]; state: SelectionState;
+  readonly summary: { selected: number; total: number; isolated: boolean };
+  restore(state: SelectionState, colors?: readonly Uint32Array[], areas?: readonly SelectionArea[]): MockSelection["summary"];
+}
 
 function setup() {
-  const selection = {
-    colors: [new Uint32Array(11), new Uint32Array(3)] as readonly Uint32Array[],
-    state: { masks: [new Uint8Array(11), new Uint8Array(3)], isolated: false } as SelectionState,
-    get summary() { return { selected: this.state.masks.reduce((sum, mask) => sum + mask.filter(Boolean).length, 0), total: 14, isolated: this.state.isolated }; },
-    restore(state: SelectionState, colors?: readonly Uint32Array[]) { if (colors) this.colors = colors; this.state = state; return this.summary; }
+  let colors = [new Uint32Array(11), new Uint32Array(3)] as readonly Uint32Array[];
+  let areas: readonly SelectionArea[] = [];
+  let state = { masks: [new Uint8Array(11), new Uint8Array(3)], isolated: false } as SelectionState;
+  const selection: MockSelection = {
+    get colors() { return colors; }, set colors(value) { colors = value; },
+    get areas() { return areas; }, set areas(value) { areas = value; },
+    get state() { return state; }, set state(value) { state = value; },
+    get summary() { return { selected: state.masks.reduce((sum, mask) => sum + mask.filter(Boolean).length, 0), total: 14, isolated: state.isolated }; },
+    restore(nextState: SelectionState, nextColors = colors, nextAreas = areas) {
+      colors = nextColors; areas = nextAreas; state = nextState; return this.summary;
+    }
   };
   return { selection, history: new SelectionHistory(selection) };
 }
@@ -42,4 +55,13 @@ it("ignores no-ops and replaces the redo branch after a new edit", () => {
   history.perform(() => { selection.state.masks[0]![1] = 255; return selection.summary; });
   expect(history.canRedo).toBe(false); history.undo(); history.redo();
   expect([...selection.state.masks[0]!]).toEqual([0, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+});
+
+it("restores persistent colored areas with paint history", () => {
+  const { selection, history } = setup();
+  const area = { id: 1, color: 2, snapshot: packSelection({ masks: [new Uint8Array([255]), new Uint8Array(1)], isolated: false }) };
+  history.perform(() => { selection.areas = [area]; return selection.summary; });
+  expect(selection.areas).toEqual([area]);
+  history.undo(); expect(selection.areas).toEqual([]);
+  history.redo(); expect(selection.areas).toEqual([area]);
 });
