@@ -1,6 +1,7 @@
 import { useEffect, useEffectEvent, useState } from "react";
 import type { Vec3 } from "playcanvas";
 import type { SelectionHandle } from "../selection/types";
+import { observePointerClick } from "./pointerClick";
 import { SurfacePicker } from "./SurfacePicker";
 
 // Shared click interaction for tools that place points on the visible model.
@@ -20,41 +21,31 @@ export function useSurfacePick({ handle, active, acceptsClick, validateClick, on
     const canvas = handle.app.graphicsDevice.canvas as HTMLCanvasElement;
     const cursor = canvas.style.cursor, touchAction = canvas.style.touchAction;
     canvas.style.cursor = "crosshair"; canvas.style.touchAction = "none";
-    let down: { id: number; x: number; y: number; u: number; v: number } | null = null;
     let pending = false, cancelled = false;
-    function reset() { down = null; }
-    function pointerDown(event: PointerEvent) {
-      if (!event.isPrimary || event.button !== 0 || event.altKey) return;
+    function identify(event: PointerEvent) {
       const bounds = canvas.getBoundingClientRect();
-      down = { id: event.pointerId, x: event.clientX, y: event.clientY,
-        u: (event.clientX - bounds.left) / bounds.width, v: (event.clientY - bounds.top) / bounds.height };
+      return { u: (event.clientX - bounds.left) / bounds.width, v: (event.clientY - bounds.top) / bounds.height };
     }
-    async function up(event: PointerEvent) {
-      if (down?.id !== event.pointerId) return;
-      const click = down, shift = event.shiftKey; reset();
-      if (pending || !accepts(shift) || Math.hypot(event.clientX - click.x, event.clientY - click.y) > 4) return;
+    async function click(point: { u: number; v: number }, event: PointerEvent) {
+      const shift = event.shiftKey;
+      if (pending || !accepts(shift)) return;
       pending = true; setBusy(true); setMessage(null);
       try {
-        const validation = await validate(click.u, click.v);
+        const validation = await validate(point.u, point.v);
         if (validation) { if (!cancelled) setMessage(validation); return; }
-        const point = await picker.pick(handle.camera(), click.u, click.v);
+        const position = await picker.pick(handle.camera(), point.u, point.v);
         if (!cancelled) {
-          if (point) apply(point, shift);
+          if (position) apply(position, shift);
           else setMessage("No visible surface here. Click on the object.");
         }
       } catch (error) {
         if (!cancelled) setMessage(error instanceof Error ? error.message : String(error));
       } finally { pending = false; if (!cancelled) setBusy(false); }
     }
-    canvas.addEventListener("pointerdown", pointerDown);
-    canvas.addEventListener("pointerup", up);
-    canvas.addEventListener("pointercancel", reset);
+    const stop = observePointerClick(canvas, identify, (point, event) => void click(point, event));
     return () => {
       cancelled = true; picker.destroy(); setBusy(false); setMessage(null);
-      canvas.removeEventListener("pointerdown", pointerDown);
-      canvas.removeEventListener("pointerup", up);
-      canvas.removeEventListener("pointercancel", reset);
-      reset(); canvas.style.cursor = cursor; canvas.style.touchAction = touchAction;
+      stop(); canvas.style.cursor = cursor; canvas.style.touchAction = touchAction;
     };
   }, [handle, active]);
   return { busy, message, clearMessage: () => setMessage(null) };

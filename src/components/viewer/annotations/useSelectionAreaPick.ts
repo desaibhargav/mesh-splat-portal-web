@@ -1,4 +1,5 @@
 import { useEffect, useEffectEvent, useMemo, useRef } from "react";
+import { observePointerClick } from "../picking/pointerClick";
 import { usePrimitiveHover } from "../picking/usePrimitiveHover";
 import type { SelectionArea, SelectionHandle } from "../selection/types";
 
@@ -16,26 +17,9 @@ export function useSelectionAreaPick(handle: SelectionHandle, active: boolean, o
     if (!active) return;
     const canvas = handle.app.graphicsDevice.canvas as HTMLCanvasElement;
     const cursor = canvas.style.cursor;
-    let down: { id: number; x: number; y: number; area: SelectionArea } | null = null;
-    function pointerDown(event: PointerEvent) {
-      const candidate = areaRef.current;
-      if (!candidate || !event.isPrimary || event.button !== 0 || event.altKey) return;
-      down = { id: event.pointerId, x: event.clientX, y: event.clientY, area: candidate };
-    }
-    function pointerUp(event: PointerEvent) {
-      if (down?.id !== event.pointerId) return;
-      const click = down; down = null;
-      if (Math.hypot(event.clientX - click.x, event.clientY - click.y) <= 4) pick(click.area);
-    }
-    const reset = () => { down = null; };
-    canvas.addEventListener("pointerdown", pointerDown);
-    canvas.addEventListener("pointerup", pointerUp);
-    canvas.addEventListener("pointercancel", reset);
+    const stop = observePointerClick(canvas, () => areaRef.current, pick);
     return () => {
-      canvas.removeEventListener("pointerdown", pointerDown);
-      canvas.removeEventListener("pointerup", pointerUp);
-      canvas.removeEventListener("pointercancel", reset);
-      canvas.style.cursor = cursor;
+      stop(); canvas.style.cursor = cursor;
     };
   }, [handle, active]);
   useEffect(() => {
