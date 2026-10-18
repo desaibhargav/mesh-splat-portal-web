@@ -77,9 +77,7 @@ export function SelectionControls({ handle, tool, onToolChange, onGestureChange,
       </button>)}
       <span role="status">{busy ? "Selecting…" : summary ? `${summary.selected.toLocaleString()} / ${summary.total.toLocaleString()} selected` : "Preparing selection…"}</span>
     </div>
-    {selecting && <div className="selection-actions" role="group" aria-label="Selection actions" onClick={event => {
-      if ((event.target as HTMLElement).closest("button")) toolbar.current!.closest<HTMLElement>(".viewer-frame")!.focus({ preventScroll: true });
-    }}>
+    {selecting && <div className="selection-actions" role="group" aria-label="Selection actions">
       {tool === "brush" && <label>Brush size <input aria-label="Brush size" type="range" min="1" max="128" value={brushSize} disabled={busy} onChange={event => setBrushSize(Number(event.target.value))} /></label>}
       <button disabled={unavailable} aria-pressed={xray} title={xray ? "Select through the object" : "Select only visible surfaces"}
         onClick={() => setXray(!xray)}>X-ray {xray ? "on" : "off"}</button>

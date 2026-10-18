@@ -14,10 +14,6 @@ export function AnnotationControls({ handle, active, interactive, onActiveChange
   const [, refresh] = useState(0);
   const [draft, setDraft] = useState<AnnotationDraft | null>(null);
   const redraw = () => refresh(value => value + 1);
-  function closeDraft() {
-    setDraft(null);
-    (handle.app.graphicsDevice.canvas as HTMLCanvasElement).closest<HTMLElement>(".viewer-frame")!.focus({ preventScroll: true });
-  }
   function fromSelection(): AnnotationDraft | null {
     if (!handle.selection.summary.selected) return null;
     const bounds = handle.selection.bounds();
@@ -54,7 +50,7 @@ export function AnnotationControls({ handle, active, interactive, onActiveChange
     {annotations.records.length > 0 && <AnnotationLayer handle={handle} records={annotations.records} interactive={interactive} />}
     {active && <div className="selection-actions annotation-actions" role="group" aria-label="Annotations">
       <span role="status">{busy ? "Picking surface…" : message ?? (draft ? draft.region ? "Annotate selected area" : "Annotate surface point" : "Click a surface to place an annotation")}</span>
-      {draft ? <form onSubmit={event => { event.preventDefault(); annotations.save(draft); closeDraft(); redraw(); }}>
+      {draft ? <form onSubmit={event => { event.preventDefault(); annotations.save(draft); setDraft(null); redraw(); }}>
         <label>Title<input name="title" autoFocus required value={draft.title} onChange={event => setDraft({ ...draft, title: event.target.value })} /></label>
         <label>Note<textarea name="note" rows={3} value={draft.text} onChange={event => setDraft({ ...draft, text: event.target.value })} /></label>
         <button type="submit" disabled={!draft.title.trim()}>Save annotation</button>
@@ -63,10 +59,10 @@ export function AnnotationControls({ handle, active, interactive, onActiveChange
           const bounds = handle.selection.bounds();
           if (bounds) focusSelection(bounds, handle.camera());
         }}>Select annotated area</button>}
-        {draft.id !== undefined && <button type="button" onClick={() => { annotations.remove(draft.id!); closeDraft(); redraw(); }}>Delete annotation</button>}
-        <button type="button" onClick={closeDraft}>Cancel</button>
+        {draft.id !== undefined && <button type="button" onClick={() => { annotations.remove(draft.id!); setDraft(null); redraw(); }}>Delete annotation</button>}
+        <button type="button" onClick={() => setDraft(null)}>Cancel</button>
       </form> : <button disabled={busy || !handle.selection.summary.selected} onClick={() => setDraft(fromSelection())}>Annotate selection</button>}
-      {draft?.region && <button onClick={closeDraft}>Place point instead</button>}
+      {draft?.region && <button onClick={() => setDraft(null)}>Place point instead</button>}
       {annotations.records.length > 0 && <ol aria-label="Saved annotations">{annotations.records.map(record =>
         <li key={record.id}><button onClick={() => setDraft({ ...record })} title="Edit annotation">{record.id}. {record.title}</button></li>
       )}</ol>}

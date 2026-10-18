@@ -53,7 +53,7 @@ The tools adapt SuperSplat's gesture and modifier conventions ([MIT notice](publ
 
 The ruler icon enables measurement for meshes and splats. Click two visible surface points to draw a line with its straight-line distance overlaid in model units. Shift-click starts an additional measurement while retaining completed lines; click again to finish it. Alt/Option orbit, pan, and zoom remain available. Q/Escape exits placement mode while keeping the lines visible. Returning to the ruler allows more measurements or clearing them. F frames the measurement endpoints and sets their orbit pivot. Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z undo and redo measurement edits; Clear measurements removes them all.
 
-Picking uses PlayCanvas's depth-enabled `Picker.getWorldPointAsync`, at canvas resolution, with buffers reused between clicks. Markers and labels use lightweight SVG overlays projected through the PlayCanvas camera. They follow navigation without introducing a text/font asset or UI dependency. Measurements belong to the viewer session and respect isolated geometry.
+Picking uses PlayCanvas's depth-enabled `Picker.getWorldPointAsync`, at canvas resolution, with buffers reused between clicks. Measurement visuals use PlayCanvas `Scene.drawLine`, built-in sphere markers, world-space text/image elements, and one shared `CanvasFont` atlas. The same scene renderer serves meshes and splats and supports stereo/XR cameras, without an SVG overlay, external font download, or new dependency. Labels face the camera and retain readable sizing while navigating. Measurements belong to the viewer session and respect isolated geometry.
 
 GLB uses meters by specification, but the inspected scans have no verified physical calibration; PLY/SOG assets carry no physical-unit declaration. Distances therefore remain labeled **model units**. Splat picks estimate a surface from rendered Gaussians. See [measurement details](docs/measurement.md).
 
@@ -64,6 +64,8 @@ The annotation icon opens notes for either the current selection or a surface po
 Numbered hotspots display notes when clicked in navigation or annotation mode. The annotation panel lists notes for editing or deletion. **Select annotated area** restores its independent region snapshot and focuses it, even after the current selection has changed. Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z undo/redo saved annotation edits while this tool is active; text fields retain ordinary text editing and Q input. Q/Escape exits the tool after leaving a text field. Alt/Option orbit, pan, and zoom remain available.
 
 Hotspots use PlayCanvas's bundled `Annotation` and `AnnotationManager` scripts, with a small container adapter for our embedded/fullscreen viewer. Point placement shares measurement's GPU picker; annotation layers are excluded from surface/depth picking. Text renders as plain text. Region masks reuse selection history's bit packing. Notes remain in memory until leaving the asset; persistent saved views and WebXR are deferred in [TODO.md](TODO.md).
+
+Shared tool contracts and engine API reuse are documented in [docs/viewer-tools.md](docs/viewer-tools.md).
 
 The remaining work is tracked in [TODO.md](TODO.md), including saved views, WebXR, calibration, selection accuracy, thumbnails, and turntable previews.
 

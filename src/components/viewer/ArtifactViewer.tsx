@@ -33,6 +33,9 @@ export function ArtifactViewer({ artifact }: { artifact: Artifact }) {
 
   return (
     <section ref={frame} className="viewer-frame has-selection-tools" tabIndex={0} aria-label={`${artifact.title} 3D viewer`}
+      onClickCapture={event => {
+        if ((event.target as HTMLElement).closest(".selection-toolbar button, .selection-actions button")) frame.current?.focus({ preventScroll: true });
+      }}
       onPointerDownCapture={event => {
         if (!(event.target as HTMLElement).closest("button, input, select, textarea")) frame.current?.focus({ preventScroll: true });
       }}

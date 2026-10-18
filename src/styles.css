@@ -111,11 +111,7 @@ a { color: #536d7d; }
   .selection-toolbar span { flex-basis: 100%; margin-left: 0; }
 }
 
-.measurement-overlay { position: absolute; top: calc(42px + var(--selection-toolbar-height)); right: 0; bottom: 31px; left: 0; z-index: 2; pointer-events: none; }
-.measurement-overlay svg { width: 100%; height: 100%; overflow: hidden; }
-.measurement-overlay line { stroke: var(--gold); stroke-width: 2; }
-.measurement-overlay circle { fill: var(--gold); stroke: #171717; stroke-width: 1.5; }
-.measurement-overlay text { fill: #fff; stroke: #171717; stroke-width: 3px; paint-order: stroke; font-size: 13px; }
+.viewer-frame { --measurement-font-size: 13px; --measurement-marker-size: 10px; --measurement-label-gap: 12px; --measurement-label-padding: 3px; --measurement-label-background: #171717; --measurement-label-color: #ffffff; }
 .measurement-actions { max-width: min(270px, calc(100% - 24px)); }
 .measurement-actions [role="status"] { font-size: .75rem; }
 .measurement-actions output { color: var(--gold); font-size: 1rem; font-variant-numeric: tabular-nums; }

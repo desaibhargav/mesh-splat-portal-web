@@ -1,0 +1,25 @@
+# Shared viewer tools and engine reuse
+
+Mesh and splat viewers supply the same `SelectionController` contract to `SelectionControls`. Rectangle/lasso/brush gestures, modifiers, navigation, shortcuts, palette UI, selection/paint history, measurement state, and annotation editing are shared. `MeshSelection` and `SplatSelection` implement geometry-specific visibility, mask updates, and rendering. Tool components do not branch by asset type to implement operations; the measurement panel only varies its unit explanation.
+
+| Operation | Reused PlayCanvas API |
+| --- | --- |
+| Orbit, pan, zoom | Bundled `CameraControls` script |
+| Place measurement/annotation endpoints | Depth-enabled `Picker.prepare` and `getWorldPointAsync`, through shared `SurfacePicker` / `useSurfacePick` |
+| Visible region selection | `RenderPassPicker` for GPU triangle IDs or splat depth |
+| Measurement visuals | `Scene.drawLine`, built-in sphere render primitives, world-space text/image elements, `CanvasFont`, and `Layer` |
+| Annotation hotspots and tooltips | Bundled `Annotation` and `AnnotationManager` scripts |
+| Mesh region colors | `StandardMaterial`, `Mesh`, `MeshInstance`, and `Layer` with shared vertex data and index subsets |
+| Splat region colors | `GSplatComponent.setWorkBufferModifier`, palette/index textures, and `WORKBUFFER_UPDATE_ONCE` |
+
+## Paint example review
+
+The official [paint example](https://github.com/playcanvas/engine/blob/main/examples/src/examples/gaussian-splatting/paint.example.mjs) uses `Picker` for surface positions, `GSplatProcessor` to paint a spherical brush into a `customColor` instance stream, and `setWorkBufferModifier` to combine that stream with the original color. It requests work-buffer updates after painting.
+
+Our palette operation colors an existing selection mask. It reuses the same picker and work-buffer modifier APIs, with a one-byte palette-index texture instead of an RGBA brush stream. Immutable CPU indices provide compact, immediate undo state; GPU work-buffer modification applies the colors. A spherical brush processor would add a different operation and is unnecessary for this selection-based action. PlayCanvas does not supply the portal's selection palette or undo UI.
+
+## Desktop and XR
+
+Measurement state and visuals use one implementation for both asset formats and camera modes. Scene labels are ordinary world-space elements, and line projection and stereo rendering belong to the engine. The browser tool panels and annotation tooltip still require XR presentation and controller bindings when XR sessions are implemented. Those bindings should call the existing shared operations.
+
+The runtime engine remains pinned in `package.json`. Embedded annotation layout has a small adapter around the bundled manager; recheck it when upgrading the engine. No editor framework or additional runtime dependency is imported.

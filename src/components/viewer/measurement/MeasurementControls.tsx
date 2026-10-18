@@ -3,7 +3,7 @@ import type { ArtifactType } from "../../../api/artifacts";
 import type { SelectionHandle } from "../selection/types";
 import { focusSelection } from "../selection/focusSelection";
 import { formatDistance, Measurement } from "./Measurement";
-import { MeasurementOverlay } from "./MeasurementOverlay";
+import { MeasurementVisuals } from "./MeasurementVisuals";
 import { useSurfacePick } from "../picking/useSurfacePick";
 
 export function MeasurementControls({ handle, active, assetType, onActiveChange }: {
@@ -37,7 +37,7 @@ export function MeasurementControls({ handle, active, assetType, onActiveChange 
     return () => { frame.removeEventListener("keydown", keyDown); };
   }, [handle, active, measurement, busy]);
   return <>
-    {(active || measurement.segments.length > 0) && <MeasurementOverlay handle={handle} measurement={measurement} />}
+    {measurement.segments.length > 0 && <MeasurementVisuals handle={handle} segments={measurement.segments} />}
     {active && <div className="selection-actions measurement-actions" role="group" aria-label="Measurement">
       <span role="status">{busy ? "Picking surface…" : message ?? (measurement.points.length === 0 ? "Click the first surface point" : measurement.points.length === 1 ? "Click the second surface point" : "Shift-click to add another measurement")}</span>
       {measurement.distance !== null && <output aria-label="Measured distance">{formatDistance(measurement.distance)} model units</output>}
