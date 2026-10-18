@@ -1,5 +1,5 @@
 import type { SelectionArea, SelectionState } from "./types";
-import { packSelection, selectionsEqual, snapshotContains, unpackSelection } from "./selectionSnapshot";
+import { packSelection, selectionsEqual, snapshotContains } from "./selectionSnapshot";
 
 export const selectionColors = [
   { name: "Red", hex: "#e53935" }, { name: "Orange", hex: "#fb8c00" },
@@ -18,14 +18,19 @@ export function encodeColor(hex: string): number {
 export function decodeColor(color: number): string {
   return `#${(color - 1).toString(16).padStart(6, "0")}`;
 }
-export function paintSelection(colors: PaintState, masks: readonly Uint8Array[], color: number): PaintState {
+export function paintSelection(colors: PaintState, masks: readonly Uint8Array[], color: number, replaceColor = 0): PaintState {
   if (!Number.isInteger(color) || color < 0 || color > 0x1000000) throw new Error("Unknown selection color.");
+  function applies(value: number, selected: number) {
+    if (!selected || value === color) return false;
+    if (!color) return replaceColor ? value === replaceColor : Boolean(value);
+    return !value || Boolean(replaceColor && value === replaceColor);
+  }
   let changed = false;
   const next = colors.map((values, part) => {
     const mask = masks[part]!;
-    if (!mask.some((selected, i) => selected !== 0 && (color ? !values[i] : !!values[i]))) return values;
+    if (!mask.some((selected, i) => applies(values[i]!, selected))) return values;
     changed = true;
-    return values.map((value, i) => mask[i] && (!color || !value) ? color : value);
+    return values.map((value, i) => applies(value, mask[i]!) ? color : value);
   });
   return changed ? next : colors;
 }
@@ -35,9 +40,9 @@ export function updateSelectionAreas(areas: readonly SelectionArea[], colors: Pa
   const snapshot = packSelection({ masks: [...masks], isolated: false });
   const existing = areas.findIndex(area => selectionsEqual(area.snapshot, snapshot));
   if (!color) return existing < 0 ? areas : areas.map((area, index) => index === existing ? { ...area, color: 0 } : area);
+  if (existing >= 0) return areas.map((area, index) => index === existing ? { ...area, color } : area);
   const selected = masks.map((mask, part) => mask.map((value, i) => value && !colors[part]![i] ? 255 : 0));
   if (!selected.some(mask => mask.some(Boolean))) return areas;
-  if (existing >= 0) return areas.map((area, index) => index === existing ? { ...area, color } : area);
   const id = areas.reduce((maximum, area) => Math.max(maximum, area.id), 0) + 1;
   return [...areas, { id, name: `Selection ${id}`, visible: true, color,
     snapshot: packSelection({ masks: selected, isolated: false }) }];
@@ -57,20 +62,30 @@ export function visiblePaint(colors: PaintState, areas: readonly SelectionArea[]
   const hidden = areas.filter(area => !area.visible);
   if (!hidden.length) return colors;
   const next = colors.map(values => values.slice());
-  for (const area of hidden) unpackSelection(area.snapshot).masks.forEach((mask, part) => {
-    mask.forEach((selected, index) => {
-      if (selected && area.color && next[part]![index] === area.color) next[part]![index] = 0;
+  for (const area of hidden) area.snapshot.masks.forEach((mask, part) => {
+    if (!area.color) return;
+    mask.bits.forEach((byte, offset) => {
+      if (!byte) return;
+      for (let bit = 0; bit < 8; bit++) {
+        const index = offset * 8 + bit;
+        if (index < mask.length && (byte & (1 << bit)) && next[part]![index] === area.color) next[part]![index] = 0;
+      }
     });
   });
   return next;
 }
 
 export function visibleSelections(areas: readonly SelectionArea[], lengths: readonly number[]): Uint8Array[] {
-  const masks = lengths.map(length => new Uint8Array(length));
-  for (const area of areas) if (area.visible && !area.color) unpackSelection(area.snapshot).masks.forEach((mask, part) => {
-    mask.forEach((selected, index) => { if (selected) masks[part]![index] = 255; });
+  const packed = lengths.map(length => new Uint8Array(Math.ceil(length / 8)));
+  for (const area of areas) if (area.visible && !area.color) area.snapshot.masks.forEach((mask, part) => {
+    const target = packed[part]!;
+    mask.bits.forEach((byte, index) => { target[index] = target[index]! | byte; });
   });
-  return masks;
+  return lengths.map((length, part) => {
+    const mask = new Uint8Array(length), bits = packed[part]!;
+    for (let index = 0; index < length; index++) if (bits[index >> 3]! & (1 << (index & 7))) mask[index] = 255;
+    return mask;
+  });
 }
 
 export function selectionAreaAt(areas: readonly SelectionArea[], part: number, index: number): SelectionArea | null {

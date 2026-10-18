@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SelectionGesture } from "./SelectionGesture";
 import type { SelectionHandle, SelectionRegion, SelectionTool } from "./types";
 import type { SelectionOperation } from "./rectangle";
-import { SelectionHistory } from "./SelectionHistory";
+import { SelectionHistory, unpackSelection } from "./SelectionHistory";
 import { encodeColor } from "./selectionColors";
 import { SelectionColorPicker } from "./SelectionColorPicker";
 import { focusSelection } from "./focusSelection";
@@ -25,7 +25,6 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
   handle: SelectionHandle | null; tool: SelectionTool; onToolChange(tool: SelectionTool): void; disabled: boolean;
 }) {
   const [summary, setSummary] = useState(handle?.selection.summary);
-  const [color, setColor] = useState("#e53935");
   const [xray, setXray] = useState(false);
   const [brushSize, setBrushSize] = useState(32);
   const [busy, setBusy] = useState(false);
@@ -82,7 +81,16 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
   const groups: ViewerTreeGroup[] = handle && history && measurement && annotations ? [
     { id: "selections", label: "Selections", items: handle.selection.areas,
       onRename: (id, name) => { setSummary(history.perform(() => handle.selection.renameArea(id, name))); documentChanged(); },
-      onVisible: (id, visible) => { setSummary(history.perform(() => handle.selection.setAreaVisible(id, visible))); documentChanged(); } },
+      onVisible: (id, visible) => { setSummary(history.perform(() => handle.selection.setAreaVisible(id, visible))); documentChanged(); },
+      onActivate: id => {
+        const area = handle.selection.areas.find(item => item.id === id);
+        if (!area) return;
+        setSummary(history.perform(() => {
+          handle.selection.setAreaVisible(id, true);
+          return handle.selection.restore(unpackSelection(area.snapshot));
+        }));
+        documentChanged();
+      } },
     { id: "measurements", label: "Measurements", items: measurement.records,
       onRename: (id, name) => { measurement.rename(id, name); documentChanged(); },
       onVisible: (id, visible) => { measurement.setVisible(id, visible); documentChanged(); } },
@@ -105,7 +113,7 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
         onClick={() => setXray(!xray)}>X-ray {xray ? "on" : "off"}</button>
       <button disabled={unavailable || !summary?.selected} aria-pressed={summary?.isolated ?? false}
         onClick={() => { setSummary(history!.perform(() => handle!.selection.toggleIsolation())); documentChanged(); }}>{summary?.isolated ? "Show all" : "Isolate"}</button>
-      <SelectionColorPicker color={color} onChange={setColor} disabled={unavailable || !summary?.selected}
+      <SelectionColorPicker disabled={unavailable || !summary?.selected}
         onApply={hex => { setSummary(history!.perform(() => handle!.selection.paint(encodeColor(hex)))); documentChanged(); }}
         onReset={() => { setSummary(history!.perform(() => handle!.selection.paint(0))); documentChanged(); }} />
       <button disabled={unavailable || !summary?.selected} onClick={() => { setSummary(history!.perform(() => handle!.selection.clear())); documentChanged(); }}>Clear</button>

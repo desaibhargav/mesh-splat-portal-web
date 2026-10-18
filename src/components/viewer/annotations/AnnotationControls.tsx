@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useSurfacePick } from "../picking/useSurfacePick";
 import { unpackSelection } from "../selection/SelectionHistory";
 import { decodeColor } from "../selection/selectionColors";
@@ -51,7 +51,6 @@ export function AnnotationControls({ handle, annotations, active, interactive, h
   }
   function chooseSelection() {
     if (!draft) return;
-    setDraft({ ...draft, position: null });
     setInteraction("selection");
   }
 
@@ -67,7 +66,7 @@ export function AnnotationControls({ handle, annotations, active, interactive, h
     const color = area.color ? decodeColor(area.color) :
       getComputedStyle(handle.app.graphicsDevice.canvas).getPropertyValue("--gold").trim();
     setDraft(current => current && { ...current, region: area.snapshot, color });
-    setInteraction("marker");
+    setInteraction(null);
   });
   function restoreRegion(region: NonNullable<AnnotationDraft["region"]>) {
     onRestore(unpackSelection(region));
@@ -98,13 +97,19 @@ export function AnnotationControls({ handle, annotations, active, interactive, h
     return () => { frame.removeEventListener("keydown", keyDown); };
   }, [handle, active, annotations, busy]);
   const status = busy ? "Picking surface…" : message ?? areaPick.error ?? (
-    interaction === "selection" ? areaPick.area ? "Click this selection to annotate it" : "Hover over a colored selection"
+    interaction === "selection" ? areaPick.area ? "Click this selection to annotate it" : "Hover over a selection"
       : interaction === "marker" ? "Click a surface to place the marker"
         : draft?.position ? "Marker placed" : "Create an annotation"
   );
+  const displayedAnnotations = useMemo(() => {
+    const preview = draft?.position ? { ...draft, id: draft.id ?? 0, title: draft.title.trim() || "New annotation",
+      text: draft.text.trim(), position: draft.position, visible: true } satisfies AnnotationRecord : null;
+    const records = annotations.records.flatMap(record => record.id === preview?.id ? [preview] : record.visible ? [record] : []);
+    return preview && draft?.id === undefined ? [...records, preview] : records;
+  }, [annotations.records, draft]);
 
   return <>
-    {annotations.records.some(record => record.visible) && <AnnotationLayer handle={handle} records={annotations.records.filter(record => record.visible)}
+    {displayedAnnotations.length > 0 && <AnnotationLayer handle={handle} records={displayedAnnotations}
       interactive={interactive && !interaction} hoverRegions={hoverRegions && !interaction} />}
     {active && <div className="annotation-panels">
       {annotations.records.length > 0 && <div className="selection-actions annotation-list" role="group" aria-label="Saved annotations">
@@ -121,7 +126,7 @@ export function AnnotationControls({ handle, annotations, active, interactive, h
       <div className="selection-actions annotation-actions" role="group" aria-label="Annotate">
         <strong>Annotate</strong>
         <span role="status">{status}</span>
-        {draft ? <form onSubmit={saveAnnotation}>
+        {draft?.position && interaction !== "marker" ? <form onSubmit={saveAnnotation}>
           <label>Title<input name="title" required value={draft.title} onChange={event => setDraft({ ...draft, title: event.target.value })} /></label>
           <label>Note<textarea name="note" rows={3} value={draft.text} onChange={event => setDraft({ ...draft, text: event.target.value })} /></label>
           <button type="button" disabled={busy || (!handle.selection.areas.length && !handle.selection.summary.selected)}
@@ -130,7 +135,7 @@ export function AnnotationControls({ handle, annotations, active, interactive, h
           {draft.position && <button type="button" disabled={busy} onClick={() => setInteraction("marker")}>Move marker</button>}
           <button type="submit" disabled={!draft.title.trim() || !draft.position || !!interaction || busy}>Save annotation</button>
           <button type="button" onClick={cancelAnnotation}>Cancel</button>
-        </form> : <button onClick={createAnnotation}>New annotation</button>}
+        </form> : draft ? <button onClick={cancelAnnotation}>Cancel</button> : <button onClick={createAnnotation}>New annotation</button>}
         <small>Annotations last until you leave this asset.</small>
       </div>
     </div>}

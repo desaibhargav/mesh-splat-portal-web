@@ -26,6 +26,15 @@ it("keeps an earlier painted area when a later selection overlaps it", () => {
   expect([...currentSelectionArea({ masks, isolated: false }, areas)!.snapshot.masks[0]!.bits]).toEqual([1]);
 });
 
+it("recolors one existing selection without overriding an earlier overlap", () => {
+  const blue = encodeColor("#0000ff"), red = encodeColor("#ff0000"), purple = encodeColor("#800080");
+  const colors = [new Uint32Array([blue, red, red])], selected = [new Uint8Array([255, 255, 255])];
+  expect([...paintSelection(colors, selected, purple, red)[0]!]).toEqual([blue, purple, purple]);
+  expect([...paintSelection(colors, selected, 0, red)[0]!]).toEqual([blue, 0, 0]);
+  const area = updateSelectionAreas(recordSelectionArea([], { masks: selected, isolated: false }), colors, selected, purple);
+  expect(area[0]!.color).toBe(purple);
+});
+
 it("records every selection and independently hides its highlight and paint", () => {
   const red = encodeColor("#ff0000"), state = { masks: [new Uint8Array([255, 0])], isolated: false };
   const recorded = recordSelectionArea([], state);

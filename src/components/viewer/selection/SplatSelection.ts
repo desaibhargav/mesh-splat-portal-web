@@ -159,7 +159,7 @@ export class SplatSelection {
   }
   paint(color: number): SelectionSummary {
     const areas = updateSelectionAreas(this.selectionAreas, this.paintState, [this.mask], color);
-    const next = paintSelection(this.paintState, [this.mask], color);
+    const next = paintSelection(this.paintState, [this.mask], color, this.currentArea?.color);
     if (next !== this.paintState) {
       this.paintState = next; this.selectionAreas = areas;
       this.currentArea = currentSelectionArea(this.state, areas); this.update();
@@ -195,7 +195,9 @@ export class SplatSelection {
           rgba = [color.r, color.g, color.b, value ? this.tint.a : 0].map(channel => Math.round(channel * 255));
           shades.set(value, rgba);
         }
-        pixels.set(rgba, i * 4);
+        const offset = i * 4;
+        pixels[offset] = rgba[0]!; pixels[offset + 1] = rgba[1]!;
+        pixels[offset + 2] = rgba[2]!; pixels[offset + 3] = rgba[3]!;
       });
       this.paintTexture.unlock();
     }

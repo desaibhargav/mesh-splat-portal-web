@@ -118,7 +118,7 @@ export class MeshSelection {
   }
   paint(color: number): SelectionSummary {
     const areas = updateSelectionAreas(this.selectionAreas, this.paintState, this.state.masks, color);
-    const next = paintSelection(this.paintState, this.state.masks, color);
+    const next = paintSelection(this.paintState, this.state.masks, color, this.currentArea?.color);
     if (next !== this.paintState) {
       this.paintState = next; this.selectionAreas = areas;
       this.currentArea = currentSelectionArea(this.state, areas); this.refresh();
