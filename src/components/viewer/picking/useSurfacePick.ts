@@ -22,24 +22,15 @@ export function useSurfacePick({ handle, active, acceptsClick, validateClick, on
     canvas.style.cursor = "crosshair"; canvas.style.touchAction = "none";
     let down: { id: number; x: number; y: number; u: number; v: number } | null = null;
     let pending = false, cancelled = false;
-    function reset() {
-      const id = down?.id; down = null;
-      if (id !== undefined && canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id);
-    }
+    function reset() { down = null; }
     function pointerDown(event: PointerEvent) {
-      if (!event.isPrimary || event.button !== 0 || event.altKey || down) return;
-      event.preventDefault(); event.stopImmediatePropagation();
+      if (!event.isPrimary || event.button !== 0 || event.altKey) return;
       const bounds = canvas.getBoundingClientRect();
       down = { id: event.pointerId, x: event.clientX, y: event.clientY,
         u: (event.clientX - bounds.left) / bounds.width, v: (event.clientY - bounds.top) / bounds.height };
-      canvas.setPointerCapture(event.pointerId);
-    }
-    function move(event: PointerEvent) {
-      if (down?.id === event.pointerId) { event.preventDefault(); event.stopImmediatePropagation(); }
     }
     async function up(event: PointerEvent) {
       if (down?.id !== event.pointerId) return;
-      event.preventDefault(); event.stopImmediatePropagation();
       const click = down, shift = event.shiftKey; reset();
       if (pending || !accepts(shift) || Math.hypot(event.clientX - click.x, event.clientY - click.y) > 4) return;
       pending = true; setBusy(true); setMessage(null);
@@ -55,18 +46,14 @@ export function useSurfacePick({ handle, active, acceptsClick, validateClick, on
         if (!cancelled) setMessage(error instanceof Error ? error.message : String(error));
       } finally { pending = false; if (!cancelled) setBusy(false); }
     }
-    canvas.addEventListener("pointerdown", pointerDown, true);
-    canvas.addEventListener("pointermove", move, true);
-    canvas.addEventListener("pointerup", up, true);
-    canvas.addEventListener("pointercancel", reset, true);
-    canvas.addEventListener("lostpointercapture", reset);
+    canvas.addEventListener("pointerdown", pointerDown);
+    canvas.addEventListener("pointerup", up);
+    canvas.addEventListener("pointercancel", reset);
     return () => {
       cancelled = true; picker.destroy(); setBusy(false); setMessage(null);
-      canvas.removeEventListener("pointerdown", pointerDown, true);
-      canvas.removeEventListener("pointermove", move, true);
-      canvas.removeEventListener("pointerup", up, true);
-      canvas.removeEventListener("pointercancel", reset, true);
-      canvas.removeEventListener("lostpointercapture", reset);
+      canvas.removeEventListener("pointerdown", pointerDown);
+      canvas.removeEventListener("pointerup", up);
+      canvas.removeEventListener("pointercancel", reset);
       reset(); canvas.style.cursor = cursor; canvas.style.touchAction = touchAction;
     };
   }, [handle, active]);

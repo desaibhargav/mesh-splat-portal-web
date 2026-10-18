@@ -15,7 +15,6 @@ export function focusPosition(bounds: BoundingBox, camera: Pick<CameraComponent,
   }
   return back.mulScalar(distance * 1.1).add(bounds.center);
 }
-
 export function focusSelection(bounds: BoundingBox, camera: CameraComponent) {
   const controls = camera.entity.script?.get("cameraControls") as CameraControls | undefined;
   if (!controls) throw new Error("Camera controls are unavailable.");
@@ -28,10 +27,4 @@ export function focusSelection(bounds: BoundingBox, camera: CameraComponent) {
   const distance = position.distance(bounds.center);
   camera.nearClip = Math.min(camera.nearClip, distance / 100);
   controls.zoomRange = new Vec2(Math.min(controls.zoomRange.x, distance / 100), controls.zoomRange.y);
-}
-
-// Reattach the current camera pose to PlayCanvas's orbit controller after a modal tool exits.
-export function resumeNavigation(camera: CameraComponent) {
-  const controls = camera.entity.script?.get("cameraControls") as CameraControls | undefined;
-  if (controls) controls.focusPoint = controls.focusPoint.clone();
 }

@@ -4,7 +4,6 @@ import type { Artifact } from "../../api/artifacts";
 import { MeshViewer } from "./MeshViewer";
 import { SplatViewer } from "./SplatViewer";
 import { SelectionControls } from "./selection/SelectionControls";
-import { resumeNavigation } from "./selection/focusSelection";
 import type { SelectionHandle, SelectionTool } from "./selection/types";
 
 export type ViewerStatus = { loading: boolean; progress: number; error: string | null };
@@ -16,10 +15,7 @@ export function ArtifactViewer({ artifact }: { artifact: Artifact }) {
   const [selection, setSelection] = useState<SelectionHandle | null>(null);
   const [tool, setTool] = useState<SelectionTool>("navigate");
   const selecting = tool !== "navigate";
-  function changeTool(next: SelectionTool) {
-    if (next === "navigate" && selection) resumeNavigation(selection.camera());
-    setTool(next);
-  }
+  function changeTool(next: SelectionTool) { setTool(next); }
 
   useEffect(() => {
     const updateFullscreen = () => setFullscreen(document.fullscreenElement === frame.current);

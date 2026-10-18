@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
-import { Color, Entity, Vec3, type CameraComponent } from "playcanvas";
+import { Color, Entity, Vec3 } from "playcanvas";
 import { Annotation, AnnotationManager } from "playcanvas/scripts/esm/annotations.mjs";
 import { SurfacePicker } from "../picking/SurfacePicker";
 import { snapshotContains } from "../selection/selectionSnapshot";
@@ -38,28 +38,6 @@ class ViewerAnnotationManager extends AnnotationManager {
   }
 }
 
-function createAnnotationCamera(viewCamera: CameraComponent) {
-  const entity = new Entity("Annotation camera");
-  viewCamera.entity.addChild(entity);
-  entity.addComponent("camera", {
-    clearColorBuffer: false, clearDepthBuffer: false, clearStencilBuffer: false,
-    layers: [], priority: viewCamera.priority + 1
-  });
-  const camera = entity.camera!;
-  const synchronize = () => {
-    camera.projection = viewCamera.projection;
-    camera.fov = viewCamera.fov;
-    camera.horizontalFov = viewCamera.horizontalFov;
-    camera.orthoHeight = viewCamera.orthoHeight;
-    camera.nearClip = viewCamera.nearClip;
-    camera.farClip = viewCamera.farClip;
-    camera.rect.copy(viewCamera.rect);
-    camera.scissorRect.copy(viewCamera.scissorRect);
-  };
-  synchronize();
-  return { entity, synchronize };
-}
-
 export function AnnotationLayer({ handle, records, interactive, hoverRegions, movingId, onMove }: {
   handle: SelectionHandle; records: readonly AnnotationRecord[]; interactive: boolean; hoverRegions: boolean;
   movingId: number | null; onMove(id: number, position: Vec3): void;
@@ -69,34 +47,28 @@ export function AnnotationLayer({ handle, records, interactive, hoverRegions, mo
   const container = useRef<HTMLDivElement>(null);
   const entities = useRef(new Map<number, Entity>());
   const root = useRef<Entity | null>(null);
-  const annotationCamera = useRef<Entity | null>(null);
   const [ready, setReady] = useState(0);
   const [moveError, setMoveError] = useState<string | null>(null);
   const commitMove = useEffectEvent(onMove);
   useEffect(() => {
-    // Render engine annotations through a child camera so the upstream manager
-    // never mutates the interactive camera's layers or navigation state.
+    // The React camera applies its initial layer list in an effect. Attach the
+    // manager on the next frame so that initialization cannot overwrite its layers.
     const frame = requestAnimationFrame(() => {
       const entity = new Entity("Annotations"); root.current = entity;
       handle.app.root.addChild(entity); entity.addComponent("script");
-      const overlayCamera = createAnnotationCamera(handle.camera());
-      annotationCamera.current = overlayCamera.entity;
-      handle.app.on("prerender", overlayCamera.synchronize);
       const color = new Color().fromString(getComputedStyle(container.current!).getPropertyValue("--gold").trim());
       const annotationManager = entity.script!.create(ViewerAnnotationManager, { properties: {
-        container: container.current!, viewCamera: overlayCamera.entity, hotspotColor: color,
+        container: container.current!, viewCamera: handle.camera().entity, hotspotColor: color,
         hoverColor: Color.WHITE, behindOpacity: 1
       } }) as unknown as ViewerAnnotationManager;
       manager.current = annotationManager;
-      entity.once("destroy", () => handle.app.off("prerender", overlayCamera.synchronize));
       setReady(value => value + 1);
     });
     const hotspotAdded = () => setReady(value => value + 1);
     handle.app.on("annotation:add", hotspotAdded);
     const destroy = () => {
       cancelAnimationFrame(frame); handle.app.off("annotation:add", hotspotAdded);
-      root.current?.destroy(); annotationCamera.current?.destroy(); entities.current.clear();
-      root.current = null; annotationCamera.current = null; manager.current = null;
+      root.current?.destroy(); entities.current.clear(); root.current = null; manager.current = null;
     };
     handle.app.on("destroy", destroy);
     return () => { handle.app.off("destroy", destroy); destroy(); };
