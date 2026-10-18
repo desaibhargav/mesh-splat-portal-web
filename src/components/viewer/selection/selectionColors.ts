@@ -5,11 +5,18 @@ export const selectionColors = [
   { name: "Pink", hex: "#d81b60" }, { name: "Gray", hex: "#808080" }
 ] as const;
 
-// Zero retains the original material/color. Immutable buffers let undo snapshots
-// share paint data across selection changes; only a paint edit copies a buffer.
-export type PaintState = readonly Uint8Array[];
+// RGB + 1 represents every sRGB shade, including black; zero restores the source.
+// Immutable buffers share unchanged paint data across undo snapshots.
+export type PaintState = readonly Uint32Array[];
+export function encodeColor(hex: string): number {
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) throw new Error("Use a six-digit hex color.");
+  return parseInt(hex.slice(1), 16) + 1;
+}
+export function decodeColor(color: number): string {
+  return `#${(color - 1).toString(16).padStart(6, "0")}`;
+}
 export function paintSelection(colors: PaintState, masks: readonly Uint8Array[], color: number): PaintState {
-  if (!Number.isInteger(color) || color < 0 || color > selectionColors.length) throw new Error("Unknown selection color.");
+  if (!Number.isInteger(color) || color < 0 || color > 0x1000000) throw new Error("Unknown selection color.");
   let changed = false;
   const next = colors.map((values, part) => {
     const mask = masks[part]!;
@@ -18,4 +25,16 @@ export function paintSelection(colors: PaintState, masks: readonly Uint8Array[],
     return values.map((value, i) => mask[i] ? color : value);
   });
   return changed ? next : colors;
+}
+
+// Use the dominant painted shade for a mixed region; unpainted areas use the
+// viewer's ordinary selection highlight, not the last palette choice.
+export function selectionShade(colors: PaintState, masks: readonly Uint8Array[], highlight: string): string {
+  const counts = new Map<number, number>();
+  masks.forEach((mask, part) => mask.forEach((selected, i) => {
+    if (selected) { const color = colors[part]![i]!; counts.set(color, (counts.get(color) ?? 0) + 1); }
+  }));
+  let dominant = 0, count = 0;
+  for (const [color, total] of counts) if (total > count) { dominant = color; count = total; }
+  return dominant ? decodeColor(dominant) : highlight;
 }

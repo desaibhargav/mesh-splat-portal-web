@@ -6,7 +6,8 @@ import { SelectionGesture } from "./SelectionGesture";
 import type { SelectionHandle, SelectionRegion, SelectionTool } from "./types";
 import type { SelectionOperation } from "./rectangle";
 import { SelectionHistory } from "./SelectionHistory";
-import { selectionColors } from "./selectionColors";
+import { encodeColor } from "./selectionColors";
+import { SelectionColorPicker } from "./SelectionColorPicker";
 import { focusSelection } from "./focusSelection";
 
 const tools: { tool: SelectionTool; label: string; path: string }[] = [
@@ -22,6 +23,7 @@ export function SelectionControls({ handle, tool, onToolChange, onGestureChange,
   handle: SelectionHandle | null; tool: SelectionTool; onToolChange(tool: SelectionTool): void; onGestureChange(active: boolean): void; disabled: boolean; assetType: ArtifactType;
 }) {
   const [summary, setSummary] = useState(handle?.selection.summary);
+  const [color, setColor] = useState("#e53935");
   const [xray, setXray] = useState(false);
   const [brushSize, setBrushSize] = useState(32);
   const [busy, setBusy] = useState(false);
@@ -83,13 +85,9 @@ export function SelectionControls({ handle, tool, onToolChange, onGestureChange,
         onClick={() => setXray(!xray)}>X-ray {xray ? "on" : "off"}</button>
       <button disabled={unavailable || !summary?.selected} aria-pressed={summary?.isolated ?? false}
         onClick={() => setSummary(history!.perform(() => handle!.selection.toggleIsolation()))}>{summary?.isolated ? "Show all" : "Isolate"}</button>
-      <fieldset className="selection-palette" disabled={unavailable || !summary?.selected}><legend>Color selection</legend>
-        {selectionColors.map((color, i) => <button key={color.name} title={color.name} aria-label={`Color selection ${color.name.toLowerCase()}`}
-          style={{ backgroundColor: color.hex }} onClick={() => setSummary(history!.perform(() => handle!.selection.paint(i + 1)))} />)}
-        <button className="selection-color-reset" title="Restore original color in selection" aria-label="Restore original color in selection"
-          onClick={() => setSummary(history!.perform(() => handle!.selection.paint(0)))}>↺</button>
-      </fieldset>
-      <button disabled={unavailable || !summary?.selected} onClick={() => onToolChange("annotate")}>Annotate selection</button>
+      <SelectionColorPicker color={color} onChange={setColor} disabled={unavailable || !summary?.selected}
+        onApply={hex => setSummary(history!.perform(() => handle!.selection.paint(encodeColor(hex))))}
+        onReset={() => setSummary(history!.perform(() => handle!.selection.paint(0)))} />
       <button disabled={unavailable || !summary?.selected} onClick={() => setSummary(history!.perform(() => handle!.selection.clear()))}>Clear</button>
     </div>}
     {error && <div className="selection-error" role="alert">{error}</div>}

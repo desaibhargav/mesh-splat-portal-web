@@ -86,7 +86,7 @@ a { color: #536d7d; }
 .selection-actions button[aria-pressed="true"] { color: var(--gold); border-color: var(--gold); }
 .selection-actions button:disabled { opacity: .45; cursor: default; }
 .selection-actions label { display: flex; flex-direction: column; max-width: 128px; font-size: .7rem; }
-.selection-palette { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin: 0; padding: 6px; border: 1px solid #666; }
+.selection-palette { display: flex; flex-direction: column; gap: 5px; margin: 0; padding: 6px; border: 1px solid #666; }
 .selection-palette legend { padding: 0 3px; font-size: .7rem; }
 .selection-palette button { min-height: 25px; padding: 0; }
 .selection-palette button:focus-visible { outline: 2px solid white; outline-offset: 1px; }
@@ -125,10 +125,22 @@ a { color: #536d7d; }
 .annotation-actions label { max-width: none; gap: 4px; }
 .annotation-actions input, .annotation-actions textarea { width: 100%; padding: 6px; border: 1px solid #666; border-radius: 3px; color: #eee; background: #181818; font: inherit; }
 .annotation-actions textarea { resize: vertical; }
-.annotation-actions ol { display: flex; flex-direction: column; gap: 4px; list-style: none; margin: 0; padding: 0; }
-.annotation-actions li button { width: 100%; text-align: left; overflow-wrap: anywhere; }
 .annotation-actions small { color: #bbb; font-size: .65rem; }
 @media (max-width: 480px) {
   .selection-toolbar { gap: .3rem; }
   .selection-toolbar button { padding: .35rem .4rem; }
 }
+
+.selection-swatches { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+.selection-custom-color { display: flex; flex-direction: column; gap: 6px; }
+.selection-custom-color .react-colorful { width: 180px; height: 150px; }
+.selection-custom-color label { max-width: none; gap: 4px; }
+.selection-custom-color input { width: 100%; color: #eee; background: #181818; border: 1px solid #666; padding: 6px; }
+.annotation-panels { position: absolute; right: 12px; bottom: 43px; z-index: 3; width: min(270px, calc(100% - 24px)); max-height: calc(100% - var(--selection-toolbar-height) - 100px); overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.annotation-panels .selection-actions { position: static; width: 100%; max-height: none; flex-shrink: 0; font-size: .75rem; }
+.annotation-list ol { display: flex; flex-direction: column; gap: 4px; list-style: none; margin: 0; padding: 0; }
+.annotation-list li { display: flex; align-items: center; gap: 4px; }
+.annotation-list li button { padding: 5px; }
+.annotation-list .annotation-edit { flex: 1; min-width: 0; text-align: left; overflow-wrap: anywhere; }
+.annotation-list .annotation-delete { color: #ff7474; font-size: 1.25rem; line-height: 1; }
+.annotation-list svg { width: 16px; height: 16px; display: block; fill: none; stroke: currentColor; stroke-width: 1.5; }

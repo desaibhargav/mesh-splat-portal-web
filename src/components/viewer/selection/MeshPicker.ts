@@ -47,6 +47,7 @@ export class MeshPicker {
   private texture?: Texture;
   private target?: RenderTarget;
   private disposed = false;
+  private signature = "";
 
   constructor(private readonly app: AppBase, private readonly parts: PickPart[]) {
     this.pass = new RenderPassPicker(app.graphicsDevice, app.renderer);
@@ -86,9 +87,10 @@ export class MeshPicker {
     app.scene.layers.push(this.layer);
   }
 
-  async capture(camera: CameraComponent, region: SelectionRegion, isolated: boolean): Promise<Uint8Array[]> {
-    const device = this.app.graphicsDevice, bounds = regionBounds(region);
-    if (bounds.right === 0) return this.parts.map(part => new Uint8Array(part.mask.length));
+  private prepare(camera: CameraComponent, isolated: boolean) {
+    const device = this.app.graphicsDevice;
+    const signature = [device.width, device.height, ...camera.projectionMatrix.data, ...camera.viewMatrix.data].join();
+    if (signature === this.signature) return;
     if (this.texture?.width !== device.width || this.texture.height !== device.height) {
       this.target?.destroy(); this.texture?.destroy();
       this.texture = Texture.createDataTexture2D(device, "Triangle IDs", device.width, device.height, PIXELFORMAT_RGBA8);
@@ -113,15 +115,38 @@ export class MeshPicker {
       this.pass.update(camera, this.app.scene, [this.layer], new Map(), false);
       this.pass.render();
     } finally { camera.layers = layers; }
-    const screenWidth = this.texture.width, screenHeight = this.texture.height;
+    this.signature = signature;
+  }
+
+  async primitiveAt(camera: CameraComponent, u: number, v: number, isolated: boolean): Promise<{ part: number; index: number } | null> {
+    this.prepare(camera, isolated);
+    const x = Math.floor(u * this.texture!.width), y = Math.floor(v * this.texture!.height);
+    const bytes = await this.texture!.read(x, this.app.graphicsDevice.isWebGPU ? y : this.texture!.height - y - 1, 1, 1, { immediate: true, renderTarget: this.target });
+    if (this.disposed) return null;
+    const data = bytes as Uint8Array;
+    let index = (data[0]! | data[1]! << 8 | data[2]! << 16 | data[3]! << 24) >>> 0;
+    for (const [part, source] of this.parts.entries()) {
+      if (index < source.mask.length) return { part, index };
+      index -= source.mask.length;
+    }
+    return null;
+  }
+
+  async capture(camera: CameraComponent, region: SelectionRegion, isolated: boolean): Promise<Uint8Array[]> {
+    const bounds = regionBounds(region);
+    if (bounds.right === 0) return this.parts.map(part => new Uint8Array(part.mask.length));
+    this.prepare(camera, isolated);
+    const device = this.app.graphicsDevice;
+    const screenWidth = this.texture!.width, screenHeight = this.texture!.height;
     const left = Math.floor(bounds.left * screenWidth / region.width), top = Math.floor(bounds.top * screenHeight / region.height);
     const width = Math.ceil(bounds.right * screenWidth / region.width) - left, height = Math.ceil(bounds.bottom * screenHeight / region.height) - top;
     const flipY = !device.isWebGPU;
-    const pixels = await this.texture.read(left, flipY ? screenHeight - top - height : top, width, height, { immediate: true, renderTarget: this.target });
+    const pixels = await this.texture!.read(left, flipY ? screenHeight - top - height : top, width, height, { immediate: true, renderTarget: this.target });
     if (this.disposed) throw new Error("Viewer closed during selection.");
     return facesInRegion({ pixels: pixels as Uint8Array, left, top, width, height, screenWidth, screenHeight, flipY }, region, this.parts.map(part => part.mask.length));
   }
 
+  invalidate() { this.signature = ""; }
   destroy() {
     if (this.disposed) return;
     this.disposed = true;

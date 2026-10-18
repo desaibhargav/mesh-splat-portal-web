@@ -5,10 +5,10 @@ import { paintSelection } from "./selectionColors";
 
 function setup() {
   const selection = {
-    colors: [new Uint8Array(11), new Uint8Array(3)] as readonly Uint8Array[],
+    colors: [new Uint32Array(11), new Uint32Array(3)] as readonly Uint32Array[],
     state: { masks: [new Uint8Array(11), new Uint8Array(3)], isolated: false } as SelectionState,
     get summary() { return { selected: this.state.masks.reduce((sum, mask) => sum + mask.filter(Boolean).length, 0), total: 14, isolated: this.state.isolated }; },
-    restore(state: SelectionState, colors?: readonly Uint8Array[]) { if (colors) this.colors = colors; this.state = state; return this.summary; }
+    restore(state: SelectionState, colors?: readonly Uint32Array[]) { if (colors) this.colors = colors; this.state = state; return this.summary; }
   };
   return { selection, history: new SelectionHistory(selection) };
 }

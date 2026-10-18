@@ -3,7 +3,7 @@ import {
   TYPE_INT8, TYPE_INT16, TYPE_UINT8, TYPE_UINT16, VertexBuffer,
   type AppBase, type CameraComponent, type Layer, type RenderComponent
 } from "playcanvas";
-import { paintSelection, selectionColors, type PaintState } from "./selectionColors";
+import { paintSelection, decodeColor, type PaintState } from "./selectionColors";
 import { applySelection, projectSelection } from "./projectSelection";
 import type { SelectionOperation } from "./rectangle";
 import { MeshPicker } from "./MeshPicker";
@@ -76,7 +76,7 @@ export class MeshSelection {
         const vertices = new VertexBuffer(device, buffer.format, buffer.numVertices, { data: buffer.storage.slice(0) });
         this.parts.push({ source, positions: decoded, indices, centers, mask: new Uint8Array(indices.length / 3), vertices, baseMaterial: source.material as StandardMaterial, layers: components.find(component => component.meshInstances.includes(source))!.layers.map(id => app.scene.layers.getLayerById(id)!), groups: new Map() });
       }
-      this.paintState = this.parts.map(part => new Uint8Array(part.mask.length));
+      this.paintState = this.parts.map(part => new Uint32Array(part.mask.length));
       this.refresh();
       for (const { component } of this.originals) component.enabled = false;
     } catch (error) { this.destroy(); throw error; }
@@ -89,6 +89,10 @@ export class MeshSelection {
   async hitTest(app: AppBase, camera: CameraComponent, region: SelectionRegion): Promise<Uint8Array[]> {
     this.picker ??= new MeshPicker(app, this.parts);
     return this.picker.capture(camera, region, this.isolated);
+  }
+  async primitiveAt(app: AppBase, camera: CameraComponent, u: number, v: number) {
+    this.picker ??= new MeshPicker(app, this.parts);
+    return this.picker.primitiveAt(camera, u, v, this.isolated);
   }
   get state(): SelectionState { return { masks: this.parts.map(part => part.mask), isolated: this.isolated }; }
   get colors(): PaintState { return this.paintState; }
@@ -137,6 +141,7 @@ export class MeshSelection {
     this.refresh(); return this.summary;
   }
   private refresh() {
+    this.picker?.invalidate();
     for (const [partIndex, part] of this.parts.entries()) {
       const subsets = new Map<number, number[]>(), colors = this.paintState[partIndex]!;
       for (let face = 0; face < part.mask.length; face++) {
@@ -160,7 +165,7 @@ export class MeshSelection {
           let material = part.baseMaterial;
           if (color || selected) {
             material = material.clone();
-            const shade = color ? new Color().fromString(selectionColors[color - 1]!.hex).linear() : this.tint;
+            const shade = color ? new Color().fromString(decodeColor(color)).linear() : this.tint;
             if (color) material.diffuse.lerp(material.diffuse, shade, this.tint.a);
             if (selected) { material.emissive.copy(shade); material.emissiveIntensity = this.tint.a; }
             material.update();

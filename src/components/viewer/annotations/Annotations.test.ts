@@ -29,4 +29,5 @@ it("undoes and redoes annotation creation, edits, and deletion without reusing I
   annotations.save({ ...draft, title: "Second" }); annotations.redo();
   expect(annotations.records).toHaveLength(1); expect(annotations.records[0]!.id).not.toBe(first.id);
   expect(() => annotations.save({ ...draft, title: " " })).toThrow("Enter an annotation title.");
+  expect(() => annotations.save({ ...draft, position: null })).toThrow("Place the annotation marker");
 });

@@ -8,15 +8,15 @@ Mesh and splat viewers supply the same `SelectionController` contract to `Select
 | Place measurement/annotation endpoints | Depth-enabled `Picker.prepare` and `getWorldPointAsync`, through shared `SurfacePicker` / `useSurfacePick` |
 | Visible region selection | `RenderPassPicker` for GPU triangle IDs or splat depth |
 | Measurement visuals | `Scene.drawLine`, built-in sphere render primitives, world-space text/image elements, `CanvasFont`, and `Layer` |
-| Annotation hotspots and tooltips | Bundled `Annotation` and `AnnotationManager` scripts |
+| Annotation hotspots and tooltips | Bundled `Annotation` and `AnnotationManager` scripts; picker render IDs for bound-region hover |
 | Mesh region colors | `StandardMaterial`, `Mesh`, `MeshInstance`, and `Layer` with shared vertex data and index subsets |
-| Splat region colors | `GSplatComponent.setWorkBufferModifier`, palette/index textures, and `WORKBUFFER_UPDATE_ONCE` |
+| Splat region colors | `GSplatComponent.setWorkBufferModifier`, an RGBA paint texture, and `WORKBUFFER_UPDATE_ONCE` |
 
 ## Paint example review
 
 The official [paint example](https://github.com/playcanvas/engine/blob/main/examples/src/examples/gaussian-splatting/paint.example.mjs) uses `Picker` for surface positions, `GSplatProcessor` to paint a spherical brush into a `customColor` instance stream, and `setWorkBufferModifier` to combine that stream with the original color. It requests work-buffer updates after painting.
 
-Our palette operation colors an existing selection mask. It reuses the same picker and work-buffer modifier APIs, with a one-byte palette-index texture instead of an RGBA brush stream. Immutable CPU indices provide compact, immediate undo state; GPU work-buffer modification applies the colors. A spherical brush processor would add a different operation and is unnecessary for this selection-based action. PlayCanvas does not supply the portal's selection palette or undo UI.
+Our color operation applies an arbitrary sRGB shade to an existing selection mask. Immutable packed CPU colors provide immediate undo state; GPU work-buffer modification applies them to splats. A spherical brush processor would add a different operation and is unnecessary for this selection-based action. PlayCanvas does not supply the portal's color picker, selection state, or undo UI.
 
 A spherical brush affects Gaussian centers within a 3D radius around a picked surface point. Our current brush selects inside a screen-space circle, with the chosen visible-only/X-ray policy. A sphere can also reach nearby surfaces inside its radius; it does not itself enforce front-surface visibility. It could support depth-local painting or future XR interaction, but is not required for select → color → annotate and is not a fix for tiny-triangle picking.
 

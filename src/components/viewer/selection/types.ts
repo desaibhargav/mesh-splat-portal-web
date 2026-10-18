@@ -10,6 +10,7 @@ export interface SelectionState { masks: Uint8Array[]; isolated: boolean }
 export type VisibilityTest = (id: number, u: number, v: number, w: number, z: number) => boolean;
 export interface SelectionController {
   readonly layers: readonly number[];
+  primitiveAt(app: AppBase, camera: CameraComponent, u: number, v: number): Promise<{ part: number; index: number } | null>;
   hitTest(app: AppBase, camera: CameraComponent, region: SelectionRegion): Promise<Uint8Array[]>;
   readonly state: SelectionState;
   readonly colors: PaintState;
