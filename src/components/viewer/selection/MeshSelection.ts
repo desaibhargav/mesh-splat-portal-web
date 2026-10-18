@@ -1,13 +1,13 @@
 import {
-  Color, Entity, Mat4, PROJECTION_ORTHOGRAPHIC, Vec3, Mesh, MeshInstance, PRIMITIVE_TRIANGLES, SEMANTIC_POSITION, StandardMaterial,
+  Color, Entity, Mat4, Mesh, MeshInstance, PRIMITIVE_TRIANGLES, SEMANTIC_POSITION, StandardMaterial,
   TYPE_INT8, TYPE_INT16, TYPE_UINT8, TYPE_UINT16, VertexBuffer,
   type AppBase, type CameraComponent, type GraphicsDevice, type RenderComponent
 } from "playcanvas";
-import { projectSelection } from "./projectSelection";
+import { applySelection, projectSelection } from "./projectSelection";
 import type { SelectionOperation } from "./rectangle";
-import { TriangleTree } from "./TriangleTree";
+import { MeshPicker } from "./MeshPicker";
 import { SelectionBounds } from "./selectionBounds";
-import type { SelectionCamera, SelectionRegion, SelectionState, SelectionSummary, VisibilityTest } from "./types";
+import type { SelectionCamera, SelectionRegion, SelectionState, SelectionSummary } from "./types";
 
 interface Part {
   source: MeshInstance; positions: Float32Array; indices: number[]; centers: Float32Array; mask: Uint8Array;
@@ -44,7 +44,7 @@ export class MeshSelection {
   private selected = 0;
   private isolated = false;
   private disposed = false;
-  private trees?: TriangleTree[];
+  private picker?: MeshPicker;
 
   constructor(entity: Entity, device: GraphicsDevice, tint: Color) {
     const components = entity.findComponents("render") as RenderComponent[];
@@ -88,29 +88,9 @@ export class MeshSelection {
   get summary(): SelectionSummary {
     return { selected: this.selected, total: this.parts.reduce((sum, p) => sum + p.mask.length, 0), isolated: this.isolated };
   }
-  async visibility(_app: AppBase, camera: CameraComponent): Promise<VisibilityTest[]> {
-    this.trees ??= this.parts.map(part => new TriangleTree(part.positions, part.indices, part.centers, part.source.material.cull));
-    const transforms = this.parts.map(part => part.source.node.getWorldTransform().clone());
-    const inverses = transforms.map(transform => transform.clone().invert());
-    const cameraPosition = camera.entity.getPosition().clone(), forward = camera.entity.forward.clone();
-    const orthographic = camera.projection === PROJECTION_ORTHOGRAPHIC, near = camera.nearClip;
-    const isolatedMasks = this.isolated ? this.parts.map(part => part.mask.slice()) : undefined;
-    const point = new Vec3(), start = new Vec3(), local = new Vec3(), origin = new Vec3(), direction = new Vec3();
-    return this.parts.map((part, partIndex) => (face, _u, _v, w) => {
-      const offset = face * 3;
-      point.set(part.centers[offset]!, part.centers[offset + 1]!, part.centers[offset + 2]!);
-      transforms[partIndex]!.transformPoint(point, point);
-      start.copy(cameraPosition);
-      const viewDistance = orthographic ? new Vec3().sub2(point, start).dot(forward) : w;
-      if (orthographic) start.copy(point).addScaled(forward, -viewDistance);
-      for (let i = 0; i < this.parts.length; i++) {
-        inverses[i]!.transformPoint(point, local); inverses[i]!.transformPoint(start, origin);
-        direction.sub2(local, origin);
-        if (i === partIndex && !this.trees![i]!.facing(face, origin, direction)) return false;
-        if (this.trees![i]!.occludes(origin, direction, near / viewDistance, isolatedMasks?.[i])) return false;
-      }
-      return true;
-    });
+  async hitTest(app: AppBase, camera: CameraComponent, region: SelectionRegion): Promise<Uint8Array[]> {
+    this.picker ??= new MeshPicker(app, this.parts);
+    return this.picker.capture(camera, region, this.isolated);
   }
   get state(): SelectionState { return { masks: this.parts.map(part => part.mask), isolated: this.isolated }; }
   restore(state: SelectionState): SelectionSummary {
@@ -131,12 +111,13 @@ export class MeshSelection {
     }
     return bounds.value;
   }
-  select(region: SelectionRegion, operation: SelectionOperation, camera: SelectionCamera, visibility?: VisibilityTest[]): SelectionSummary {
+  select(region: SelectionRegion, operation: SelectionOperation, camera: SelectionCamera, hits?: Uint8Array[]): SelectionSummary {
     const viewProjection = new Mat4().mul2(camera.projectionMatrix, camera.viewMatrix);
     this.selected = 0;
     for (const [i, part] of this.parts.entries()) {
       const matrix = new Mat4().mul2(viewProjection, part.source.node.getWorldTransform());
-      this.selected += projectSelection(part.centers, part.mask, matrix.data, region, operation, this.isolated, visibility?.[i]);
+      this.selected += hits ? applySelection(part.mask, hits[i]!, operation, this.isolated) :
+        projectSelection(part.centers, part.mask, matrix.data, region, operation, this.isolated);
     }
     if (!this.selected) this.isolated = false;
     this.refresh();
@@ -166,6 +147,7 @@ export class MeshSelection {
   destroy() {
     if (this.disposed) return;
     this.disposed = true;
+    this.picker?.destroy();
     this.display.destroy();
     for (const part of this.parts) {
       // Safe even if RenderComponent already destroyed the instances.

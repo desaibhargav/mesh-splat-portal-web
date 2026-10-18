@@ -3,9 +3,9 @@ import {
   type AppBase, type CameraComponent, type GSplatComponent
 } from "playcanvas";
 import type { SelectionOperation } from "./rectangle";
-import { projectSelection } from "./projectSelection";
+import { applySelection, projectSelection } from "./projectSelection";
 import { captureDepth, depthTest } from "./SelectionDepth";
-import type { SelectionCamera, SelectionRegion, SelectionState, SelectionSummary, VisibilityTest } from "./types";
+import type { SelectionCamera, SelectionRegion, SelectionState, SelectionSummary } from "./types";
 
 import { SelectionBounds } from "./selectionBounds";
 
@@ -63,12 +63,18 @@ export class SplatSelection {
     return { selected: this.selected, total: this.centers.length / 3, isolated: this.isolated };
   }
 
-  async visibility(app: AppBase, camera: CameraComponent): Promise<VisibilityTest[]> { return [depthTest(await captureDepth(app, camera))]; }
+  async hitTest(app: AppBase, camera: CameraComponent, region: SelectionRegion): Promise<Uint8Array[]> {
+    const matrix = new Mat4().mul2(camera.projectionMatrix, camera.viewMatrix).mul(this.component.entity.getWorldTransform());
+    const depth = await captureDepth(app, camera), hits = new Uint8Array(this.mask.length);
+    projectSelection(this.centers, hits, matrix.data, region, "set", false, depthTest(depth));
+    return [hits];
+  }
 
-  select(region: SelectionRegion, operation: SelectionOperation, camera: SelectionCamera, visibility?: VisibilityTest[]): SelectionSummary {
+  select(region: SelectionRegion, operation: SelectionOperation, camera: SelectionCamera, hits?: Uint8Array[]): SelectionSummary {
     const matrix = new Mat4().mul2(camera.projectionMatrix, camera.viewMatrix);
     matrix.mul(this.component.entity.getWorldTransform());
-    this.selected = projectSelection(this.centers, this.mask, matrix.data, region, operation, this.isolated, visibility?.[0]);
+    this.selected = hits ? applySelection(this.mask, hits[0]!, operation, this.isolated) :
+      projectSelection(this.centers, this.mask, matrix.data, region, operation, this.isolated);
     if (!this.selected) this.isolated = false;
     this.update();
     return this.summary;

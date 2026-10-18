@@ -23,3 +23,16 @@ export function projectSelection(centers: Float32Array, mask: Uint8Array, matrix
   }
   return count;
 }
+
+// Apply GPU face hits without rechecking centroids: any covered face pixel may be selected.
+export function applySelection(mask: Uint8Array, hits: Uint8Array, operation: SelectionOperation, isolated: boolean): number {
+  let count = 0;
+  for (let i = 0; i < mask.length; i++) {
+    const previous = mask[i] !== 0, hit = hits[i] !== 0 && (!isolated || previous);
+    const selected = operation === "set" ? hit : operation === "add" ? previous || hit :
+      operation === "remove" ? previous && !hit : previous && hit;
+    mask[i] = selected ? 255 : 0;
+    if (selected) count++;
+  }
+  return count;
+}

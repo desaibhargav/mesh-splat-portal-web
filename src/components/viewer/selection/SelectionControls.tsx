@@ -72,8 +72,8 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
       try {
         const camera = handle.camera();
         const view = { projectionMatrix: camera.projectionMatrix.clone(), viewMatrix: camera.viewMatrix.clone() };
-        const visibility = xray ? undefined : await handle.selection.visibility(handle.app, camera);
-        if (generation.current === token) setSummary(history!.perform(() => handle.selection.select(region, operation, view, visibility)));
+        const hits = xray ? undefined : await handle.selection.hitTest(handle.app, camera, region);
+        if (generation.current === token) setSummary(history!.perform(() => handle.selection.select(region, operation, view, hits)));
       } catch (failure) {
         if (generation.current === token) setError(failure instanceof Error ? failure.message : String(failure));
       } finally { if (generation.current === token) setBusy(false); }
