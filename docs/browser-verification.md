@@ -63,6 +63,8 @@ Read screenshots with the image-viewing tool, not just a file-existence check. F
 
 ## Complete and report
 
+Run the same critical interactions against the minified production output (`npm run build`, then `npm run preview -- --host 127.0.0.1 --port 5180`). Development-server tests alone do not establish deployment correctness: minification can change class-derived engine registration names. Use explicit PlayCanvas script names for application-owned script subclasses. The Views camera regression was reproduced on both formats only in production output; verify tool activation, navigation, and teardown there before shipping.
+
 Run the relevant unit/regression tests and production build. Preserve a small automated regression test for the diagnosed cause when practical, especially for resource ownership or state-transition faults. Keep temporary diagnostic instrumentation out of production code.
 
 Report the exact browser workflows exercised, which asset types passed, and any material limits. Headless Chromium testing does not establish Safari, WebGPU, or headset compatibility. If a fixture or browser check times out, diagnose it or report that coverage as incomplete; do not count it as a pass. Commit/push reusable code and documentation through Git, then deploy on AWS using the existing workflow.

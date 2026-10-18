@@ -5,6 +5,8 @@ import { CameraControls as EngineCameraControls } from "playcanvas/scripts/esm/c
 // Restore its own pose and orbit controller together, rather than fighting
 // camera transforms each frame. Review this boundary when upgrading the script.
 export class CameraControls extends EngineCameraControls {
+  static override get scriptName() { return "cameraControls"; }
+
   restorePose(pose: Pose) {
     this.entity.setPosition(pose.position);
     this.focusPoint = pose.getFocus(new Vec3());
