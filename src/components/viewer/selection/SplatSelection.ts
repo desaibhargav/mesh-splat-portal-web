@@ -2,7 +2,7 @@ import {
   Color, FILTER_NEAREST, Mat4, PIXELFORMAT_R8, PIXELFORMAT_RGBA8, Texture, WORKBUFFER_UPDATE_ONCE,
   type AppBase, type CameraComponent, type GSplatComponent
 } from "playcanvas";
-import { currentSelectionArea, paintSelection, decodeColor, recordSelectionArea, selectionAreaAt, updateSelectionAreas, visiblePaint, visibleSelections, type PaintState } from "./selectionColors";
+import { currentSelectionArea, paintSelection, decodeColor, recordSelectionGesture, selectionAreaAt, updateSelectionAreas, visiblePaint, visibleSelections, type PaintState } from "./selectionColors";
 import type { SelectionOperation } from "./rectangle";
 import { applySelection, projectSelection } from "./projectSelection";
 import { captureDepth, depthTest } from "./SelectionDepth";
@@ -123,10 +123,11 @@ export class SplatSelection {
   select(region: SelectionRegion, operation: SelectionOperation, camera: SelectionCamera, hits?: Uint8Array[]): SelectionSummary {
     const matrix = new Mat4().mul2(camera.projectionMatrix, camera.viewMatrix);
     matrix.mul(this.component.entity.getWorldTransform());
+    const previous = operation === "add" ? [this.mask.slice()] : undefined;
     this.selected = hits ? applySelection(this.mask, hits[0]!, operation, this.isolated) :
       projectSelection(this.centers, this.mask, matrix.data, region, operation, this.isolated);
     if (!this.selected) this.isolated = false;
-    this.selectionAreas = recordSelectionArea(this.selectionAreas, this.state);
+    this.selectionAreas = recordSelectionGesture(this.selectionAreas, this.state, operation, previous);
     this.currentArea = currentSelectionArea(this.state, this.selectionAreas);
     this.update();
     return this.summary;

@@ -31,11 +31,9 @@ export function SplatViewer({ url, onStatus, onSelectionReady }: {
         tint.linear();
         tint.a = 0.5;
         selection = new SplatSelection(entity.gsplat, tint);
-        onSelectionReady({ app, selection, camera: () => {
-          const camera = app.systems.camera!.cameras[0];
-          if (!camera) throw new Error("Viewer camera is unavailable.");
-          return camera;
-        } });
+        const camera = app.systems.camera!.cameras[0];
+        if (!camera) throw new Error("Viewer camera is unavailable.");
+        onSelectionReady({ app, selection, camera: () => camera });
       } catch (error) {
         onStatus({ loading: false, progress: 1, error: `Selection unavailable: ${error instanceof Error ? error.message : String(error)}` });
       }

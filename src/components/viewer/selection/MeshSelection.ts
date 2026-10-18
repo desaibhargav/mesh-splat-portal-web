@@ -3,7 +3,7 @@ import {
   TYPE_INT8, TYPE_INT16, TYPE_UINT8, TYPE_UINT16, VertexBuffer,
   type AppBase, type CameraComponent, type Layer, type RenderComponent
 } from "playcanvas";
-import { currentSelectionArea, paintSelection, decodeColor, recordSelectionArea, selectionAreaAt, updateSelectionAreas, visiblePaint, visibleSelections, type PaintState } from "./selectionColors";
+import { currentSelectionArea, paintSelection, decodeColor, recordSelectionGesture, selectionAreaAt, updateSelectionAreas, visiblePaint, visibleSelections, type PaintState } from "./selectionColors";
 import { applySelection, projectSelection } from "./projectSelection";
 import type { SelectionOperation } from "./rectangle";
 import { MeshPicker } from "./MeshPicker";
@@ -155,6 +155,7 @@ export class MeshSelection {
   }
   select(region: SelectionRegion, operation: SelectionOperation, camera: SelectionCamera, hits?: Uint8Array[]): SelectionSummary {
     const viewProjection = new Mat4().mul2(camera.projectionMatrix, camera.viewMatrix);
+    const previous = operation === "add" ? this.parts.map(part => part.mask.slice()) : undefined;
     this.selected = 0;
     for (const [i, part] of this.parts.entries()) {
       const matrix = new Mat4().mul2(viewProjection, part.source.node.getWorldTransform());
@@ -162,7 +163,7 @@ export class MeshSelection {
         projectSelection(part.centers, part.mask, matrix.data, region, operation, this.isolated);
     }
     if (!this.selected) this.isolated = false;
-    this.selectionAreas = recordSelectionArea(this.selectionAreas, this.state);
+    this.selectionAreas = recordSelectionGesture(this.selectionAreas, this.state, operation, previous);
     this.currentArea = currentSelectionArea(this.state, this.selectionAreas);
     this.refresh();
     return this.summary;

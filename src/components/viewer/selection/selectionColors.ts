@@ -1,4 +1,5 @@
 import type { SelectionArea, SelectionState } from "./types";
+import type { SelectionOperation } from "./rectangle";
 import { packSelection, selectionsEqual, snapshotContains } from "./selectionSnapshot";
 
 export const selectionColors = [
@@ -56,6 +57,17 @@ export function recordSelectionArea(areas: readonly SelectionArea[], state: Sele
     areas.map((area, index) => index === existing ? { ...area, visible: true } : area);
   const id = areas.reduce((maximum, area) => Math.max(maximum, area.id), 0) + 1;
   return [...areas, { id, name: `Selection ${id}`, visible: true, color: 0, snapshot }];
+}
+
+// Saved areas describe one selection gesture, while the active mask may contain
+// several Shift-added gestures. Keeping those concepts separate lets a user
+// address, color, annotate, and hover each area independently.
+export function recordSelectionGesture(areas: readonly SelectionArea[], state: SelectionState,
+  operation: SelectionOperation, previous?: readonly Uint8Array[]): readonly SelectionArea[] {
+  if (operation !== "set" && operation !== "add") return areas;
+  const masks = operation === "set" ? state.masks : state.masks.map((mask, part) =>
+    mask.map((selected, index) => selected && !previous?.[part]?.[index] ? 255 : 0));
+  return recordSelectionArea(areas, { masks, isolated: false });
 }
 
 export function visiblePaint(colors: PaintState, areas: readonly SelectionArea[]): PaintState {

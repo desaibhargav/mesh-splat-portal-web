@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { currentSelectionArea, decodeColor, encodeColor, paintSelection, recordSelectionArea, updateSelectionAreas, visiblePaint, visibleSelections } from "./selectionColors";
+import { currentSelectionArea, decodeColor, encodeColor, paintSelection, recordSelectionArea, recordSelectionGesture, updateSelectionAreas, visiblePaint, visibleSelections } from "./selectionColors";
 
 it("paints only selected primitives and keeps previous color buffers immutable", () => {
   const original = [new Uint32Array([0, 1, 0]), new Uint32Array([0, 0])];
@@ -44,4 +44,12 @@ it("records every selection and independently hides its highlight and paint", ()
   const hidden = painted.map(area => ({ ...area, visible: false }));
   expect([...visiblePaint([new Uint32Array([red, 0])], hidden)[0]!]).toEqual([0, 0]);
   expect([...visibleSelections(hidden, [2])[0]!]).toEqual([0, 0]);
+});
+
+it("records only the area added by each selection gesture", () => {
+  const first = { masks: [new Uint8Array([255, 0, 0])], isolated: false };
+  const combined = { masks: [new Uint8Array([255, 255, 0])], isolated: false };
+  const areas = recordSelectionGesture(recordSelectionGesture([], first, "set"), combined, "add", first.masks);
+  expect([...areas[0]!.snapshot.masks[0]!.bits]).toEqual([1]);
+  expect([...areas[1]!.snapshot.masks[0]!.bits]).toEqual([2]);
 });
