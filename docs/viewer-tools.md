@@ -18,6 +18,8 @@ The official [paint example](https://github.com/playcanvas/engine/blob/main/exam
 
 Our palette operation colors an existing selection mask. It reuses the same picker and work-buffer modifier APIs, with a one-byte palette-index texture instead of an RGBA brush stream. Immutable CPU indices provide compact, immediate undo state; GPU work-buffer modification applies the colors. A spherical brush processor would add a different operation and is unnecessary for this selection-based action. PlayCanvas does not supply the portal's selection palette or undo UI.
 
+A spherical brush affects Gaussian centers within a 3D radius around a picked surface point. Our current brush selects inside a screen-space circle, with the chosen visible-only/X-ray policy. A sphere can also reach nearby surfaces inside its radius; it does not itself enforce front-surface visibility. It could support depth-local painting or future XR interaction, but is not required for select → color → annotate and is not a fix for tiny-triangle picking.
+
 ## Desktop and XR
 
 Measurement state and visuals use one implementation for both asset formats and camera modes. Scene labels are ordinary world-space elements, and line projection and stereo rendering belong to the engine. The browser tool panels and annotation tooltip still require XR presentation and controller bindings when XR sessions are implemented. Those bindings should call the existing shared operations.

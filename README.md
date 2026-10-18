@@ -2,6 +2,8 @@
 
 The browser application for discovering and viewing cultural-heritage meshes and Gaussian splats.
 
+For ongoing development, read [project instructions](AGENTS.md), [project principles](docs/project-principles.md), and the [deferred roadmap](TODO.md).
+
 ## Intended stack
 
 - React and TypeScript
