@@ -35,6 +35,16 @@ npm run dev
 
 Open [http://127.0.0.1:5173](http://127.0.0.1:5173). The portal is currently public, so no login is required. The Vite server is development-only; production uses `npm run build` and serves `dist/` through Nginx.
 
+## Splat rectangle selection
+
+Choose **Rectangle select** in a splat viewer and drag a region. Selection tests Gaussian centers through the scene, including occluded centers; it does not select only the visible surface or use the full projected Gaussian footprint. Shift adds, Ctrl/Cmd removes, and Shift + Ctrl/Cmd intersects. Choose **Navigate** to orbit while retaining the selection, or press Escape to leave rectangle mode.
+
+Selected Gaussians are highlighted. **Isolate** hides unselected Gaussians; **Show all** restores them while retaining the highlight. **Clear** removes the selection and exits isolation. While isolated, further selections act only on the remaining Gaussians. Selections belong to the current viewer session and reset when another artifact is opened; no asset bytes or catalog records are modified.
+
+The implementation adapts SuperSplat's rectangle gesture and modifier conventions ([MIT notice](public/licenses/supersplat.txt)). It uses the existing PlayCanvas SOG center data, an ID-indexed selection texture, and the unified renderer's work-buffer modifier API. The mask is updated after a gesture, rather than rebuilding the asset or projecting every point on every pointer move. Isolation changes visibility, not the number of Gaussians held in memory or sorted by the renderer.
+
+This first version is splat-only. Mesh-region selection, lasso, brush, visible-surface selection, and persistent selections are not implemented.
+
 ## AWS demo deployment notes
 
 On the frontend gateway instance, build the static portal:

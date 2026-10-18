@@ -21,7 +21,7 @@ export function ViewerPage() {
         <div><p className="eyebrow">{artifact.data.type === "mesh" ? "Traditional mesh" : "Gaussian splat"}</p><h1>{artifact.data.title}</h1></div>
         <p>{formatBytes(artifact.data.sizeBytes)}</p>
       </div>
-      <ArtifactViewer artifact={artifact.data} />
+      <ArtifactViewer key={artifact.data.id} artifact={artifact.data} />
       <section className="metadata-panel"><h2>About this object</h2><p>{artifact.data.description}</p></section>
     </section>
   );

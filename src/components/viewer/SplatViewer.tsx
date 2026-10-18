@@ -1,26 +1,57 @@
 import { Entity } from "@playcanvas/react";
 import { GSplat } from "@playcanvas/react/components";
-import { useSplat } from "@playcanvas/react/hooks";
-import { useEffect } from "react";
-import { Vec3, type BoundingBox } from "playcanvas";
+import { useApp, useSplat } from "@playcanvas/react/hooks";
+import { useEffect, useMemo, useState } from "react";
+import { Color, Vec3, type BoundingBox, type Entity as PlayCanvasEntity } from "playcanvas";
 import type { ViewerStatus } from "./ArtifactViewer";
 import { frameBounds, ViewerCamera, type ViewerView } from "./ViewerCamera";
+import { SplatSelection, type SelectionHandle } from "./selection/SplatSelection";
 
-export function SplatViewer({ url, onStatus }: { url: string; onStatus(status: ViewerStatus): void }) {
+export function SplatViewer({ url, onStatus, selecting, onSelectionReady }: {
+  url: string; onStatus(status: ViewerStatus): void;
+  selecting: boolean; onSelectionReady(handle: SelectionHandle | null): void;
+}) {
+  const app = useApp();
   const result = useSplat(url);
-  const view = getSplatView(result.asset?.resource);
+  const view = useMemo(() => getSplatView(result.asset?.resource), [result.asset]);
+  const [entity, setEntity] = useState<PlayCanvasEntity | null>(null);
 
   useEffect(() => result.subscribe(({ progress }) => onStatus({ loading: true, progress, error: null })), [result.subscribe, onStatus]);
   useEffect(() => onStatus({ loading: result.loading, progress: result.loading ? 0 : 1, error: result.error }), [result.loading, result.error, onStatus]);
+  useEffect(() => {
+    if (!entity || !result.asset) return;
+    let selection: SplatSelection | undefined;
+    const frame = requestAnimationFrame(() => {
+      try {
+        if (!entity.gsplat) throw new Error("Splat component is unavailable.");
+        const tint = new Color().fromString(getComputedStyle(app.graphicsDevice.canvas).getPropertyValue("--gold").trim());
+        tint.linear();
+        tint.a = 0.5;
+        selection = new SplatSelection(entity.gsplat, tint);
+        onSelectionReady({ selection, camera: () => {
+          const camera = app.systems.camera!.cameras[0];
+          if (!camera) throw new Error("Viewer camera is unavailable.");
+          return camera;
+        } });
+      } catch (error) {
+        onStatus({ loading: false, progress: 1, error: `Selection unavailable: ${error instanceof Error ? error.message : String(error)}` });
+      }
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      onSelectionReady(null);
+      selection?.destroy();
+    };
+  }, [app, entity, result.asset, onSelectionReady, onStatus]);
 
   return (
     <>
       {result.asset && (
-        <Entity rotation={[0, 0, 180]}>
+        <Entity ref={setEntity} rotation={[0, 0, 180]}>
           <GSplat asset={result.asset} key={result.asset.id} unified />
         </Entity>
       )}
-      {result.asset && <ViewerCamera view={view} />}
+      {result.asset && <ViewerCamera view={view} controlsEnabled={!selecting} />}
     </>
   );
 }

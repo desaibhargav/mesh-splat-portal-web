@@ -10,7 +10,7 @@ export interface ViewerView {
   fov?: number;
 }
 
-export function ViewerCamera({ view }: { view: ViewerView }) {
+export function ViewerCamera({ view, controlsEnabled = true }: { view: ViewerView; controlsEnabled?: boolean }) {
   return (
     <Entity name="Viewer camera" position={view.cameraPosition}>
       <Camera
@@ -20,6 +20,7 @@ export function ViewerCamera({ view }: { view: ViewerView }) {
       />
       <Script
         script={CameraControls}
+        enabled={controlsEnabled}
         enableFly={false}
         focusPoint={view.focusPoint}
         focusDamping={0.85}
