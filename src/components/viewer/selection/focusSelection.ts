@@ -19,7 +19,8 @@ export function focusPosition(bounds: BoundingBox, camera: Pick<CameraComponent,
 export function focusSelection(bounds: BoundingBox, camera: CameraComponent) {
   const controls = camera.entity.script?.get("cameraControls") as CameraControls | undefined;
   if (!controls) throw new Error("Camera controls are unavailable.");
-  const position = focusPosition(bounds, camera);
+  const position = bounds.halfExtents.lengthSq() === 0 ? camera.entity.forward.clone()
+    .mulScalar(-camera.entity.getPosition().distance(controls.focusPoint)).add(bounds.center) : focusPosition(bounds, camera);
   camera.entity.setPosition(position);
   // The public focusPoint setter synchronizes the orbit pose immediately, even in selection mode.
   controls.focusPoint = bounds.center.clone();

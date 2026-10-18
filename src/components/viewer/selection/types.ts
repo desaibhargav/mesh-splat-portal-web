@@ -1,7 +1,7 @@
 import type { AppBase, BoundingBox, CameraComponent } from "playcanvas";
 import type { SelectionOperation } from "./rectangle";
 
-export type SelectionTool = "navigate" | "rectangle" | "lasso" | "brush";
+export type SelectionTool = "navigate" | "rectangle" | "lasso" | "brush" | "measure";
 export interface SelectionRegion { pixels: Uint8ClampedArray; width: number; height: number }
 export interface SelectionSummary { selected: number; total: number; isolated: boolean }
 export type SelectionCamera = Pick<CameraComponent, "projectionMatrix" | "viewMatrix">;

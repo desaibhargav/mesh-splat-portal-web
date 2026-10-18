@@ -45,7 +45,15 @@ Shift adds, Ctrl/Cmd removes, and Shift + Ctrl/Cmd intersects. Brush diameter is
 
 The tools adapt SuperSplat's gesture and modifier conventions ([MIT notice](public/licenses/supersplat.txt)). Splats use an ID-indexed selection texture and the unified renderer's work-buffer modifier API. Static triangle meshes use selected and unselected index subsets with their original vertex attributes and materials. Skinned and morphed meshes are not supported. Isolation changes visibility, not the asset's memory footprint. Selections belong to the current viewer session; no asset bytes or catalog records are modified.
 
-The remaining work is tracked in [TODO.md](TODO.md), including measurement, selection accuracy, thumbnails, and turntable previews.
+## Measurement
+
+The ruler icon enables measurement for meshes and splats. Click two visible surface points to draw a line with its straight-line distance overlaid in model units. Shift-click starts an additional measurement while retaining completed lines; click again to finish it. Alt/Option orbit, pan, and zoom remain available. Q/Escape exits placement mode while keeping the lines visible. Returning to the ruler allows more measurements or clearing them. F frames the measurement endpoints and sets their orbit pivot. Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z undo and redo measurement edits; Clear measurements removes them all.
+
+Picking uses PlayCanvas's depth-enabled `Picker.getWorldPointAsync`, at canvas resolution, with buffers reused between clicks. Markers and labels use lightweight SVG overlays projected through the PlayCanvas camera. They follow navigation without introducing a text/font asset or UI dependency. Measurements belong to the viewer session and respect isolated geometry.
+
+GLB uses meters by specification, but the inspected scans have no verified physical calibration; PLY/SOG assets carry no physical-unit declaration. Distances therefore remain labeled **model units**. Splat picks estimate a surface from rendered Gaussians. See [measurement details](docs/measurement.md).
+
+The remaining work is tracked in [TODO.md](TODO.md), including calibration, selection accuracy, thumbnails, and turntable previews.
 
 ## AWS demo deployment notes
 

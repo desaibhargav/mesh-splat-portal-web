@@ -45,7 +45,7 @@ export function ArtifactViewer({ artifact }: { artifact: Artifact }) {
         <span>{artifact.type === "mesh" ? "Mesh" : "Gaussian splat"}</span>
         <button onClick={() => void toggleFullscreen()}>{fullscreen ? "Exit fullscreen" : "Fullscreen"}</button>
       </div>
-      <SelectionControls handle={selection} tool={tool} onToolChange={changeTool} onGestureChange={setDrawing} disabled={status.loading || Boolean(status.error)} />
+      <SelectionControls handle={selection} tool={tool} onToolChange={changeTool} onGestureChange={setDrawing} assetType={artifact.type} disabled={status.loading || Boolean(status.error)} />
       <div className="viewer-canvas">
         <Application graphicsDeviceOptions={{ antialias: artifact.type === "mesh" }}>
           {artifact.type === "mesh" ? <MeshViewer url={artifact.contentUrl} onStatus={setStatus} controlsEnabled={!drawing} onSelectionReady={setSelection} /> :
@@ -54,7 +54,7 @@ export function ArtifactViewer({ artifact }: { artifact: Artifact }) {
       </div>
       {status.loading && <div className="viewer-loading" role="status"><span>Loading 3D asset</span><progress value={status.progress} max={1} /></div>}
       {status.error && <div className="viewer-error" role="alert">{status.error}</div>}
-      <p className="viewer-help">{selecting ? "Drag to select · Shift: add · Ctrl/Cmd: remove · Shift + Ctrl/Cmd: intersect · Alt/Option or right-drag: orbit · Middle-drag: pan · Scroll: zoom · Q: exit" :
+      <p className="viewer-help">{tool === "measure" ? "Click two points · Shift-click: new measurement · Alt/Option or right-drag: orbit · Middle-drag: pan · Scroll: zoom · F: focus · Q: exit" : selecting ? "Drag to select · Shift: add · Ctrl/Cmd: remove · Shift + Ctrl/Cmd: intersect · Alt/Option or right-drag: orbit · Middle-drag: pan · Scroll: zoom · Q: exit" :
         "Drag to orbit · Shift-drag or middle-drag to pan · Scroll to zoom · F: focus"}</p>
     </section>
   );
