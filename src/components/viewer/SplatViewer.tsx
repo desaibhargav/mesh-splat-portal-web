@@ -4,7 +4,7 @@ import { useApp, useSplat } from "@playcanvas/react/hooks";
 import { useEffect, useMemo, useState } from "react";
 import { Color, Vec3, type BoundingBox, type Entity as PlayCanvasEntity } from "playcanvas";
 import type { ViewerStatus } from "./ArtifactViewer";
-import { frameBounds, ViewerCamera, type ViewerView } from "./ViewerCamera";
+import { frameBounds, interactiveCamera, ViewerCamera, type ViewerView } from "./ViewerCamera";
 import { SplatSelection } from "./selection/SplatSelection";
 import type { SelectionHandle } from "./selection/types";
 
@@ -31,9 +31,7 @@ export function SplatViewer({ url, onStatus, onSelectionReady }: {
         tint.linear();
         tint.a = 0.5;
         selection = new SplatSelection(entity.gsplat, tint);
-        const camera = app.systems.camera!.cameras[0];
-        if (!camera) throw new Error("Viewer camera is unavailable.");
-        onSelectionReady({ app, selection, camera: () => camera });
+        onSelectionReady({ app, selection, camera: () => interactiveCamera(app) });
       } catch (error) {
         onStatus({ loading: false, progress: 1, error: `Selection unavailable: ${error instanceof Error ? error.message : String(error)}` });
       }

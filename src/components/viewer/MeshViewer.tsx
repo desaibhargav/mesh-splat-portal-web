@@ -4,7 +4,7 @@ import { useApp, useEnvAtlas, useModel } from "@playcanvas/react/hooks";
 import { useEffect, useState } from "react";
 import { BoundingBox, Color, type Entity as PlayCanvasEntity, type MeshInstance } from "playcanvas";
 import type { ViewerStatus } from "./ArtifactViewer";
-import { frameBounds, ViewerCamera, type ViewerView } from "./ViewerCamera";
+import { frameBounds, interactiveCamera, ViewerCamera, type ViewerView } from "./ViewerCamera";
 import { MeshSelection } from "./selection/MeshSelection";
 import type { SelectionHandle } from "./selection/types";
 
@@ -38,9 +38,7 @@ export function MeshViewer({ url, onStatus, onSelectionReady }: {
         const tint = new Color().fromString(getComputedStyle(app.graphicsDevice.canvas).getPropertyValue("--gold").trim()).linear();
         tint.a = 0.5;
         selection = new MeshSelection(target, app, tint);
-        const camera = app.systems.camera!.cameras[0];
-        if (!camera) throw new Error("Viewer camera is unavailable.");
-        onSelectionReady({ app, selection, camera: () => camera });
+        onSelectionReady({ app, selection, camera: () => interactiveCamera(app) });
       } catch (error) {
         onStatus({ loading: false, progress: 1, error: `Selection unavailable: ${error instanceof Error ? error.message : String(error)}` });
       }
