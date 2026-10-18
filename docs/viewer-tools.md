@@ -7,6 +7,7 @@ Mesh and splat viewers supply the same `SelectionController` contract to `Select
 | Operation | Reused PlayCanvas API |
 | --- | --- |
 | Orbit, pan, zoom | Bundled `CameraControls` script |
+| Named reference views | `TranslateGizmo`, `RotateGizmo`, reference `Entity`, `Pose`, and `AppBase.drawLines`; [workflow and camera adapter](views.md) |
 | Place measurement/annotation endpoints | Depth-enabled `Picker.prepare` and `getWorldPointAsync`, through shared `SurfacePicker` / `useSurfacePick` |
 | Visible region selection | `RenderPassPicker` for GPU triangle IDs or splat depth |
 | Measurement visuals | Built-in cylinder/sphere render primitives, world-space text elements, `CanvasFont`, and `Layer` |

@@ -1,9 +1,11 @@
 declare module "playcanvas/scripts/esm/camera-controls.mjs" {
-  import { Script, Vec2, Vec3 } from "playcanvas";
+  import { Script, Vec2, Vec3, Pose, InputController } from "playcanvas";
 
   export class CameraControls extends Script {
     focusPoint: Vec3;
     zoomRange: Vec2;
+    protected _pose: Pose;
+    protected _controller: InputController;
   }
 }
 

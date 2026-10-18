@@ -90,6 +90,14 @@ a { color: #536d7d; }
 .selection-shapes { display: flex; gap: 4px; margin: 0; padding: 6px; border: 1px solid #666; }
 .selection-shapes legend { padding: 0 3px; }
 .selection-shapes button { flex: 1; padding: 6px 8px; }
+.view-options { width: min(245px, calc(100% - 24px)); }
+.view-options p { margin: 0; }
+.view-options label { max-width: none; gap: 4px; font-size: inherit; }
+.view-options input { min-width: 0; padding: 6px; color: inherit; background: #181818; border: 1px solid #666; font: inherit; }
+.view-options ul { display: flex; flex-direction: column; gap: 4px; list-style: none; margin: 0; padding: 0; }
+.view-options li { display: flex; gap: 4px; }
+.view-options li button:first-child { flex: 1; min-width: 0; overflow-wrap: anywhere; text-align: left; }
+.view-options .annotation-delete { color: #ff7474; }
 .selection-palette { display: flex; flex-direction: column; gap: 5px; margin: 0; padding: 6px; border: 1px solid #666; }
 .selection-palette legend { padding: 0 3px; font-size: inherit; }
 .selection-palette button { min-height: 25px; padding: 0; }

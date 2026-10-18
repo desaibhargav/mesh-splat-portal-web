@@ -2,7 +2,7 @@ import { memo, useEffect, useState } from "react";
 import { Entity } from "@playcanvas/react";
 import { Camera, Script } from "@playcanvas/react/components";
 import { Vec2, Vec3, type AppBase, type BoundingBox, type CameraComponent } from "playcanvas";
-import { CameraControls } from "playcanvas/scripts/esm/camera-controls.mjs";
+import { CameraControls } from "./CameraControls";
 
 export interface ViewerView {
   cameraPosition: [number, number, number];

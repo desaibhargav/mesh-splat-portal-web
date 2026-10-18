@@ -11,12 +11,14 @@ import { SelectionHistory, unpackSelection } from "./SelectionHistory";
 import { encodeColor } from "./selectionColors";
 import { SelectionColorPicker } from "./SelectionColorPicker";
 import { focusSelection } from "./focusSelection";
+import { ViewControls } from "../views/ViewControls";
 
 const tools: { tool: SelectionTool; label: string; path: string }[] = [
   { tool: "navigate", label: "Navigate (Q)", path: "M5 3l14 10-7 1-3 7z" },
   { tool: "select", label: "Select", path: "M4 4h16v16H4z" },
   { tool: "measure", label: "Measure distance", path: "M3 16L16 3l5 5L8 21zM7 12l3 3m0-6 3 3m0-6 3 3" },
-  { tool: "annotate", label: "Annotate", path: "M4 4h16v12H9l-5 5zM8 8h8m-8 4h5" }
+  { tool: "annotate", label: "Annotate", path: "M4 4h16v12H9l-5 5zM8 8h8m-8 4h5" },
+  { tool: "views", label: "Views", path: "M12 12V3m0 9 8 5m-8-5-8 5M9 6l3-3 3 3m2 5 3 6-6-1M4 11v6l6-1" }
 ];
 const selectionShapes: { shape: SelectionShape; label: string }[] = [
   { shape: "rectangle", label: "Box" },
@@ -152,8 +154,9 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
     {groups.length > 0 && <ViewerTree groups={groups} />}
     {selecting && !unavailable && <SelectionGesture key={selectionShape} tool={selectionShape} brushSize={brushSize} onSelect={onSelect} />}
     {handle && annotations && <AnnotationControls handle={handle} annotations={annotations} active={tool === "annotate" && !disabled} interactive={tool === "navigate" || tool === "annotate"}
-      hoverRegions={!disabled && tool !== "measure"}
+      hoverRegions={!disabled && (tool === "navigate" || tool === "annotate" || tool === "select")}
       onChange={documentChanged} />}
     {handle && measurement && <MeasurementControls handle={handle} measurement={measurement} active={tool === "measure" && !disabled} onChange={documentChanged} />}
+    {handle && <ViewControls handle={handle} active={tool === "views" && !disabled} />}
   </>;
 }

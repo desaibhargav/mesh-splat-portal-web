@@ -51,6 +51,10 @@ Paint uses immutable packed-sRGB buffers shared across unchanged undo snapshots.
 
 The tools adapt SuperSplat's gesture and modifier conventions ([MIT notice](public/licenses/supersplat.txt)). Splats use an ID-indexed selection texture and the unified renderer's work-buffer modifier API. Static triangle meshes use index subsets grouped by selection and palette color, preserving their vertex attributes and original base materials. Skinned and morphed meshes are not supported. Isolation changes visibility, not the asset's memory footprint. Selections belong to the current viewer session; no asset bytes or catalog records are modified.
 
+## Views
+
+The **Views** icon opens a shared mesh/splat reference tool. Capture the current camera, move or rotate its reference plane with PlayCanvas's native gizmos, preview the direction, and name/save/recall views. Recalling restores roll, framing, and orbit pivot; the asset is unchanged. Q exits. Views last until leaving the asset. See [reference views](docs/views.md) for the workflow and current limits; sectioning is the next feature family.
+
 ## Measurement
 
 The ruler icon enables measurement for meshes and splats. Click two visible surface points to draw a solid white line with its straight-line distance. Shift-click starts an additional measurement while retaining completed lines; click again to finish it. Line-width and font-size sliders adjust all measurements. Alt/Option orbit, pan, and zoom remain available. Q/Escape exits placement mode while keeping the lines visible. Returning to the ruler allows more measurements or clearing them. F frames the measurement endpoints and sets their orbit pivot. Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z undo and redo measurement edits; Clear measurements removes them all.

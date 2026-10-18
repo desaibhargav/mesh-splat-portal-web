@@ -2,6 +2,8 @@
 
 Status: researched, not implemented. Selection toolbar consolidation is independent of this work.
 
+The shared [Views tool](views.md) now supplies named, session-local reference frames. Sectioning can use each frame's origin and quaternion: its local X/Y axes define the plane, +Z its normal. Offset moves along that normal, the two tilts rotate around the reference X/Y axes, and flip changes the retained side. Axis/face/three-point alignment remains future work. View gizmos never transform source geometry.
+
 ## Engine reuse
 
 PlayCanvas supplies the rendering primitives for sectioning, but the installed engine (2.21.4) has no bundled Acrobat-style sectioning tool or React panel to wire in directly.

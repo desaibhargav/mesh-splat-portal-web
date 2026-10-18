@@ -9,4 +9,5 @@
 - Thumbnails: improve automatic framing, view choice, and consistent neutral lighting.
 - Turntable previews: generate discrete views for an interactive catalog preview; revisit thumbnail rendering as part of this work.
 - Sectioning / clipping planes: engine reuse and proposed shared controls are researched in [docs/sectioning.md](docs/sectioning.md); implementation is deferred. Treat filled caps and intersection contours as separate work.
+- Reference views: session-local named views with native move/rotate gizmos are implemented in [docs/views.md](docs/views.md). Next add axis, face, and three-point alignment; use the reference frame for section-plane offset, two tilts, and flip. Persistent full-document views remain the separate IndexedDB item above.
 - Appearance controls, including tint and opacity.
