@@ -1,6 +1,6 @@
 import { Entity, Gltf } from "@playcanvas/react";
-import { Light } from "@playcanvas/react/components";
-import { useModel } from "@playcanvas/react/hooks";
+import { Environment } from "@playcanvas/react/components";
+import { useEnvAtlas, useModel } from "@playcanvas/react/hooks";
 import { useEffect, useState } from "react";
 import { BoundingBox, type Entity as PlayCanvasEntity, type MeshInstance } from "playcanvas";
 import type { ViewerStatus } from "./ArtifactViewer";
@@ -8,11 +8,15 @@ import { frameBounds, ViewerCamera, type ViewerView } from "./ViewerCamera";
 
 export function MeshViewer({ url, onStatus }: { url: string; onStatus(status: ViewerStatus): void }) {
   const result = useModel(url);
+  const environment = useEnvAtlas("/lighting/studio-small-08.png");
   const [target, setTarget] = useState<PlayCanvasEntity | null>(null);
   const [view, setView] = useState<ViewerView | null>(null);
 
   useEffect(() => result.subscribe(({ progress }) => onStatus({ loading: true, progress, error: null })), [result.subscribe, onStatus]);
-  useEffect(() => onStatus({ loading: result.loading, progress: result.loading ? 0 : 1, error: result.error }), [result.loading, result.error, onStatus]);
+  useEffect(() => {
+    const loading = result.loading || environment.loading;
+    onStatus({ loading, progress: loading ? 0 : 1, error: result.error ?? environment.error });
+  }, [result.loading, result.error, environment.loading, environment.error, onStatus]);
   useEffect(() => {
     if (!target || !result.asset) {
       setView(null);
@@ -28,8 +32,7 @@ export function MeshViewer({ url, onStatus }: { url: string; onStatus(status: Vi
     <>
       {result.asset && <Entity ref={setTarget}><Gltf asset={result.asset} key={result.asset.id} /></Entity>}
       {view && <ViewerCamera view={view} />}
-      <Entity rotation={[45, 35, 0]}><Light type="directional" intensity={1.8} /></Entity>
-      <Entity rotation={[-45, -145, 0]}><Light type="directional" intensity={0.8} /></Entity>
+      {environment.asset && <Environment envAtlas={environment.asset} showSkybox={false} />}
     </>
   );
 }

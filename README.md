@@ -24,6 +24,8 @@ Locally, Vite proxies `/api/` and `/files/` to the artifact service on port 8080
 
 ## Run locally
 
+Mesh viewing uses a bundled, prefiltered studio environment for ambient illumination and reflections, with a plain background. Lighting asset provenance and preparation are documented in [`public/lighting/README.md`](public/lighting/README.md). Gaussian splats retain their captured appearance.
+
 Start the artifact service first, then:
 
 ```bash
