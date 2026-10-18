@@ -8,8 +8,8 @@ import { frameBounds, ViewerCamera, type ViewerView } from "./ViewerCamera";
 import { MeshSelection } from "./selection/MeshSelection";
 import type { SelectionHandle } from "./selection/types";
 
-export function MeshViewer({ url, onStatus, selecting, onSelectionReady }: {
-  url: string; onStatus(status: ViewerStatus): void; selecting: boolean; onSelectionReady(handle: SelectionHandle | null): void;
+export function MeshViewer({ url, onStatus, controlsEnabled, onSelectionReady }: {
+  url: string; onStatus(status: ViewerStatus): void; controlsEnabled: boolean; onSelectionReady(handle: SelectionHandle | null): void;
 }) {
   const app = useApp();
   const result = useModel(url);
@@ -53,7 +53,7 @@ export function MeshViewer({ url, onStatus, selecting, onSelectionReady }: {
   return (
     <>
       {result.asset && <Entity ref={setTarget}><Gltf asset={result.asset} key={result.asset.id} /></Entity>}
-      {view && <ViewerCamera view={view} controlsEnabled={!selecting} />}
+      {view && <ViewerCamera view={view} controlsEnabled={controlsEnabled} />}
       {environment.asset && <Environment envAtlas={environment.asset} showSkybox={false} />}
     </>
   );

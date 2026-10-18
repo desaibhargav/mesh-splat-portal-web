@@ -8,9 +8,9 @@ import { frameBounds, ViewerCamera, type ViewerView } from "./ViewerCamera";
 import { SplatSelection } from "./selection/SplatSelection";
 import type { SelectionHandle } from "./selection/types";
 
-export function SplatViewer({ url, onStatus, selecting, onSelectionReady }: {
+export function SplatViewer({ url, onStatus, controlsEnabled, onSelectionReady }: {
   url: string; onStatus(status: ViewerStatus): void;
-  selecting: boolean; onSelectionReady(handle: SelectionHandle | null): void;
+  controlsEnabled: boolean; onSelectionReady(handle: SelectionHandle | null): void;
 }) {
   const app = useApp();
   const result = useSplat(url);
@@ -53,7 +53,7 @@ export function SplatViewer({ url, onStatus, selecting, onSelectionReady }: {
           <GSplat asset={result.asset} key={result.asset.id} unified />
         </Entity>
       )}
-      {result.asset && <ViewerCamera view={view} controlsEnabled={!selecting} />}
+      {result.asset && <ViewerCamera view={view} controlsEnabled={controlsEnabled} />}
     </>
   );
 }

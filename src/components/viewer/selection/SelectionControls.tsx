@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SelectionGesture } from "./SelectionGesture";
-import type { SelectionHandle, SelectionTool } from "./types";
+import type { SelectionHandle, SelectionRegion, SelectionTool } from "./types";
+import type { SelectionOperation } from "./rectangle";
 import { SelectionHistory } from "./SelectionHistory";
 import { focusSelection } from "./focusSelection";
 
@@ -11,8 +12,8 @@ const tools: { tool: SelectionTool; label: string; path: string }[] = [
   { tool: "brush", label: "Brush select", path: "M9 14L18 3l3 3-11 9m-1-1c-5-2-3 6-7 7 6 1 10-2 8-6z" }
 ];
 
-export function SelectionControls({ handle, tool, onToolChange, disabled }: {
-  handle: SelectionHandle | null; tool: SelectionTool; onToolChange(tool: SelectionTool): void; disabled: boolean;
+export function SelectionControls({ handle, tool, onToolChange, onGestureChange, disabled }: {
+  handle: SelectionHandle | null; tool: SelectionTool; onToolChange(tool: SelectionTool): void; onGestureChange(active: boolean): void; disabled: boolean;
 }) {
   const [summary, setSummary] = useState(handle?.selection.summary);
   const [xray, setXray] = useState(false);
@@ -48,6 +49,19 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
     frame.addEventListener("keydown", onKeyDown);
     return () => frame.removeEventListener("keydown", onKeyDown);
   }, [handle, history, unavailable]);
+  const onSelect = useCallback(async (region: SelectionRegion, operation: SelectionOperation) => {
+    if (!handle || !history) return;
+    const token = generation.current;
+    setBusy(true); setError(null);
+    try {
+      const camera = handle.camera();
+      const view = { projectionMatrix: camera.projectionMatrix.clone(), viewMatrix: camera.viewMatrix.clone() };
+      const hits = xray ? undefined : await handle.selection.hitTest(handle.app, camera, region);
+      if (generation.current === token) setSummary(history.perform(() => handle.selection.select(region, operation, view, hits)));
+    } catch (failure) {
+      if (generation.current === token) setError(failure instanceof Error ? failure.message : String(failure));
+    } finally { if (generation.current === token) setBusy(false); }
+  }, [handle, history, xray]);
   return <>
     <div ref={toolbar} className="selection-toolbar" role="group" aria-label="Selection tools">
       {tools.map(item => <button key={item.tool} title={item.label} aria-label={item.label} disabled={unavailable}
@@ -66,17 +80,6 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
       <button disabled={unavailable || !summary?.selected} onClick={() => setSummary(history!.perform(() => handle!.selection.clear()))}>Clear</button>
     </div>}
     {error && <div className="selection-error" role="alert">{error}</div>}
-    {selecting && !unavailable && <SelectionGesture key={tool} tool={tool} brushSize={brushSize} onSelect={async (region, operation) => {
-      const token = generation.current;
-      setBusy(true); setError(null);
-      try {
-        const camera = handle.camera();
-        const view = { projectionMatrix: camera.projectionMatrix.clone(), viewMatrix: camera.viewMatrix.clone() };
-        const hits = xray ? undefined : await handle.selection.hitTest(handle.app, camera, region);
-        if (generation.current === token) setSummary(history!.perform(() => handle.selection.select(region, operation, view, hits)));
-      } catch (failure) {
-        if (generation.current === token) setError(failure instanceof Error ? failure.message : String(failure));
-      } finally { if (generation.current === token) setBusy(false); }
-    }} />}
+    {selecting && !unavailable && <SelectionGesture key={tool} tool={tool} brushSize={brushSize} onActiveChange={onGestureChange} onSelect={onSelect} />}
   </>;
 }

@@ -14,10 +14,9 @@ export function ArtifactViewer({ artifact }: { artifact: Artifact }) {
   const [fullscreen, setFullscreen] = useState(false);
   const [selection, setSelection] = useState<SelectionHandle | null>(null);
   const [tool, setTool] = useState<SelectionTool>("navigate");
-  const lastTool = useRef<SelectionTool>("rectangle");
+  const [drawing, setDrawing] = useState(false);
   const selecting = tool !== "navigate";
   function changeTool(next: SelectionTool) {
-    if (next !== "navigate") lastTool.current = next;
     setTool(next);
   }
 
@@ -39,24 +38,24 @@ export function ArtifactViewer({ artifact }: { artifact: Artifact }) {
       }}
       onKeyDown={event => {
         if (event.repeat || event.ctrlKey || event.metaKey || event.altKey || (event.target as HTMLElement).closest("input, textarea, select, [contenteditable]:not([contenteditable=false])")) return;
-        if (event.key.toLowerCase() === "q") { event.preventDefault(); changeTool(selecting ? "navigate" : lastTool.current); }
+        if (event.key.toLowerCase() === "q") { event.preventDefault(); changeTool("navigate"); }
         else if (event.key === "Escape") changeTool("navigate");
       }}>
       <div className="viewer-toolbar">
         <span>{artifact.type === "mesh" ? "Mesh" : "Gaussian splat"}</span>
         <button onClick={() => void toggleFullscreen()}>{fullscreen ? "Exit fullscreen" : "Fullscreen"}</button>
       </div>
-      <SelectionControls handle={selection} tool={tool} onToolChange={changeTool} disabled={status.loading || Boolean(status.error)} />
+      <SelectionControls handle={selection} tool={tool} onToolChange={changeTool} onGestureChange={setDrawing} disabled={status.loading || Boolean(status.error)} />
       <div className="viewer-canvas">
         <Application graphicsDeviceOptions={{ antialias: artifact.type === "mesh" }}>
-          {artifact.type === "mesh" ? <MeshViewer url={artifact.contentUrl} onStatus={setStatus} selecting={selecting} onSelectionReady={setSelection} /> :
-            <SplatViewer url={artifact.contentUrl} onStatus={setStatus} selecting={selecting} onSelectionReady={setSelection} />}
+          {artifact.type === "mesh" ? <MeshViewer url={artifact.contentUrl} onStatus={setStatus} controlsEnabled={!drawing} onSelectionReady={setSelection} /> :
+            <SplatViewer url={artifact.contentUrl} onStatus={setStatus} controlsEnabled={!drawing} onSelectionReady={setSelection} />}
         </Application>
       </div>
       {status.loading && <div className="viewer-loading" role="status"><span>Loading 3D asset</span><progress value={status.progress} max={1} /></div>}
       {status.error && <div className="viewer-error" role="alert">{status.error}</div>}
-      <p className="viewer-help">{selecting ? "Drag to select · Shift: add · Ctrl/Cmd: remove · Shift + Ctrl/Cmd: intersect · Q: navigate · F: focus" :
-        "Drag to orbit · Shift-drag or middle-drag to pan · Scroll to zoom · Q: selection · F: focus"}</p>
+      <p className="viewer-help">{selecting ? "Drag to select · Shift: add · Ctrl/Cmd: remove · Shift + Ctrl/Cmd: intersect · Alt/Option or right-drag: orbit · Middle-drag: pan · Scroll: zoom · Q: exit" :
+        "Drag to orbit · Shift-drag or middle-drag to pan · Scroll to zoom · F: focus"}</p>
     </section>
   );
 }
