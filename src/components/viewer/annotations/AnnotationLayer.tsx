@@ -57,13 +57,17 @@ export function AnnotationLayer({ handle, records, interactive, hoverRegions, mo
       const entity = new Entity("Annotations"); root.current = entity;
       handle.app.root.addChild(entity); entity.addComponent("script");
       const color = new Color().fromString(getComputedStyle(container.current!).getPropertyValue("--gold").trim());
-      manager.current = entity.script!.create(ViewerAnnotationManager, { properties: {
+      const annotationManager = entity.script!.create(ViewerAnnotationManager, { properties: {
         container: container.current!, viewCamera: handle.camera().entity, hotspotColor: color, hoverColor: Color.WHITE
       } }) as unknown as ViewerAnnotationManager;
+      manager.current = annotationManager;
       setReady(value => value + 1);
     });
+    const hotspotAdded = () => setReady(value => value + 1);
+    handle.app.on("annotation:add", hotspotAdded);
     const destroy = () => {
-      cancelAnimationFrame(frame); root.current?.destroy(); entities.current.clear(); root.current = null; manager.current = null;
+      cancelAnimationFrame(frame); handle.app.off("annotation:add", hotspotAdded);
+      root.current?.destroy(); entities.current.clear(); root.current = null; manager.current = null;
     };
     handle.app.on("destroy", destroy);
     return () => { handle.app.off("destroy", destroy); destroy(); };
@@ -107,7 +111,8 @@ export function AnnotationLayer({ handle, records, interactive, hoverRegions, mo
     const original = entity.getPosition().clone(), preview = new Vec3();
     const canvas = handle.app.graphicsDevice.canvas as HTMLCanvasElement;
     const previousCursor = hotspot.style.cursor, previousTouchAction = hotspot.style.touchAction;
-    hotspot.style.cursor = "grab"; hotspot.style.touchAction = "none";
+    const previousPointerEvents = hotspot.style.pointerEvents;
+    hotspot.style.cursor = "grab"; hotspot.style.touchAction = "none"; hotspot.style.pointerEvents = "auto";
     let pointer: number | null = null, depth = 0, cancelled = false;
 
     function coordinates(event: PointerEvent) {
@@ -159,6 +164,7 @@ export function AnnotationLayer({ handle, records, interactive, hoverRegions, mo
     return () => {
       cancelled = true; picker.destroy(); entity.setPosition(original);
       hotspot.style.cursor = previousCursor; hotspot.style.touchAction = previousTouchAction;
+      hotspot.style.pointerEvents = previousPointerEvents;
       hotspot.removeEventListener("pointerdown", down, true);
       hotspot.removeEventListener("pointermove", move, true);
       hotspot.removeEventListener("pointerup", up, true);

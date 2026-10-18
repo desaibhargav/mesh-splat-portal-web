@@ -197,9 +197,10 @@ export class SplatSelection {
     this.currentArea = currentSelectionArea(this.state, this.selectionAreas);
     this.update(); return this.summary;
   }
-  bounds() {
+  bounds(state: SelectionState = this.state) {
     const bounds = new SelectionBounds(), transform = this.component.entity.getWorldTransform();
-    for (let i = 0; i < this.mask.length; i++) if (!this.selected || this.mask[i]) bounds.add(this.centers, i * 3, transform);
+    const mask = state.masks[0]!, selected = mask.some(Boolean);
+    for (let i = 0; i < this.mask.length; i++) if (!selected || mask[i]) bounds.add(this.centers, i * 3, transform);
     return bounds.value;
   }
   private update() {

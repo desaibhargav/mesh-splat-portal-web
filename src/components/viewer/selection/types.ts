@@ -25,7 +25,7 @@ export interface SelectionController {
   setAreaVisible(id: number, visible: boolean): SelectionSummary;
   paint(color: number): SelectionSummary;
   restore(state: SelectionState, colors?: PaintState, areas?: readonly SelectionArea[]): SelectionSummary;
-  bounds(): BoundingBox | null;
+  bounds(state?: SelectionState): BoundingBox | null;
   readonly summary: SelectionSummary;
   select(region: SelectionRegion, operation: SelectionOperation, camera: SelectionCamera, hits?: Uint8Array[]): SelectionSummary;
   clear(): SelectionSummary;

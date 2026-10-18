@@ -141,11 +141,13 @@ export class MeshSelection {
     this.currentArea = currentSelectionArea(this.state, this.selectionAreas);
     this.refresh(); return this.summary;
   }
-  bounds() {
+  bounds(state: SelectionState = this.state) {
     const bounds = new SelectionBounds();
-    for (const part of this.parts) {
+    const selected = state.masks.some(mask => mask.some(Boolean));
+    for (const [partIndex, part] of this.parts.entries()) {
       const transform = part.source.node.getWorldTransform();
-      for (let face = 0; face < part.mask.length; face++) if (!this.selected || part.mask[face]) {
+      const mask = state.masks[partIndex]!;
+      for (let face = 0; face < part.mask.length; face++) if (!selected || mask[face]) {
         for (let corner = 0; corner < 3; corner++) bounds.add(part.positions, part.indices[face * 3 + corner]! * 3, transform);
       }
     }

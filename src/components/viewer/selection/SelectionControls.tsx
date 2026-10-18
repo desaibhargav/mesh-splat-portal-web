@@ -144,7 +144,7 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
     {selecting && !unavailable && <SelectionGesture key={tool} tool={tool} brushSize={brushSize} onSelect={onSelect} />}
     {handle && annotations && <AnnotationControls handle={handle} annotations={annotations} active={tool === "annotate" && !disabled} interactive={tool === "navigate" || tool === "annotate"}
       hoverRegions={!disabled && tool !== "measure"}
-      onChange={documentChanged} onRestore={state => { setSummary(history!.perform(() => handle.selection.restore(state))); documentChanged(); }} />}
+      onChange={documentChanged} />}
     {handle && measurement && <MeasurementControls handle={handle} measurement={measurement} active={tool === "measure" && !disabled} onChange={documentChanged} />}
   </>;
 }

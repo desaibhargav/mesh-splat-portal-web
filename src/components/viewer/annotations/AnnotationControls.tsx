@@ -5,7 +5,7 @@ import { unpackSelection } from "../selection/SelectionHistory";
 import { decodeColor } from "../selection/selectionColors";
 import { focusSelection } from "../selection/focusSelection";
 import { snapshotContains } from "../selection/selectionSnapshot";
-import type { SelectionHandle, SelectionState } from "../selection/types";
+import type { SelectionHandle } from "../selection/types";
 import { AnnotationLayer } from "./AnnotationLayer";
 import { type Annotations, type AnnotationDraft, type AnnotationRecord } from "./Annotations";
 import { useSelectionAreaPick } from "./useSelectionAreaPick";
@@ -14,9 +14,9 @@ const newDraft = (): AnnotationDraft => ({ title: "", text: "", position: null, 
 type AnnotationKind = "selection" | "point";
 type AnnotationStep = "choose" | "selection" | "marker" | "details" | "drag" | null;
 
-export function AnnotationControls({ handle, annotations, active, interactive, hoverRegions, onChange, onRestore }: {
+export function AnnotationControls({ handle, annotations, active, interactive, hoverRegions, onChange }: {
   handle: SelectionHandle; annotations: Annotations; active: boolean; interactive: boolean; hoverRegions: boolean;
-  onChange(): void; onRestore(state: SelectionState): void;
+  onChange(): void;
 }) {
   const [, refresh] = useState(0);
   const [draft, setDraft] = useState<AnnotationDraft | null>(null);
@@ -78,9 +78,8 @@ export function AnnotationControls({ handle, annotations, active, interactive, h
     setStep("marker");
   });
 
-  function restoreRegion(region: NonNullable<AnnotationDraft["region"]>) {
-    onRestore(unpackSelection(region));
-    const bounds = handle.selection.bounds();
+  function focusRegion(region: NonNullable<AnnotationDraft["region"]>) {
+    const bounds = handle.selection.bounds(unpackSelection(region));
     if (bounds) focusSelection(bounds, handle.camera());
   }
   useEffect(() => {
@@ -149,7 +148,7 @@ export function AnnotationControls({ handle, annotations, active, interactive, h
           <label>Title<input name="title" required value={draft.title} onChange={event => setDraft({ ...draft, title: event.target.value })} /></label>
           <label>Description<textarea name="description" rows={3} value={draft.text} onChange={event => setDraft({ ...draft, text: event.target.value })} /></label>
           <button type="submit" disabled={!draft.title.trim() || busy}>Save annotation</button>
-          <button type="button" disabled={!draft.region} onClick={() => draft.region && restoreRegion(draft.region)}>Focus on annotated area</button>
+          <button type="button" disabled={!draft.region} onClick={() => draft.region && focusRegion(draft.region)}>Focus on annotated area</button>
           <button type="button" onClick={cancelAnnotation}>Cancel</button>
         </form>}
         {!draft && <button type="button" onClick={createAnnotation}>New annotation</button>}
