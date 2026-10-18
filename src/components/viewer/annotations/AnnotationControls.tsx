@@ -148,9 +148,8 @@ export function AnnotationControls({ handle, annotations, active, interactive, h
         {draft?.position && step === "details" && <form onSubmit={saveAnnotation}>
           <label>Title<input name="title" required value={draft.title} onChange={event => setDraft({ ...draft, title: event.target.value })} /></label>
           <label>Description<textarea name="description" rows={3} value={draft.text} onChange={event => setDraft({ ...draft, text: event.target.value })} /></label>
-          {draft.region && <button type="button" onClick={() => restoreRegion(draft.region!)}>Select annotated area</button>}
-          <button type="button" disabled={busy} onClick={() => setStep("drag")}>Move marker</button>
           <button type="submit" disabled={!draft.title.trim() || busy}>Save annotation</button>
+          {draft.region && <button type="button" onClick={() => restoreRegion(draft.region!)}>Focus on annotated area</button>}
           <button type="button" onClick={cancelAnnotation}>Cancel</button>
         </form>}
         {!draft && <button type="button" onClick={createAnnotation}>New annotation</button>}
