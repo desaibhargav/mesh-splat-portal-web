@@ -29,3 +29,9 @@ export function focusSelection(bounds: BoundingBox, camera: CameraComponent) {
   camera.nearClip = Math.min(camera.nearClip, distance / 100);
   controls.zoomRange = new Vec2(Math.min(controls.zoomRange.x, distance / 100), controls.zoomRange.y);
 }
+
+// Reattach the current camera pose to PlayCanvas's orbit controller after a modal tool exits.
+export function resumeNavigation(camera: CameraComponent) {
+  const controls = camera.entity.script?.get("cameraControls") as CameraControls | undefined;
+  if (controls) controls.focusPoint = controls.focusPoint.clone();
+}

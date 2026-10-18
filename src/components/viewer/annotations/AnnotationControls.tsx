@@ -106,7 +106,7 @@ export function AnnotationControls({ handle, annotations, active, interactive, h
   const status = busy ? "Picking surface…" : message ?? areaPick.error ?? ({
     choose: "Choose an annotation type",
     selection: areaPick.area ? `Click ${areaPick.area.name} to annotate it` : "Hover over a selection, then click it",
-    marker: kind === "selection" ? "Click the chosen selection to place its marker" : "Click a surface to place the marker",
+    marker: "Place the marker by clicking",
     details: "Enter a title and description",
     drag: "Drag the marker to a new surface"
   } as const)[step ?? "choose"];
