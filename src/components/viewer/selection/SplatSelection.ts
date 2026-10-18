@@ -70,6 +70,7 @@ export class SplatSelection {
   private isolated = false;
   private selectionAreas: readonly SelectionArea[] = [];
   private currentArea: SelectionArea | null = null;
+  private preview: SelectionArea | null = null;
 
   constructor(private readonly component: GSplatComponent, private readonly tint: Color) {
     const resource = component.resource;
@@ -160,6 +161,8 @@ export class SplatSelection {
       (this.currentArea && snapshotContains(this.currentArea.snapshot, part, index) ? this.currentArea : null);
   }
   previewArea(area: SelectionArea | null) {
+    if (this.preview?.snapshot === area?.snapshot) return;
+    this.preview = area;
     const pixels = this.previewTexture.lock() as Uint8Array;
     pixels.fill(0);
     const mask = area?.snapshot.masks[0];

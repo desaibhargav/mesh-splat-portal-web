@@ -19,11 +19,12 @@ export function observePointerClick<T>(element: HTMLElement,
     }
   }
   const reset = () => { down = null; };
-  element.addEventListener("pointerdown", pointerDown);
+  // Snapshot the hovered target before bubbling hover handlers clear it.
+  element.addEventListener("pointerdown", pointerDown, true);
   window.addEventListener("pointerup", pointerUp);
   window.addEventListener("pointercancel", reset);
   return () => {
-    element.removeEventListener("pointerdown", pointerDown);
+    element.removeEventListener("pointerdown", pointerDown, true);
     window.removeEventListener("pointerup", pointerUp);
     window.removeEventListener("pointercancel", reset);
   };

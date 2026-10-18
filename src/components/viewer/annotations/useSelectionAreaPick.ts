@@ -11,8 +11,8 @@ export function useSelectionAreaPick(handle: SelectionHandle, active: boolean, o
   const pick = useEffectEvent(onPick);
   useEffect(() => {
     handle.selection.previewArea(active ? area : null);
-    return () => handle.selection.previewArea(null);
   }, [handle, active, area]);
+  useEffect(() => () => handle.selection.previewArea(null), [handle]);
   useEffect(() => {
     if (!active) return;
     const canvas = handle.app.graphicsDevice.canvas as HTMLCanvasElement;

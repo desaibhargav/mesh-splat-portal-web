@@ -1,42 +1,12 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { Color, Entity, Vec3 } from "playcanvas";
-import { Annotation, AnnotationManager } from "playcanvas/scripts/esm/annotations.mjs";
+import { Annotation } from "playcanvas/scripts/esm/annotations.mjs";
 import { SurfacePicker } from "../picking/SurfacePicker";
 import { snapshotContains } from "../selection/selectionSnapshot";
 import type { SelectionHandle } from "../selection/types";
 import { useAnnotationHover } from "./useAnnotationHover";
+import { ViewerAnnotationManager } from "./ViewerAnnotationManager";
 import type { AnnotationRecord } from "./Annotations";
-
-// Confine the engine example's DOM to the canvas, including embedded/fullscreen
-// layouts. All hotspot rendering, tooltip text, and interaction remain upstream.
-class ViewerAnnotationManager extends AnnotationManager {
-  static scriptName = "viewerAnnotationManager";
-  container!: HTMLElement;
-  viewCamera!: Entity;
-  shades = new Map<Annotation, Color>();
-  regionAnnotation: Annotation | null = null;
-  _setAnnotationHover(annotation: Annotation, hover: boolean) {
-    super._setAnnotationHover(annotation, hover);
-    const color = hover ? this.hoverColor : this.shades.get(annotation) ?? this.hotspotColor;
-    for (const material of this._annotationResources.get(annotation)?.materials ?? []) {
-      material.emissive.copy(color);
-      material.update();
-    }
-  }
-  showRegion(annotation: Annotation | null) {
-    if (this.regionAnnotation === annotation) return;
-    if (this.regionAnnotation && this._activeAnnotation === this.regionAnnotation) this._hideTooltip(this.regionAnnotation);
-    this.regionAnnotation = annotation;
-    if (annotation) this._showTooltip(annotation);
-  }
-  hotspot(annotation: Annotation) {
-    return (this._annotationResources as unknown as Map<Annotation, { hotspotDom: HTMLDivElement }>).get(annotation)?.hotspotDom;
-  }
-  initialize() {
-    this._parentDom = this.container; this._camera = this.viewCamera;
-    super.initialize();
-  }
-}
 
 export function AnnotationLayer({ handle, records, interactive, hoverRegions, movingId, onMove }: {
   handle: SelectionHandle; records: readonly AnnotationRecord[]; interactive: boolean; hoverRegions: boolean;

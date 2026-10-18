@@ -8,7 +8,7 @@ declare module "playcanvas/scripts/esm/camera-controls.mjs" {
 }
 
 declare module "playcanvas/scripts/esm/annotations.mjs" {
-  import { Script, Entity, Color, StandardMaterial } from "playcanvas";
+  import { Script, Entity, Color, Mesh, StandardMaterial } from "playcanvas";
 
   export class Annotation extends Script {
     label: string;
@@ -22,6 +22,7 @@ declare module "playcanvas/scripts/esm/annotations.mjs" {
     // supplies its DOM container and camera before the base initializer runs.
     protected _parentDom: HTMLElement | null;
     protected _camera: Entity | null;
+    protected _mesh: Mesh | null;
     protected _annotationResources: Map<Annotation, { materials: StandardMaterial[] }>;
     protected _activeAnnotation: Annotation | null;
     protected _setAnnotationHover(annotation: Annotation, hover: boolean): void;
