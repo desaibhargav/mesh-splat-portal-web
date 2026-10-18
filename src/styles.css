@@ -86,6 +86,10 @@ a { color: #536d7d; }
 .selection-actions button[aria-pressed="true"] { color: var(--gold); border-color: var(--gold); }
 .selection-actions button:disabled { opacity: .45; cursor: default; }
 .selection-actions label { display: flex; flex-direction: column; max-width: 128px; font-size: .7rem; }
+.selection-options { max-height: calc(100% - var(--selection-toolbar-height) - 100px); overflow-y: auto; }
+.selection-shapes { display: flex; gap: 4px; margin: 0; padding: 6px; border: 1px solid #666; }
+.selection-shapes legend { padding: 0 3px; }
+.selection-shapes button { flex: 1; padding: 6px 8px; }
 .selection-palette { display: flex; flex-direction: column; gap: 5px; margin: 0; padding: 6px; border: 1px solid #666; }
 .selection-palette legend { padding: 0 3px; font-size: inherit; }
 .selection-palette button { min-height: 25px; padding: 0; }

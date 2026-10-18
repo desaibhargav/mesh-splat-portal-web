@@ -5,7 +5,7 @@ import { Measurement } from "../measurement/Measurement";
 import { ViewerTree, type ViewerTreeGroup } from "../ViewerTree";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SelectionGesture } from "./SelectionGesture";
-import type { SelectionHandle, SelectionRegion, SelectionTool } from "./types";
+import type { SelectionHandle, SelectionRegion, SelectionShape, SelectionTool } from "./types";
 import type { SelectionOperation } from "./rectangle";
 import { SelectionHistory, unpackSelection } from "./SelectionHistory";
 import { encodeColor } from "./selectionColors";
@@ -14,11 +14,14 @@ import { focusSelection } from "./focusSelection";
 
 const tools: { tool: SelectionTool; label: string; path: string }[] = [
   { tool: "navigate", label: "Navigate (Q)", path: "M5 3l14 10-7 1-3 7z" },
-  { tool: "rectangle", label: "Rectangle select", path: "M4 4h16v16H4z" },
-  { tool: "lasso", label: "Lasso select", path: "M9 18C1 17 1 5 12 4s14 12 3 14H9m0 0c-5 0-6 5-2 4 3-1 3-4 2-4z" },
-  { tool: "brush", label: "Brush select", path: "M9 14L18 3l3 3-11 9m-1-1c-5-2-3 6-7 7 6 1 10-2 8-6z" },
+  { tool: "select", label: "Select", path: "M4 4h16v16H4z" },
   { tool: "measure", label: "Measure distance", path: "M3 16L16 3l5 5L8 21zM7 12l3 3m0-6 3 3m0-6 3 3" },
   { tool: "annotate", label: "Annotate", path: "M4 4h16v12H9l-5 5zM8 8h8m-8 4h5" }
+];
+const selectionShapes: { shape: SelectionShape; label: string }[] = [
+  { shape: "rectangle", label: "Box" },
+  { shape: "lasso", label: "Lasso" },
+  { shape: "brush", label: "Brush" }
 ];
 
 export function SelectionControls({ handle, tool, onToolChange, disabled }: {
@@ -26,6 +29,7 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
 }) {
   const [summary, setSummary] = useState(handle?.selection.summary);
   const [xray, setXray] = useState(false);
+  const [selectionShape, setSelectionShape] = useState<SelectionShape>("rectangle");
   const [brushSize, setBrushSize] = useState(32);
   const [busy, setBusy] = useState(false);
   const [busyLabel, setBusyLabel] = useState("Selecting…");
@@ -42,7 +46,7 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
     return () => { generation.current++; };
   }, [handle]);
   const unavailable = disabled || !handle || busy;
-  const selecting = tool !== "navigate" && tool !== "measure" && tool !== "annotate";
+  const selecting = tool === "select";
   useEffect(() => {
     const frame = toolbar.current?.closest(".viewer-frame");
     if (!frame || !handle || !history || (tool === "measure" || tool === "annotate")) return;
@@ -124,12 +128,17 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
       {tools.map(item => <button key={item.tool} title={item.label} aria-label={item.label} disabled={unavailable}
         aria-pressed={tool === item.tool} onClick={() => onToolChange(item.tool)}>
         <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round"
-          strokeDasharray={item.tool === "rectangle" ? "3 2" : undefined}><path d={item.path} /></svg>
+          strokeDasharray={item.tool === "select" ? "3 2" : undefined}><path d={item.path} /></svg>
       </button>)}
       <span role="status">{busy ? busyLabel : summary ? `${summary.selected.toLocaleString()} / ${summary.total.toLocaleString()} selected` : "Preparing selection…"}</span>
     </div>
-    {selecting && <div className="selection-actions" role="group" aria-label="Selection actions">
-      {tool === "brush" && <label>Brush size <input aria-label="Brush size" type="range" min="1" max="128" value={brushSize} disabled={busy} onChange={event => setBrushSize(Number(event.target.value))} /></label>}
+    {selecting && <div className="selection-actions selection-options" role="group" aria-label="Selection actions">
+      <fieldset className="selection-shapes" disabled={unavailable}>
+        <legend>Selection type</legend>
+        {selectionShapes.map(({ shape, label }) => <button key={shape} type="button"
+          aria-pressed={selectionShape === shape} onClick={() => setSelectionShape(shape)}>{label}</button>)}
+      </fieldset>
+      {selectionShape === "brush" && <label>Brush size <input aria-label="Brush size" type="range" min="1" max="128" value={brushSize} disabled={busy} onChange={event => setBrushSize(Number(event.target.value))} /></label>}
       <button disabled={unavailable} aria-pressed={xray} title={xray ? "Select through the object" : "Select only visible surfaces"}
         onClick={() => setXray(!xray)}>X-ray {xray ? "on" : "off"}</button>
       <button disabled={unavailable || !summary?.selected} aria-pressed={summary?.isolated ?? false}
@@ -141,7 +150,7 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
     </div>}
     {error && <div className="selection-error" role="alert">{error}</div>}
     {groups.length > 0 && <ViewerTree groups={groups} />}
-    {selecting && !unavailable && <SelectionGesture key={tool} tool={tool} brushSize={brushSize} onSelect={onSelect} />}
+    {selecting && !unavailable && <SelectionGesture key={selectionShape} tool={selectionShape} brushSize={brushSize} onSelect={onSelect} />}
     {handle && annotations && <AnnotationControls handle={handle} annotations={annotations} active={tool === "annotate" && !disabled} interactive={tool === "navigate" || tool === "annotate"}
       hoverRegions={!disabled && tool !== "measure"}
       onChange={documentChanged} />}

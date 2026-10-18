@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { rectangleBetween, selectionOperation, type Point, type SelectionOperation } from "./rectangle";
-import type { SelectionRegion, SelectionTool } from "./types";
+import type { SelectionRegion, SelectionShape } from "./types";
 
 export function SelectionGesture({ tool, brushSize, onSelect }: {
-  tool: Exclude<SelectionTool, "navigate" | "measure" | "annotate">; brushSize: number;
+  tool: SelectionShape; brushSize: number;
   onSelect(region: SelectionRegion, operation: SelectionOperation): void;
 }) {
   const overlay = useRef<HTMLDivElement>(null);
