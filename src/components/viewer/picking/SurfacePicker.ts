@@ -5,14 +5,15 @@ import { Picker, type AppBase, type CameraComponent, type Vec3 } from "playcanva
 export class SurfacePicker {
   private picker?: Picker;
   private disposed = false;
-  constructor(private readonly app: AppBase) { app.on("destroy", this.destroy, this); }
+  constructor(private readonly app: AppBase, private readonly layers: readonly number[]) { app.on("destroy", this.destroy, this); }
   async pick(camera: CameraComponent, u: number, v: number): Promise<Vec3 | null> {
     if (this.disposed) throw new Error("Viewer closed during measurement.");
     if (u < 0 || u >= 1 || v < 0 || v >= 1) return null;
     const { width, height } = this.app.graphicsDevice;
     this.picker ??= new Picker(this.app, width, height, true);
     this.picker.resize(width, height);
-    this.picker.prepare(camera, this.app.scene);
+    // Annotation hotspots have their own camera layers; only pick model geometry.
+    this.picker.prepare(camera, this.app.scene, this.layers.map(id => this.app.scene.layers.getLayerById(id)!));
     const point = await this.picker.getWorldPointAsync(Math.floor(u * width) + .5, Math.floor(v * height) + .5);
     if (this.disposed) throw new Error("Viewer closed during measurement.");
     return point;

@@ -2,8 +2,9 @@
 
 ## Deferred
 
-- Measurement: per-asset units or known-distance calibration, editable endpoints, and saved measurements. Current implementation: [docs/measurement.md](docs/measurement.md).
-
+- Saved views: use IndexedDB for named, browser-local views containing asset ID and derivative revision, camera pose/orbit pivot, bit-packed selection and isolation, measurement endpoints, and annotation text/anchors/regions. Save edits rather than frames, load only the current asset, and do not duplicate model bytes. Add export/import of view data, record validation, plain-text rendering, and clear local-only storage messaging. Account for storage eviction, private browsing, shared browser profiles, and origin changes; avoid storing credentials or private source paths. Cross-device sharing would be separate authenticated backend work.
+- WebXR VR/AR: feasible with PlayCanvas XR APIs; first add capability-gated immersive viewing on a stable HTTPS origin, with explicit session start/end and AR placement/scale controls. Then adapt selection/isolation, measurement, and annotations for controller/hand input and world-space UI. Desktop SVG/HTML overlays are not automatically visible in immersive VR. Reuse tool state and operations, add XR-specific interactions, and test mesh/splat rendering and stereo performance on target devices. AR and input capabilities vary by browser/headset; physical measurements still require calibrated model units. References: [PlayCanvas WebXR](https://developer.playcanvas.com/user-manual/xr/using-webxr/), [XR platforms](https://developer.playcanvas.com/user-manual/xr/platforms/).
+- Measurement: per-asset units or known-distance calibration, editable endpoints, and measurement types beyond straight-line distance. Current implementation: [docs/measurement.md](docs/measurement.md).
 - Selection accuracy: improve missed triangles in visible-only GPU picking, especially on dense meshes at distant zoom. Compare coverage approaches without reintroducing CPU ray casting.
 - Thumbnails: improve automatic framing, view choice, and consistent neutral lighting.
 - Turntable previews: generate discrete views for an interactive catalog preview; revisit thumbnail rendering as part of this work.

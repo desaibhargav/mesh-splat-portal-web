@@ -1,3 +1,4 @@
+import { AnnotationControls } from "../annotations/AnnotationControls";
 import type { ArtifactType } from "../../../api/artifacts";
 import { MeasurementControls } from "../measurement/MeasurementControls";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -12,7 +13,8 @@ const tools: { tool: SelectionTool; label: string; path: string }[] = [
   { tool: "rectangle", label: "Rectangle select", path: "M4 4h16v16H4z" },
   { tool: "lasso", label: "Lasso select", path: "M9 18C1 17 1 5 12 4s14 12 3 14H9m0 0c-5 0-6 5-2 4 3-1 3-4 2-4z" },
   { tool: "brush", label: "Brush select", path: "M9 14L18 3l3 3-11 9m-1-1c-5-2-3 6-7 7 6 1 10-2 8-6z" },
-  { tool: "measure", label: "Measure distance", path: "M3 16L16 3l5 5L8 21zM7 12l3 3m0-6 3 3m0-6 3 3" }
+  { tool: "measure", label: "Measure distance", path: "M3 16L16 3l5 5L8 21zM7 12l3 3m0-6 3 3m0-6 3 3" },
+  { tool: "annotate", label: "Annotate", path: "M4 4h16v12H9l-5 5zM8 8h8m-8 4h5" }
 ];
 
 export function SelectionControls({ handle, tool, onToolChange, onGestureChange, disabled, assetType }: {
@@ -31,10 +33,10 @@ export function SelectionControls({ handle, tool, onToolChange, onGestureChange,
     return () => { generation.current++; };
   }, [handle]);
   const unavailable = disabled || !handle || busy;
-  const selecting = tool !== "navigate" && tool !== "measure";
+  const selecting = tool !== "navigate" && tool !== "measure" && tool !== "annotate";
   useEffect(() => {
     const frame = toolbar.current?.closest(".viewer-frame");
-    if (!frame || !handle || !history || tool === "measure") return;
+    if (!frame || !handle || !history || (tool === "measure" || tool === "annotate")) return;
     const onKeyDown = (event: Event) => {
       const key = event as KeyboardEvent;
       if (key.repeat || key.altKey || (key.target as HTMLElement).closest("input, textarea, select, [contenteditable]:not([contenteditable=false])")) return;
@@ -80,10 +82,13 @@ export function SelectionControls({ handle, tool, onToolChange, onGestureChange,
         onClick={() => setXray(!xray)}>X-ray {xray ? "on" : "off"}</button>
       <button disabled={unavailable || !summary?.selected} aria-pressed={summary?.isolated ?? false}
         onClick={() => setSummary(history!.perform(() => handle!.selection.toggleIsolation()))}>{summary?.isolated ? "Show all" : "Isolate"}</button>
+      <button disabled={unavailable || !summary?.selected} onClick={() => onToolChange("annotate")}>Annotate selection</button>
       <button disabled={unavailable || !summary?.selected} onClick={() => setSummary(history!.perform(() => handle!.selection.clear()))}>Clear</button>
     </div>}
     {error && <div className="selection-error" role="alert">{error}</div>}
     {selecting && !unavailable && <SelectionGesture key={tool} tool={tool} brushSize={brushSize} onActiveChange={onGestureChange} onSelect={onSelect} />}
+    {handle && <AnnotationControls handle={handle} active={tool === "annotate" && !disabled} interactive={tool === "navigate" || tool === "annotate"}
+      onActiveChange={onGestureChange} onRestore={state => setSummary(history!.perform(() => handle.selection.restore(state)))} />}
     {handle && <MeasurementControls handle={handle} active={tool === "measure" && !disabled} assetType={assetType} onActiveChange={onGestureChange} />}
   </>;
 }

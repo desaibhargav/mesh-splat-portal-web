@@ -3,7 +3,7 @@ import { rectangleBetween, selectionOperation, type Point, type SelectionOperati
 import type { SelectionRegion, SelectionTool } from "./types";
 
 export function SelectionGesture({ tool, brushSize, onSelect, onActiveChange }: {
-  tool: Exclude<SelectionTool, "navigate" | "measure">; brushSize: number;
+  tool: Exclude<SelectionTool, "navigate" | "measure" | "annotate">; brushSize: number;
   onSelect(region: SelectionRegion, operation: SelectionOperation): void;
   onActiveChange(active: boolean): void;
 }) {

@@ -1,4 +1,4 @@
-import { Color, PROJECTION_ORTHOGRAPHIC, PIXELFORMAT_RGBA8, RenderPassPicker, RenderTarget, Texture, type AppBase, type CameraComponent } from "playcanvas";
+import { Color, PROJECTION_ORTHOGRAPHIC, PIXELFORMAT_RGBA8, RenderPassPicker, RenderTarget, Texture, type AppBase, type CameraComponent, type Layer } from "playcanvas";
 
 import type { VisibilityTest } from "./types";
 
@@ -6,7 +6,7 @@ export interface DepthImage { values: Float32Array; width: number; height: numbe
 
 // Release while the application and graphics device are still alive, including when
 // navigation interrupts an asynchronous GPU readback.
-export async function captureDepth(app: AppBase, camera: CameraComponent): Promise<DepthImage> {
+export async function captureDepth(app: AppBase, camera: CameraComponent, layers: Layer[] = app.scene.layers.layerList): Promise<DepthImage> {
   const near = camera.nearClip, far = camera.farClip, orthographic = camera.projection === PROJECTION_ORTHOGRAPHIC;
   const device = app.graphicsDevice;
   const width = device.width, height = device.height;
@@ -23,7 +23,7 @@ export async function captureDepth(app: AppBase, camera: CameraComponent): Promi
   app.on("destroy", release);
   try {
     pass.init(target); pass.setClearColor(Color.WHITE); pass.depthStencilOps.clearDepth = true;
-    pass.update(camera, app.scene, app.scene.layers.layerList, new Map(), true);
+    pass.update(camera, app.scene, layers, new Map(), true);
     pass.render();
     const pixels = await depth.read(0, 0, width, height, { immediate: true });
     if (disposed) throw new Error("Viewer closed during selection.");

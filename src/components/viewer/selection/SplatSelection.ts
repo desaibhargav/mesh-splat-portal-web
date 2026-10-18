@@ -65,7 +65,7 @@ export class SplatSelection {
 
   async hitTest(app: AppBase, camera: CameraComponent, region: SelectionRegion): Promise<Uint8Array[]> {
     const matrix = new Mat4().mul2(camera.projectionMatrix, camera.viewMatrix).mul(this.component.entity.getWorldTransform());
-    const depth = await captureDepth(app, camera), hits = new Uint8Array(this.mask.length);
+    const depth = await captureDepth(app, camera, this.layers.map(id => app.scene.layers.getLayerById(id)!)), hits = new Uint8Array(this.mask.length);
     projectSelection(this.centers, hits, matrix.data, region, "set", false, depthTest(depth));
     return [hits];
   }
@@ -94,6 +94,7 @@ export class SplatSelection {
     return this.summary;
   }
 
+  get layers(): readonly number[] { return this.component.layers; }
   get state(): SelectionState { return { masks: [this.mask], isolated: this.isolated }; }
   restore(state: SelectionState): SelectionSummary {
     this.mask.set(state.masks[0]!);

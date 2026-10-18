@@ -85,6 +85,7 @@ export class MeshSelection {
     } catch (error) { this.destroy(); throw error; }
   }
 
+  get layers(): readonly number[] { return this.display.render!.layers; }
   get summary(): SelectionSummary {
     return { selected: this.selected, total: this.parts.reduce((sum, p) => sum + p.mask.length, 0), isolated: this.isolated };
   }

@@ -53,7 +53,15 @@ Picking uses PlayCanvas's depth-enabled `Picker.getWorldPointAsync`, at canvas r
 
 GLB uses meters by specification, but the inspected scans have no verified physical calibration; PLY/SOG assets carry no physical-unit declaration. Distances therefore remain labeled **model units**. Splat picks estimate a surface from rendered Gaussians. See [measurement details](docs/measurement.md).
 
-The remaining work is tracked in [TODO.md](TODO.md), including calibration, selection accuracy, thumbnails, and turntable previews.
+## Annotations
+
+The annotation icon opens notes for either the current selection or a surface point. After selecting an area, **Annotate selection** opens the editor directly; Q is optional between tools. Enter a title and note, then Save annotation. With no selection, click a visible surface to place a point note. **Place point instead** allows a point annotation while retaining the current selection.
+
+Numbered hotspots display notes when clicked in navigation or annotation mode. The annotation panel lists notes for editing or deletion. **Select annotated area** restores its independent region snapshot and focuses it, even after the current selection has changed. Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z undo/redo saved annotation edits while this tool is active; text fields retain ordinary text editing and Q input. Q/Escape exits the tool after leaving a text field. Alt/Option orbit, pan, and zoom remain available.
+
+Hotspots use PlayCanvas's bundled `Annotation` and `AnnotationManager` scripts, with a small container adapter for our embedded/fullscreen viewer. Point placement shares measurement's GPU picker; annotation layers are excluded from surface/depth picking. Text renders as plain text. Region masks reuse selection history's bit packing. Notes remain in memory until leaving the asset; persistent saved views and WebXR are deferred in [TODO.md](TODO.md).
+
+The remaining work is tracked in [TODO.md](TODO.md), including saved views, WebXR, calibration, selection accuracy, thumbnails, and turntable previews.
 
 ## AWS demo deployment notes
 
