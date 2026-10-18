@@ -1,12 +1,17 @@
 import { Entity, Gltf } from "@playcanvas/react";
 import { Environment } from "@playcanvas/react/components";
-import { useEnvAtlas, useModel } from "@playcanvas/react/hooks";
+import { useApp, useEnvAtlas, useModel } from "@playcanvas/react/hooks";
 import { useEffect, useState } from "react";
-import { BoundingBox, type Entity as PlayCanvasEntity, type MeshInstance } from "playcanvas";
+import { BoundingBox, Color, type Entity as PlayCanvasEntity, type MeshInstance } from "playcanvas";
 import type { ViewerStatus } from "./ArtifactViewer";
 import { frameBounds, ViewerCamera, type ViewerView } from "./ViewerCamera";
+import { MeshSelection } from "./selection/MeshSelection";
+import type { SelectionHandle } from "./selection/types";
 
-export function MeshViewer({ url, onStatus }: { url: string; onStatus(status: ViewerStatus): void }) {
+export function MeshViewer({ url, onStatus, selecting, onSelectionReady }: {
+  url: string; onStatus(status: ViewerStatus): void; selecting: boolean; onSelectionReady(handle: SelectionHandle | null): void;
+}) {
+  const app = useApp();
   const result = useModel(url);
   const environment = useEnvAtlas("/lighting/studio-small-08.png");
   const [target, setTarget] = useState<PlayCanvasEntity | null>(null);
@@ -24,14 +29,29 @@ export function MeshViewer({ url, onStatus }: { url: string; onStatus(status: Vi
     }
 
     // Gltf attaches its render hierarchy in an effect. Measure it on the next frame.
-    const frame = requestAnimationFrame(() => setView(getEntityView(target)));
-    return () => cancelAnimationFrame(frame);
-  }, [result.asset, target]);
+    let selection: MeshSelection | undefined;
+    const frame = requestAnimationFrame(() => {
+      setView(getEntityView(target));
+      try {
+        const tint = new Color().fromString(getComputedStyle(app.graphicsDevice.canvas).getPropertyValue("--gold").trim()).linear();
+        tint.a = 0.5;
+        selection = new MeshSelection(target, app.graphicsDevice, tint);
+        onSelectionReady({ app, selection, camera: () => {
+          const camera = app.systems.camera!.cameras[0];
+          if (!camera) throw new Error("Viewer camera is unavailable.");
+          return camera;
+        } });
+      } catch (error) {
+        onStatus({ loading: false, progress: 1, error: `Selection unavailable: ${error instanceof Error ? error.message : String(error)}` });
+      }
+    });
+    return () => { cancelAnimationFrame(frame); onSelectionReady(null); selection?.destroy(); };
+  }, [result.asset, target, app, onSelectionReady, onStatus]);
 
   return (
     <>
       {result.asset && <Entity ref={setTarget}><Gltf asset={result.asset} key={result.asset.id} /></Entity>}
-      {view && <ViewerCamera view={view} />}
+      {view && <ViewerCamera view={view} controlsEnabled={!selecting} />}
       {environment.asset && <Environment envAtlas={environment.asset} showSkybox={false} />}
     </>
   );

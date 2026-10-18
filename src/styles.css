@@ -78,13 +78,22 @@ a { color: #536d7d; }
 .selection-toolbar button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 .selection-toolbar span { margin-left: auto; color: #bbb; font-size: .7rem; }
 .selection-overlay { position: absolute; right: 0; bottom: 31px; left: 0; z-index: 1; cursor: crosshair; touch-action: none; }
-.selection-rectangle { position: absolute; pointer-events: none; border: 1px solid var(--gold); background: rgb(215 188 119 / .15); }
+.selection-drawing { width: 100%; height: 100%; pointer-events: none; fill: rgb(215 188 119 / .15); stroke: var(--gold); stroke-width: 1; }
+.selection-brush-cursor { position: absolute; border: 1px solid var(--gold); border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; }
+.selection-toolbar button svg { display: block; width: 21px; height: 21px; }
+.selection-actions { position: absolute; bottom: 43px; right: 12px; z-index: 3; display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid #555; border-radius: 4px; background: #252525ed; color: #ddd; }
+.selection-actions button { padding: 7px 14px; border: 1px solid #666; background: #333; color: #ddd; border-radius: 3px; cursor: pointer; }
+.selection-actions button[aria-pressed="true"] { color: var(--gold); border-color: var(--gold); }
+.selection-actions button:disabled { opacity: .45; cursor: default; }
+.selection-actions label { display: flex; flex-direction: column; max-width: 128px; font-size: .7rem; }
+.selection-error { position: absolute; bottom: 43px; left: 12px; right: 160px; z-index: 3; color: #fff; background: #612929; padding: 8px; }
+
 .metadata-panel { margin-top: 1.5rem; padding: 1.5rem; border: 1px solid var(--line); background: #fff; }
 .metadata-panel h2 { margin: 0 0 .6rem; font-weight: normal; }
 .metadata-panel p { margin: 0; color: #666; line-height: 1.65; }
 @media (max-width: 760px) {
-  .has-selection-tools { --selection-toolbar-height: 85px; }
-  .selection-toolbar span { flex-basis: 100%; margin-left: 0; }
+  .has-selection-tools { --selection-toolbar-height: 50px; }
+  .selection-toolbar span { font-size: .6rem; }
   .has-selection-tools .viewer-help { font-size: .6rem; }
   .brand span { display: none; }
   .catalog-filter-bar { align-items: flex-start; flex-direction: column; gap: .35rem; }
@@ -94,5 +103,6 @@ a { color: #536d7d; }
   .viewer-heading { align-items: start; flex-direction: column; }
 }
 @media (max-width: 480px) {
-  .has-selection-tools { --selection-toolbar-height: 112px; }
+  .has-selection-tools { --selection-toolbar-height: 85px; }
+  .selection-toolbar span { flex-basis: 100%; margin-left: 0; }
 }

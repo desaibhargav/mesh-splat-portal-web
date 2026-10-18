@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { Mat4, Quat, Vec3 } from "playcanvas";
-import { rectangleBetween, selectCenters, selectionOperation } from "./rectangle";
+import { rectangleBetween, selectionOperation, type Rectangle, type SelectionOperation } from "./rectangle";
+
+import { projectSelection } from "./projectSelection";
+
+function selectCenters(centers: Float32Array, mask: Uint8Array, matrix: ArrayLike<number>, rectangle: Rectangle,
+  operation: SelectionOperation, isolated: boolean) {
+  const width = 100, height = 100, pixels = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    if (x / width >= rectangle.start.x && x / width <= rectangle.end.x && y / height >= rectangle.start.y && y / height <= rectangle.end.y) pixels[(y * width + x) * 4 + 3] = 255;
+  }
+  return projectSelection(centers, mask, matrix, { pixels, width, height }, operation, isolated);
+}
 
 const rectangle = rectangleBetween({ x: 0.5, y: 0 }, { x: 1, y: 1 });
 const centers = new Float32Array([-0.5, 0, 0, 0.5, 0, 0, 0.5, 0, 0.8]);

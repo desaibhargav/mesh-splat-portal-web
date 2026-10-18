@@ -1,11 +1,11 @@
 import {
   Color, FILTER_NEAREST, Mat4, PIXELFORMAT_R8, Texture, WORKBUFFER_UPDATE_ONCE,
-  type CameraComponent, type GSplatComponent
+  type GSplatComponent
 } from "playcanvas";
-import { selectCenters, type Rectangle, type SelectionOperation } from "./rectangle";
-
-export interface SelectionSummary { selected: number; total: number; isolated: boolean }
-export interface SelectionHandle { selection: SplatSelection; camera(): CameraComponent }
+import type { SelectionOperation } from "./rectangle";
+import { projectSelection } from "./projectSelection";
+import type { DepthImage } from "./SelectionDepth";
+import type { SelectionCamera, SelectionRegion, SelectionSummary } from "./types";
 
 const modifier = {
   glsl: `
@@ -58,11 +58,11 @@ export class SplatSelection {
     return { selected: this.selected, total: this.centers.length / 3, isolated: this.isolated };
   }
 
-  select(rectangle: Rectangle, operation: SelectionOperation, camera: CameraComponent): SelectionSummary {
+  select(region: SelectionRegion, operation: SelectionOperation, camera: SelectionCamera, depth?: DepthImage): SelectionSummary {
     const matrix = new Mat4().mul2(camera.projectionMatrix, camera.viewMatrix);
     matrix.mul(this.component.entity.getWorldTransform());
     const mask = this.texture.lock() as Uint8Array;
-    this.selected = selectCenters(this.centers, mask, matrix.data, rectangle, operation, this.isolated);
+    this.selected = projectSelection(this.centers, mask, matrix.data, region, operation, this.isolated, depth);
     this.texture.unlock();
     if (!this.selected) this.isolated = false;
     this.update();
