@@ -1,5 +1,5 @@
 import {
-  Color, Entity, Mat4, Mesh, MeshInstance, PRIMITIVE_TRIANGLES, SEMANTIC_POSITION, StandardMaterial,
+  BLEND_NORMAL, Color, Entity, Mat4, Mesh, MeshInstance, PRIMITIVE_TRIANGLES, SEMANTIC_POSITION, StandardMaterial,
   TYPE_INT8, TYPE_INT16, TYPE_UINT8, TYPE_UINT16, VertexBuffer,
   type AppBase, type CameraComponent, type Layer, type RenderComponent
 } from "playcanvas";
@@ -127,7 +127,11 @@ export class MeshSelection {
         });
         if (!indices.length) return [];
         if (!part.previewMaterial) {
-          part.previewMaterial = part.baseMaterial.clone();
+          part.previewMaterial = new StandardMaterial();
+          part.previewMaterial.useLighting = false;
+          part.previewMaterial.cull = part.baseMaterial.cull;
+          part.previewMaterial.blendType = BLEND_NORMAL;
+          part.previewMaterial.opacity = this.tint.a;
           part.previewMaterial.emissive.copy(Color.WHITE);
           part.previewMaterial.emissiveIntensity = 1;
           part.previewMaterial.depthWrite = false;
