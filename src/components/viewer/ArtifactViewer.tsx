@@ -55,8 +55,8 @@ export function ArtifactViewer({ artifact }: { artifact: Artifact }) {
       </div>
       {status.loading && <div className="viewer-loading" role="status"><span>Loading 3D asset</span><progress value={status.progress} max={1} /></div>}
       {status.error && <div className="viewer-error" role="alert">{status.error}</div>}
-      <p className="viewer-help">{selecting ? "Drag to select · Shift: add · Ctrl/Cmd: remove · Shift + Ctrl/Cmd: intersect · Q: navigate" :
-        "Drag to orbit · Shift-drag or middle-drag to pan · Scroll to zoom · Q: selection"}</p>
+      <p className="viewer-help">{selecting ? "Drag to select · Shift: add · Ctrl/Cmd: remove · Shift + Ctrl/Cmd: intersect · Q: navigate · F: focus" :
+        "Drag to orbit · Shift-drag or middle-drag to pan · Scroll to zoom · Q: selection · F: focus"}</p>
     </section>
   );
 }

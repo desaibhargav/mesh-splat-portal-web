@@ -22,6 +22,8 @@ export function SplatViewer({ url, onStatus, selecting, onSelectionReady }: {
   useEffect(() => {
     if (!entity || !result.asset) return;
     let selection: SplatSelection | undefined;
+    const dispose = () => { cancelAnimationFrame(frame); selection?.destroy(); selection = undefined; };
+    app.on("destroy", dispose);
     const frame = requestAnimationFrame(() => {
       try {
         if (!entity.gsplat) throw new Error("Splat component is unavailable.");
@@ -39,9 +41,8 @@ export function SplatViewer({ url, onStatus, selecting, onSelectionReady }: {
       }
     });
     return () => {
-      cancelAnimationFrame(frame);
-      onSelectionReady(null);
-      selection?.destroy();
+      app.off("destroy", dispose);
+      dispose(); onSelectionReady(null);
     };
   }, [app, entity, result.asset, onSelectionReady, onStatus]);
 

@@ -1,31 +1,43 @@
 import { Color, PROJECTION_ORTHOGRAPHIC, PIXELFORMAT_RGBA8, RenderPassPicker, RenderTarget, Texture, type AppBase, type CameraComponent } from "playcanvas";
 
+import type { VisibilityTest } from "./types";
+
 export interface DepthImage { values: Float32Array; width: number; height: number; near: number; far: number; orthographic: boolean }
 
-// The same public render pass used by PlayCanvas Picker, with an owned depth attachment
-// so a whole gesture needs one GPU readback rather than one read per selected element.
+// Release while the application and graphics device are still alive, including when
+// navigation interrupts an asynchronous GPU readback.
 export async function captureDepth(app: AppBase, camera: CameraComponent): Promise<DepthImage> {
+  const near = camera.nearClip, far = camera.farClip, orthographic = camera.projection === PROJECTION_ORTHOGRAPHIC;
   const device = app.graphicsDevice;
   const width = device.width, height = device.height;
   const color = Texture.createDataTexture2D(device, "Selection IDs", width, height, PIXELFORMAT_RGBA8);
   const depth = Texture.createDataTexture2D(device, "Selection depth", width, height, PIXELFORMAT_RGBA8);
   const target = new RenderTarget({ colorBuffers: [color, depth], depth: true });
   const pass = new RenderPassPicker(device, app.renderer);
+  let disposed = false;
+  const release = () => {
+    if (disposed) return;
+    disposed = true;
+    pass.destroy(); target.destroy(); color.destroy(); depth.destroy();
+  };
+  app.on("destroy", release);
   try {
-    pass.init(target);
-    pass.setClearColor(Color.WHITE);
-    pass.depthStencilOps.clearDepth = true;
+    pass.init(target); pass.setClearColor(Color.WHITE); pass.depthStencilOps.clearDepth = true;
     pass.update(camera, app.scene, app.scene.layers.layerList, new Map(), true);
     pass.render();
     const pixels = await depth.read(0, 0, width, height, { immediate: true });
-    return { values: decodeDepth(pixels as Uint8Array, width, height, !device.isWebGPU), width, height,
-      near: camera.nearClip, far: camera.farClip, orthographic: camera.projection === PROJECTION_ORTHOGRAPHIC };
-  } finally {
-    pass.destroy();
-    target.destroy();
-    color.destroy();
-    depth.destroy();
-  }
+    if (disposed) throw new Error("Viewer closed during selection.");
+    return { values: decodeDepth(pixels as Uint8Array, width, height, !device.isWebGPU), width, height, near, far, orthographic };
+  } finally { app.off("destroy", release); release(); }
+}
+
+export function depthTest(depth: DepthImage): VisibilityTest {
+  return (_id, u, v, w, cz) => {
+    const front = depth.values[Math.floor(v * depth.height) * depth.width + Math.floor(u * depth.width)]!;
+    const distance = depth.orthographic ? (cz / w + 1) / 2 : (w - depth.near) / (depth.far - depth.near);
+    const tolerance = Math.max(Math.abs(distance) * 2 ** -20, w / ((depth.far - depth.near) * depth.height));
+    return Number.isFinite(front) && distance <= front + tolerance;
+  };
 }
 
 export function decodeDepth(pixels: Uint8Array, width: number, height: number, flipY: boolean): Float32Array {

@@ -1,19 +1,20 @@
 import {
-  Color, Entity, Mat4, Mesh, MeshInstance, PRIMITIVE_TRIANGLES, SEMANTIC_POSITION, StandardMaterial,
+  Color, Entity, Mat4, PROJECTION_ORTHOGRAPHIC, Vec3, Mesh, MeshInstance, PRIMITIVE_TRIANGLES, SEMANTIC_POSITION, StandardMaterial,
   TYPE_INT8, TYPE_INT16, TYPE_UINT8, TYPE_UINT16, VertexBuffer,
-  type GraphicsDevice, type RenderComponent
+  type AppBase, type CameraComponent, type GraphicsDevice, type RenderComponent
 } from "playcanvas";
 import { projectSelection } from "./projectSelection";
 import type { SelectionOperation } from "./rectangle";
-import type { DepthImage } from "./SelectionDepth";
-import type { SelectionCamera, SelectionRegion, SelectionSummary } from "./types";
+import { TriangleTree } from "./TriangleTree";
+import { SelectionBounds } from "./selectionBounds";
+import type { SelectionCamera, SelectionRegion, SelectionState, SelectionSummary, VisibilityTest } from "./types";
 
 interface Part {
-  source: MeshInstance; indices: number[]; centers: Float32Array; mask: Uint8Array;
+  source: MeshInstance; positions: Float32Array; indices: number[]; centers: Float32Array; mask: Uint8Array;
   selected: MeshInstance; rest: MeshInstance; material: StandardMaterial;
 }
 
-export function triangleCenters(positions: number[], indices: number[], scale = 1, signed = false): Float32Array {
+export function triangleCenters(positions: ArrayLike<number>, indices: number[], scale = 1, signed = false): Float32Array {
   const centers = new Float32Array(indices.length);
   for (let face = 0; face < indices.length / 3; face++) {
     for (let axis = 0; axis < 3; axis++) {
@@ -42,6 +43,8 @@ export class MeshSelection {
   private readonly parts: Part[] = [];
   private selected = 0;
   private isolated = false;
+  private disposed = false;
+  private trees?: TriangleTree[];
 
   constructor(entity: Entity, device: GraphicsDevice, tint: Color) {
     const components = entity.findComponents("render") as RenderComponent[];
@@ -63,15 +66,17 @@ export class MeshSelection {
           Array.from({ length: primitive.count }, (_, i) => primitive.base + i);
         const element = mesh.vertexBuffer.format.elements.find(e => e.name === SEMANTIC_POSITION)!;
         const scales: Record<number, number> = { [TYPE_INT8]: 127, [TYPE_UINT8]: 255, [TYPE_INT16]: 32767, [TYPE_UINT16]: 65535 };
-        const centers = triangleCenters(positions, indices, element.normalize ? scales[element.dataType] : 1,
-          element.normalize && (element.dataType === TYPE_INT8 || element.dataType === TYPE_INT16));
+        const scale = element.normalize ? scales[element.dataType]! : 1;
+        const signed = element.normalize && (element.dataType === TYPE_INT8 || element.dataType === TYPE_INT16);
+        const decoded = Float32Array.from(positions, value => signed ? Math.max(-1, value / scale) : value / scale);
+        const centers = triangleCenters(decoded, indices);
         const material = (source.material as StandardMaterial).clone();
         material.emissive.copy(tint); material.emissiveIntensity = tint.a;
         material.update();
         const selected = new MeshInstance(copyMesh(device, mesh), material, source.node);
         const rest = new MeshInstance(copyMesh(device, mesh), source.material, source.node);
         selected.castShadow = rest.castShadow = false;
-        this.parts.push({ source, indices, centers, mask: new Uint8Array(indices.length / 3), selected, rest, material });
+        this.parts.push({ source, positions: decoded, indices, centers, mask: new Uint8Array(indices.length / 3), selected, rest, material });
       }
       this.refresh();
       this.display.addComponent("render", { meshInstances: this.parts.flatMap(p => [p.rest, p.selected]) });
@@ -83,12 +88,55 @@ export class MeshSelection {
   get summary(): SelectionSummary {
     return { selected: this.selected, total: this.parts.reduce((sum, p) => sum + p.mask.length, 0), isolated: this.isolated };
   }
-  select(region: SelectionRegion, operation: SelectionOperation, camera: SelectionCamera, depth?: DepthImage): SelectionSummary {
+  async visibility(_app: AppBase, camera: CameraComponent): Promise<VisibilityTest[]> {
+    this.trees ??= this.parts.map(part => new TriangleTree(part.positions, part.indices, part.centers, part.source.material.cull));
+    const transforms = this.parts.map(part => part.source.node.getWorldTransform().clone());
+    const inverses = transforms.map(transform => transform.clone().invert());
+    const cameraPosition = camera.entity.getPosition().clone(), forward = camera.entity.forward.clone();
+    const orthographic = camera.projection === PROJECTION_ORTHOGRAPHIC, near = camera.nearClip;
+    const isolatedMasks = this.isolated ? this.parts.map(part => part.mask.slice()) : undefined;
+    const point = new Vec3(), start = new Vec3(), local = new Vec3(), origin = new Vec3(), direction = new Vec3();
+    return this.parts.map((part, partIndex) => (face, _u, _v, w) => {
+      const offset = face * 3;
+      point.set(part.centers[offset]!, part.centers[offset + 1]!, part.centers[offset + 2]!);
+      transforms[partIndex]!.transformPoint(point, point);
+      start.copy(cameraPosition);
+      const viewDistance = orthographic ? new Vec3().sub2(point, start).dot(forward) : w;
+      if (orthographic) start.copy(point).addScaled(forward, -viewDistance);
+      for (let i = 0; i < this.parts.length; i++) {
+        inverses[i]!.transformPoint(point, local); inverses[i]!.transformPoint(start, origin);
+        direction.sub2(local, origin);
+        if (i === partIndex && !this.trees![i]!.facing(face, origin, direction)) return false;
+        if (this.trees![i]!.occludes(origin, direction, near / viewDistance, isolatedMasks?.[i])) return false;
+      }
+      return true;
+    });
+  }
+  get state(): SelectionState { return { masks: this.parts.map(part => part.mask), isolated: this.isolated }; }
+  restore(state: SelectionState): SelectionSummary {
+    this.selected = 0;
+    this.parts.forEach((part, i) => {
+      part.mask.set(state.masks[i]!);
+      this.selected += part.mask.reduce((sum, value) => sum + (value ? 1 : 0), 0);
+    });
+    this.isolated = state.isolated; this.refresh(); return this.summary;
+  }
+  bounds() {
+    const bounds = new SelectionBounds();
+    for (const part of this.parts) {
+      const transform = part.source.node.getWorldTransform();
+      for (let face = 0; face < part.mask.length; face++) if (!this.selected || part.mask[face]) {
+        for (let corner = 0; corner < 3; corner++) bounds.add(part.positions, part.indices[face * 3 + corner]! * 3, transform);
+      }
+    }
+    return bounds.value;
+  }
+  select(region: SelectionRegion, operation: SelectionOperation, camera: SelectionCamera, visibility?: VisibilityTest[]): SelectionSummary {
     const viewProjection = new Mat4().mul2(camera.projectionMatrix, camera.viewMatrix);
     this.selected = 0;
-    for (const part of this.parts) {
+    for (const [i, part] of this.parts.entries()) {
       const matrix = new Mat4().mul2(viewProjection, part.source.node.getWorldTransform());
-      this.selected += projectSelection(part.centers, part.mask, matrix.data, region, operation, this.isolated, depth);
+      this.selected += projectSelection(part.centers, part.mask, matrix.data, region, operation, this.isolated, visibility?.[i]);
     }
     if (!this.selected) this.isolated = false;
     this.refresh();
@@ -116,6 +164,8 @@ export class MeshSelection {
     }
   }
   destroy() {
+    if (this.disposed) return;
+    this.disposed = true;
     this.display.destroy();
     for (const part of this.parts) {
       // Safe even if RenderComponent already destroyed the instances.

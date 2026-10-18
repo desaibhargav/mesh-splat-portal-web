@@ -1,11 +1,13 @@
 import {
   Color, FILTER_NEAREST, Mat4, PIXELFORMAT_R8, Texture, WORKBUFFER_UPDATE_ONCE,
-  type GSplatComponent
+  type AppBase, type CameraComponent, type GSplatComponent
 } from "playcanvas";
 import type { SelectionOperation } from "./rectangle";
 import { projectSelection } from "./projectSelection";
-import type { DepthImage } from "./SelectionDepth";
-import type { SelectionCamera, SelectionRegion, SelectionSummary } from "./types";
+import { captureDepth, depthTest } from "./SelectionDepth";
+import type { SelectionCamera, SelectionRegion, SelectionState, SelectionSummary, VisibilityTest } from "./types";
+
+import { SelectionBounds } from "./selectionBounds";
 
 const modifier = {
   glsl: `
@@ -35,6 +37,8 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
 export class SplatSelection {
   private readonly texture: Texture;
   private readonly centers: Float32Array;
+  private readonly mask: Uint8Array;
+  private disposed = false;
   private selected = 0;
   private isolated = false;
 
@@ -42,6 +46,7 @@ export class SplatSelection {
     const resource = component.resource;
     if (!resource?.hasCenters) throw new Error("This splat has no selectable center data.");
     this.centers = resource.centers;
+    this.mask = new Uint8Array(this.centers.length / 3);
     this.texture = new Texture(resource.device, {
       name: "Portal selection", width: resource.textureDimensions.x, height: resource.textureDimensions.y,
       format: PIXELFORMAT_R8, mipmaps: false, minFilter: FILTER_NEAREST, magFilter: FILTER_NEAREST
@@ -58,20 +63,19 @@ export class SplatSelection {
     return { selected: this.selected, total: this.centers.length / 3, isolated: this.isolated };
   }
 
-  select(region: SelectionRegion, operation: SelectionOperation, camera: SelectionCamera, depth?: DepthImage): SelectionSummary {
+  async visibility(app: AppBase, camera: CameraComponent): Promise<VisibilityTest[]> { return [depthTest(await captureDepth(app, camera))]; }
+
+  select(region: SelectionRegion, operation: SelectionOperation, camera: SelectionCamera, visibility?: VisibilityTest[]): SelectionSummary {
     const matrix = new Mat4().mul2(camera.projectionMatrix, camera.viewMatrix);
     matrix.mul(this.component.entity.getWorldTransform());
-    const mask = this.texture.lock() as Uint8Array;
-    this.selected = projectSelection(this.centers, mask, matrix.data, region, operation, this.isolated, depth);
-    this.texture.unlock();
+    this.selected = projectSelection(this.centers, this.mask, matrix.data, region, operation, this.isolated, visibility?.[0]);
     if (!this.selected) this.isolated = false;
     this.update();
     return this.summary;
   }
 
   clear(): SelectionSummary {
-    (this.texture.lock() as Uint8Array).fill(0);
-    this.texture.unlock();
+    this.mask.fill(0);
     this.selected = 0;
     this.isolated = false;
     this.update();
@@ -84,12 +88,27 @@ export class SplatSelection {
     return this.summary;
   }
 
+  get state(): SelectionState { return { masks: [this.mask], isolated: this.isolated }; }
+  restore(state: SelectionState): SelectionSummary {
+    this.mask.set(state.masks[0]!);
+    this.selected = this.mask.reduce((sum, value) => sum + (value ? 1 : 0), 0);
+    this.isolated = state.isolated; this.update(); return this.summary;
+  }
+  bounds() {
+    const bounds = new SelectionBounds(), transform = this.component.entity.getWorldTransform();
+    for (let i = 0; i < this.mask.length; i++) if (!this.selected || this.mask[i]) bounds.add(this.centers, i * 3, transform);
+    return bounds.value;
+  }
   private update() {
+    (this.texture.lock() as Uint8Array).set(this.mask);
+    this.texture.unlock();
     this.component.setParameter("portalIsolate", this.isolated ? 1 : 0);
     this.component.workBufferUpdate = WORKBUFFER_UPDATE_ONCE;
   }
 
   destroy() {
+    if (this.disposed) return;
+    this.disposed = true;
     this.component.setWorkBufferModifier(null);
     for (const name of ["portalSelection", "portalSelectionTint", "portalIsolate"]) this.component.deleteParameter(name);
     this.texture.destroy();

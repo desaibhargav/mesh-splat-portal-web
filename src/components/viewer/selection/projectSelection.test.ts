@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Mat4 } from "playcanvas";
 import { projectSelection } from "./projectSelection";
-import { decodeDepth } from "./SelectionDepth";
+import { decodeDepth, depthTest } from "./SelectionDepth";
 import { triangleCenters } from "./MeshSelection";
 
 const region = { pixels: new Uint8ClampedArray(4 * 4 * 4).fill(255), width: 4, height: 4 };
@@ -17,10 +17,10 @@ describe("region selection", () => {
     const mask = new Uint8Array(4);
     expect(projectSelection(centers, mask, projection, region, "set", false)).toBe(2);
     const depth = { width: 100, height: 100, values: new Float32Array(10000).fill((1 - .1) / 9.9), near: .1, far: 10, orthographic: false };
-    expect(projectSelection(centers, mask, projection, region, "set", false, depth)).toBe(1);
+    expect(projectSelection(centers, mask, projection, region, "set", false, depthTest(depth))).toBe(1);
     expect([...mask]).toEqual([255, 0, 0, 0]);
     depth.values.fill(NaN);
-    expect(projectSelection(centers, mask, projection, region, "set", false, depth)).toBe(0);
+    expect(projectSelection(centers, mask, projection, region, "set", false, depthTest(depth))).toBe(0);
   });
   it("preserves isolation and modifier semantics", () => {
     const mask = new Uint8Array([0, 255, 0, 0]);

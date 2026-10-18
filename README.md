@@ -37,9 +37,9 @@ Open [http://127.0.0.1:5173](http://127.0.0.1:5173). The portal is currently pub
 
 ## Selection tools
 
-Mesh and splat viewers offer rectangle, lasso, and brush selection. The pointer icon returns to navigation. **Q** switches between navigation and the last selection tool; Escape returns to navigation. Shortcuts apply while the viewer has focus and leave text inputs alone.
+Mesh and splat viewers offer rectangle, lasso, and brush selection. The pointer icon returns to navigation. **Q** switches between navigation and the last selection tool; Escape returns to navigation. **F** frames the selection (or the whole object when nothing is selected) and sets the orbit pivot to its center, preserving the viewing direction. Ctrl/Cmd+Z undoes selection and isolation changes; Ctrl/Cmd+Shift+Z redoes them. Camera movement and tool settings are not part of selection history. Shortcuts apply while the viewer has focus and leave text inputs alone.
 
-Selection actions appear at the bottom right while a selection tool is active. **X-ray off** selects visible surfaces using PlayCanvas's depth-picking render pass; **X-ray on** selects through the object. Selection tests Gaussian centers or triangle centroids, rather than entire projected footprints. Visibility uses the engine's alpha threshold for splats and a pixel-sized depth tolerance. Thin overlapping surfaces can therefore share a visibility sample.
+Selection actions appear at the bottom right while a selection tool is active. **X-ray off** selects visible surfaces; **X-ray on** selects through the object. Mesh visibility uses an object-space triangle hierarchy and ray tests at the selected centroids, including faces smaller than a screen pixel. It respects face culling, near clipping, transforms, and isolation across mesh parts. Splat visibility uses PlayCanvas's depth-picking render pass and its alpha threshold, with a pixel-sized depth tolerance. Selection tests Gaussian centers or triangle centroids, rather than entire projected footprints.
 
 Shift adds, Ctrl/Cmd removes, and Shift + Ctrl/Cmd intersects. Brush diameter is adjustable. Selections update when the gesture ends. **Isolate** hides unselected geometry; **Show all** restores it while retaining the highlight. **Clear** removes the selection and exits isolation. Further selections while isolated act only on the remaining geometry.
 

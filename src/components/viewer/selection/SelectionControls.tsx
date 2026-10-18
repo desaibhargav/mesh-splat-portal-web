@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { SelectionGesture } from "./SelectionGesture";
-import { captureDepth } from "./SelectionDepth";
 import type { SelectionHandle, SelectionTool } from "./types";
+import { SelectionHistory } from "./SelectionHistory";
+import { focusSelection } from "./focusSelection";
 
 const tools: { tool: SelectionTool; label: string; path: string }[] = [
   { tool: "navigate", label: "Navigate (Q)", path: "M5 3l14 10-7 1-3 7z" },
@@ -19,14 +20,36 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
+  const toolbar = useRef<HTMLDivElement>(null);
+  const history = useMemo(() => handle ? new SelectionHistory(handle.selection) : null, [handle]);
   useEffect(() => {
     setSummary(handle?.selection.summary); setError(null); setBusy(false);
     return () => { generation.current++; };
   }, [handle]);
   const unavailable = disabled || !handle || busy;
   const selecting = tool !== "navigate";
+  useEffect(() => {
+    const frame = toolbar.current?.closest(".viewer-frame");
+    if (!frame || !handle || !history) return;
+    const onKeyDown = (event: Event) => {
+      const key = event as KeyboardEvent;
+      if (key.repeat || key.altKey || (key.target as HTMLElement).closest("input, textarea, select, [contenteditable]:not([contenteditable=false])")) return;
+      const undo = (key.metaKey || key.ctrlKey) && key.key.toLowerCase() === "z";
+      const focus = !key.metaKey && !key.ctrlKey && key.key.toLowerCase() === "f";
+      if (!undo && !focus) return;
+      key.preventDefault(); key.stopPropagation();
+      if (unavailable) return;
+      if (undo) setSummary(key.shiftKey ? history.redo() : history.undo());
+      else {
+        const bounds = handle.selection.bounds();
+        if (bounds) focusSelection(bounds, handle.camera());
+      }
+    };
+    frame.addEventListener("keydown", onKeyDown);
+    return () => frame.removeEventListener("keydown", onKeyDown);
+  }, [handle, history, unavailable]);
   return <>
-    <div className="selection-toolbar" role="group" aria-label="Selection tools">
+    <div ref={toolbar} className="selection-toolbar" role="group" aria-label="Selection tools">
       {tools.map(item => <button key={item.tool} title={item.label} aria-label={item.label} disabled={unavailable}
         aria-pressed={tool === item.tool} onClick={() => onToolChange(item.tool)}>
         <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round"
@@ -39,8 +62,8 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
       <button disabled={unavailable} aria-pressed={xray} title={xray ? "Select through the object" : "Select only visible surfaces"}
         onClick={() => setXray(!xray)}>X-ray {xray ? "on" : "off"}</button>
       <button disabled={unavailable || !summary?.selected} aria-pressed={summary?.isolated ?? false}
-        onClick={() => setSummary(handle!.selection.toggleIsolation())}>{summary?.isolated ? "Show all" : "Isolate"}</button>
-      <button disabled={unavailable || !summary?.selected} onClick={() => setSummary(handle!.selection.clear())}>Clear</button>
+        onClick={() => setSummary(history!.perform(() => handle!.selection.toggleIsolation()))}>{summary?.isolated ? "Show all" : "Isolate"}</button>
+      <button disabled={unavailable || !summary?.selected} onClick={() => setSummary(history!.perform(() => handle!.selection.clear()))}>Clear</button>
     </div>}
     {error && <div className="selection-error" role="alert">{error}</div>}
     {selecting && !unavailable && <SelectionGesture key={tool} tool={tool} brushSize={brushSize} onSelect={async (region, operation) => {
@@ -49,8 +72,8 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
       try {
         const camera = handle.camera();
         const view = { projectionMatrix: camera.projectionMatrix.clone(), viewMatrix: camera.viewMatrix.clone() };
-        const depth = xray ? undefined : await captureDepth(handle.app, camera);
-        if (generation.current === token) setSummary(handle.selection.select(region, operation, view, depth));
+        const visibility = xray ? undefined : await handle.selection.visibility(handle.app, camera);
+        if (generation.current === token) setSummary(history!.perform(() => handle.selection.select(region, operation, view, visibility)));
       } catch (failure) {
         if (generation.current === token) setError(failure instanceof Error ? failure.message : String(failure));
       } finally { if (generation.current === token) setBusy(false); }

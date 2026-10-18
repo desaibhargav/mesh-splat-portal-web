@@ -1,10 +1,9 @@
-import type { DepthImage } from "./SelectionDepth";
-import type { SelectionRegion } from "./types";
+import type { SelectionRegion, VisibilityTest } from "./types";
 import type { SelectionOperation } from "./rectangle";
 
 // Stable primitive IDs keep selections attached to geometry as the camera moves.
 export function projectSelection(centers: Float32Array, mask: Uint8Array, matrix: ArrayLike<number>,
-  region: SelectionRegion, operation: SelectionOperation, isolated: boolean, depth?: DepthImage): number {
+  region: SelectionRegion, operation: SelectionOperation, isolated: boolean, visible?: VisibilityTest): number {
   let count = 0;
   for (let i = 0; i < centers.length / 3; i++) {
     const x = centers[i * 3]!, y = centers[i * 3 + 1]!, z = centers[i * 3 + 2]!;
@@ -16,13 +15,7 @@ export function projectSelection(centers: Float32Array, mask: Uint8Array, matrix
     const previous = mask[i] !== 0;
     let hit = (!isolated || previous) && w > 0 && cz >= -w && cz <= w && u >= 0 && u < 1 && v >= 0 && v < 1 &&
       region.pixels[(Math.floor(v * region.height) * region.width + Math.floor(u * region.width)) * 4 + 3]! > 0;
-    if (hit && depth) {
-      const front = depth.values[Math.floor(v * depth.height) * depth.width + Math.floor(u * depth.width)]!;
-      const distance = depth.orthographic ? (cz / w + 1) / 2 : (w - depth.near) / (depth.far - depth.near);
-      // A pixel-sized tolerance accounts for raster sampling and floating point depth error.
-      const tolerance = Math.max(Math.abs(distance) * 2 ** -20, w / ((depth.far - depth.near) * depth.height));
-      hit = Number.isFinite(front) && distance <= front + tolerance;
-    }
+    if (hit && visible) hit = visible(i, u, v, w, cz);
     const selected = operation === "set" ? hit : operation === "add" ? previous || hit :
       operation === "remove" ? previous && !hit : previous && hit;
     mask[i] = selected ? 255 : 0;

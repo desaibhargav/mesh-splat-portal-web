@@ -30,6 +30,8 @@ export function MeshViewer({ url, onStatus, selecting, onSelectionReady }: {
 
     // Gltf attaches its render hierarchy in an effect. Measure it on the next frame.
     let selection: MeshSelection | undefined;
+    const dispose = () => { cancelAnimationFrame(frame); selection?.destroy(); selection = undefined; };
+    app.on("destroy", dispose);
     const frame = requestAnimationFrame(() => {
       setView(getEntityView(target));
       try {
@@ -45,7 +47,7 @@ export function MeshViewer({ url, onStatus, selecting, onSelectionReady }: {
         onStatus({ loading: false, progress: 1, error: `Selection unavailable: ${error instanceof Error ? error.message : String(error)}` });
       }
     });
-    return () => { cancelAnimationFrame(frame); onSelectionReady(null); selection?.destroy(); };
+    return () => { app.off("destroy", dispose); dispose(); onSelectionReady(null); };
   }, [result.asset, target, app, onSelectionReady, onStatus]);
 
   return (
