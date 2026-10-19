@@ -3,6 +3,7 @@ import { GSplat } from "@playcanvas/react/components";
 import { useApp, useSplat } from "@playcanvas/react/hooks";
 import { useEffect, useMemo, useState } from "react";
 import { Color, Vec3, type BoundingBox, type Entity as PlayCanvasEntity } from "playcanvas";
+import { ViewerSpace } from "./ViewerSpace";
 import type { ViewerStatus } from "./ArtifactViewer";
 import { frameBounds, interactiveCamera, ViewerCamera, type ViewerView } from "./ViewerCamera";
 import { SplatSelection } from "./selection/SplatSelection";
@@ -21,8 +22,9 @@ export function SplatViewer({ url, onStatus, onSelectionReady }: {
   useEffect(() => onStatus({ loading: result.loading, progress: result.loading ? 0 : 1, error: result.error }), [result.loading, result.error, onStatus]);
   useEffect(() => {
     if (!entity || !result.asset) return;
+    let space: ViewerSpace | undefined;
     let selection: SplatSelection | undefined;
-    const dispose = () => { cancelAnimationFrame(frame); selection?.destroy(); selection = undefined; };
+    const dispose = () => { cancelAnimationFrame(frame); selection?.destroy(); selection = undefined; space?.destroy(); space = undefined; };
     app.on("destroy", dispose);
     const frame = requestAnimationFrame(() => {
       try {
@@ -31,7 +33,8 @@ export function SplatViewer({ url, onStatus, onSelectionReady }: {
         tint.linear();
         tint.a = 0.5;
         selection = new SplatSelection(entity.gsplat, tint);
-        onSelectionReady({ app, selection, camera: () => interactiveCamera(app) });
+        space = new ViewerSpace(entity, selection.bounds(null)!.center.clone());
+        onSelectionReady({ app, space, selection, camera: () => interactiveCamera(app) });
       } catch (error) {
         onStatus({ loading: false, progress: 1, error: `Selection unavailable: ${error instanceof Error ? error.message : String(error)}` });
       }

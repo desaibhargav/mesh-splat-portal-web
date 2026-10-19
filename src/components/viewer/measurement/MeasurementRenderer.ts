@@ -9,7 +9,7 @@ export interface MeasurementStyle { lineWidth: number; fontSize: number }
 export const defaultMeasurementStyle: MeasurementStyle = { lineWidth: 3, fontSize: 16 };
 
 interface SegmentVisual {
-  points: readonly Vec3[]; root: Entity; markers: Entity[]; markerLabels: Entity[];
+  points: readonly Vec3[]; worldPoints: Vec3[]; root: Entity; markers: Entity[]; markerLabels: Entity[];
   line: Entity | null; label: Entity | null; midpoint: Vec3;
 }
 
@@ -90,7 +90,7 @@ export class MeasurementRenderer {
         line.addComponent("render", { type: "cylinder", material: this.material, layers: [this.layer.id], castShadows: false, receiveShadows: false });
         label = this.text(root, formatDistance(points[0]!.distance(points[1]!)));
       }
-      this.visuals[i] = { points, root, markers, markerLabels, line, label, midpoint };
+      this.visuals[i] = { points, worldPoints: points.map(() => new Vec3()), root, markers, markerLabels, line, label, midpoint };
     });
   }
 
@@ -111,10 +111,12 @@ export class MeasurementRenderer {
 
   private update() {
     for (const visual of this.visuals) {
-      visual.markers.forEach((marker, i) => this.billboard(marker, visual.points[i]!));
+      visual.points.forEach((point, i) => this.handle.space.toWorld(point, visual.worldPoints[i]!));
+      visual.markers.forEach((marker, i) => this.billboard(marker, visual.worldPoints[i]!));
       if (!visual.line || !visual.label) continue;
+      visual.midpoint.lerp(visual.worldPoints[0]!, visual.worldPoints[1]!, 0.5);
       this.billboard(visual.label, visual.midpoint, this.gap);
-      const length = this.direction.sub2(visual.points[1]!, visual.points[0]!).length();
+      const length = this.direction.sub2(visual.worldPoints[1]!, visual.worldPoints[0]!).length();
       visual.line.enabled = length > 0;
       if (!visual.line.enabled) continue;
       visual.line.setPosition(visual.midpoint);

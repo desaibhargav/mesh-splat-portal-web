@@ -67,7 +67,7 @@ export function AnnotationControls({ handle, annotations, active, interactive, h
       return hit && snapshotContains(draft.region, hit.part, hit.index) ? null : "Place the marker on the chosen selection.";
     },
     onPick: position => {
-      setDraft(current => current && { ...current, position });
+      setDraft(current => current && { ...current, position: handle.space.toLocal(position) });
       setStep("details");
     }
   });

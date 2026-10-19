@@ -1,4 +1,5 @@
 import type { AppBase, BoundingBox, CameraComponent } from "playcanvas";
+import type { ViewerSpace } from "../ViewerSpace";
 import type { PaintState } from "./selectionColors";
 import type { SelectionOperation } from "./rectangle";
 
@@ -34,4 +35,4 @@ export interface SelectionController {
   clear(): SelectionSummary;
   toggleIsolation(): SelectionSummary;
 }
-export interface SelectionHandle { app: AppBase; selection: SelectionController; camera(): CameraComponent }
+export interface SelectionHandle { app: AppBase; space: ViewerSpace; selection: SelectionController; camera(): CameraComponent }

@@ -1,15 +1,20 @@
 import { Mat4, Pose, Quat, Vec3, type CameraComponent } from "playcanvas";
+import type { SelectionHandle } from "../selection/types";
 import { cameraControls } from "../CameraControls";
 
 // Origin is the reference-plane center and orbit pivot. Local +Z faces the
-// camera; local X/Y span the future section plane. Scale has no role here.
-export interface ViewFrame { origin: Vec3; rotation: Quat; distance: number; fov: number }
-export interface NamedView { id: number; name: string; frame: ViewFrame }
+// camera; local X/Y span its section reference plane. Scale has no role here.
+export interface ViewFrame { origin: Vec3; rotation: Quat; distance: number; fov: number; projection?: number; orthoHeight?: number }
+export interface NamedView { id: number; name: string; frame: ViewFrame; assetRotation: Quat }
 export type ViewAxis = "X" | "Y" | "Z";
 
 export function axisFrame(frame: ViewFrame, axis: ViewAxis): ViewFrame {
   const normal = { X: Vec3.RIGHT, Y: Vec3.UP, Z: Vec3.BACK }[axis];
-  const rotation = new Quat().setFromMat4(new Mat4().setLookAt(Vec3.ZERO, normal.clone().mulScalar(-1), axis === "Y" ? Vec3.FORWARD : Vec3.UP));
+  return directionFrame(frame, normal);
+}
+
+export function directionFrame(frame: ViewFrame, normal: Vec3): ViewFrame {
+  const rotation = new Quat().setFromMat4(new Mat4().setLookAt(Vec3.ZERO, normal.clone().mulScalar(-1), Math.abs(normal.y) === 1 ? Vec3.FORWARD : Vec3.UP));
   return { ...copyFrame(frame), rotation };
 }
 
@@ -37,7 +42,7 @@ export function captureFrame(camera: CameraComponent): ViewFrame {
   const controls = cameraControls(camera);
   const origin = controls.focusPoint.clone();
   return { origin, rotation: camera.entity.getRotation().clone(),
-    distance: camera.entity.getPosition().distance(origin), fov: camera.fov };
+    distance: camera.entity.getPosition().distance(origin), fov: camera.fov, projection: camera.projection, orthoHeight: camera.orthoHeight };
 }
 
 export function framePose(frame: ViewFrame): Pose {
@@ -49,5 +54,11 @@ export function framePose(frame: ViewFrame): Pose {
 export function recallFrame(camera: CameraComponent, frame: ViewFrame) {
   const controls = cameraControls(camera);
   camera.fov = frame.fov;
+  if (frame.projection !== undefined) camera.projection = frame.projection;
+  if (frame.orthoHeight !== undefined) camera.orthoHeight = frame.orthoHeight;
   controls.restorePose(framePose(frame));
+}
+
+export function restoreView(handle: SelectionHandle, view: NamedView) {
+  handle.space.setRotation(view.assetRotation); recallFrame(handle.camera(), view.frame);
 }

@@ -8,7 +8,7 @@ Mesh and splat viewers supply the same `SelectionController` contract to `Select
 | --- | --- |
 | Orbit, pan, zoom | Bundled `CameraControls` script |
 | Cross sections | `Plane`, `Quat`, `BoundingBox`, `StandardMaterial` shader hooks, splat shader chunks, and a scene plane; [implementation and limits](sectioning.md) |
-| Named reference views | `TranslateGizmo`, `RotateGizmo`, reference `Entity`, `Pose`, and `AppBase.drawLines`; [workflow and camera adapter](views.md) |
+| Saved views and orientation | `RotateGizmo`, shared parent `Entity`, `ViewCube`, `Pose`, camera projection, and `AppBase.drawLines`; [workflow and camera adapter](views.md) |
 | Place measurement/annotation endpoints | Depth-enabled `Picker.prepare` and `getWorldPointAsync`, through shared `SurfacePicker` / `useSurfacePick` |
 | Visible region selection | `RenderPassPicker` for GPU triangle IDs or splat depth |
 | Measurement visuals | Built-in cylinder/sphere render primitives, world-space text elements, `CanvasFont`, and `Layer` |

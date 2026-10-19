@@ -9,7 +9,7 @@ import type { SelectionOperation } from "./rectangle";
 import { MeshPicker } from "./MeshPicker";
 import { SelectionBounds } from "./selectionBounds";
 import { snapshotContains } from "./selectionSnapshot";
-import { configureSectionMaterial } from "../section/sectionShaders";
+import { configureSectionMaterial, reverseFaceColor } from "../section/sectionShaders";
 import { sectionTest, setSectionPlane } from "../section/sectionPlane";
 import type { SelectionArea, SelectionCamera, SelectionRegion, SelectionSnapshot, SelectionState, SelectionSummary } from "./types";
 
@@ -151,7 +151,7 @@ export class MeshSelection {
         if (!indices.length) return [];
         if (!part.previewMaterial) {
           part.previewMaterial = new StandardMaterial();
-          configureSectionMaterial(part.previewMaterial);
+          configureSectionMaterial(part.previewMaterial, false);
           part.previewMaterial.useLighting = false;
           part.previewMaterial.cull = part.baseMaterial.cull;
           part.previewMaterial.blendType = BLEND_NORMAL;
@@ -288,6 +288,8 @@ export class MeshSelection {
             const shade = color ? new Color().fromString(decodeColor(color)).linear() : this.tint;
             if (color) material.diffuse.lerp(material.diffuse, shade, this.tint.a);
             if (selected && !color) { material.emissive.copy(shade); material.emissiveIntensity = this.tint.a; }
+            const reverse = color ? shade.clone().gamma() : reverseFaceColor.clone().lerp(reverseFaceColor, shade.clone().gamma(), this.tint.a);
+            material.setParameter("portalReverseColor", [reverse.r, reverse.g, reverse.b]);
             material.update();
           }
           const instance = new MeshInstance(new SubsetMesh(part.source.mesh, part.vertices), material, part.source.node);

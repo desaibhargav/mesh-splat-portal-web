@@ -3,6 +3,7 @@ import { Environment } from "@playcanvas/react/components";
 import { useApp, useEnvAtlas, useModel } from "@playcanvas/react/hooks";
 import { useEffect, useState } from "react";
 import { BoundingBox, Color, type Entity as PlayCanvasEntity, type MeshInstance } from "playcanvas";
+import { ViewerSpace } from "./ViewerSpace";
 import type { ViewerStatus } from "./ArtifactViewer";
 import { frameBounds, interactiveCamera, ViewerCamera, type ViewerView } from "./ViewerCamera";
 import { MeshSelection } from "./selection/MeshSelection";
@@ -29,8 +30,9 @@ export function MeshViewer({ url, onStatus, onSelectionReady }: {
     }
 
     // Gltf attaches its render hierarchy in an effect. Measure it on the next frame.
+    let space: ViewerSpace | undefined;
     let selection: MeshSelection | undefined;
-    const dispose = () => { cancelAnimationFrame(frame); selection?.destroy(); selection = undefined; };
+    const dispose = () => { cancelAnimationFrame(frame); selection?.destroy(); selection = undefined; space?.destroy(); space = undefined; };
     app.on("destroy", dispose);
     const frame = requestAnimationFrame(() => {
       setView(getEntityView(target));
@@ -38,7 +40,8 @@ export function MeshViewer({ url, onStatus, onSelectionReady }: {
         const tint = new Color().fromString(getComputedStyle(app.graphicsDevice.canvas).getPropertyValue("--gold").trim()).linear();
         tint.a = 0.5;
         selection = new MeshSelection(target, app, tint);
-        onSelectionReady({ app, selection, camera: () => interactiveCamera(app) });
+        space = new ViewerSpace(target, selection.bounds(null)!.center.clone());
+        onSelectionReady({ app, space, selection, camera: () => interactiveCamera(app) });
       } catch (error) {
         onStatus({ loading: false, progress: 1, error: `Selection unavailable: ${error instanceof Error ? error.message : String(error)}` });
       }

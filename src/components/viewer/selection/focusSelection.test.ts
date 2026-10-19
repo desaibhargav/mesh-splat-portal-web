@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { BoundingBox, Entity, Mat4, Vec3 } from "playcanvas";
-import { focusPosition } from "./focusSelection";
+import { focusPosition, orthographicHeight } from "./focusSelection";
 
 it("fits all bounds corners in portrait and landscape views from an oblique direction", () => {
   for (const aspectRatio of [.5, 2]) for (const horizontalFov of [false, true]) {
@@ -19,6 +19,20 @@ it("fits all bounds corners in portrait and landscape views from an oblique dire
       const w = data[3]! * corner.x + data[7]! * corner.y + data[11]! * corner.z + data[15]!;
       expect(Math.abs(projected.x / w)).toBeLessThan(1);
       expect(Math.abs(projected.y / w)).toBeLessThan(1);
+    }
+    entity.destroy();
+  }
+});
+
+it("fits rotated bounds in orthographic portrait and landscape projections", () => {
+  for (const aspectRatio of [0.5, 2]) {
+    const entity = new Entity(); entity.setEulerAngles(25, 40, 15);
+    const bounds = new BoundingBox(new Vec3(7, 8, 9), new Vec3(1, 2, 3));
+    const height = orthographicHeight(bounds, { entity, aspectRatio });
+    for (const x of [-1, 1]) for (const y of [-1, 1]) for (const z of [-1, 1]) {
+      const point = new Vec3(x, y * 2, z * 3);
+      expect(Math.abs(point.dot(entity.up))).toBeLessThan(height);
+      expect(Math.abs(point.dot(entity.right))).toBeLessThan(height * aspectRatio);
     }
     entity.destroy();
   }

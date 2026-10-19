@@ -14,7 +14,7 @@ export function MeasurementControls({ handle, measurement, active, onChange }: {
   const redraw = () => { refresh(value => value + 1); onChange(); };
   const { busy, message, clearMessage } = useSurfacePick({ handle, active,
     acceptsClick: shift => measurement.points.length < 2 || shift,
-    onPick: (point, shift) => { measurement.add(point, shift); redraw(); }
+    onPick: (point, shift) => { measurement.add(handle.space.toLocal(point), shift); redraw(); }
   });
   useEffect(() => {
     if (!active) return;
@@ -29,7 +29,8 @@ export function MeasurementControls({ handle, measurement, active, onChange }: {
       if (busy) return;
       if (undo) { if (key.shiftKey) measurement.redo(); else measurement.undo(); redraw(); }
       else {
-        const bounds = measurement.bounds() ?? handle.selection.bounds();
+        const local = measurement.bounds();
+        const bounds = local ? handle.space.worldBounds(local) : handle.selection.bounds();
         if (bounds) focusSelection(bounds, handle.camera());
       }
     }

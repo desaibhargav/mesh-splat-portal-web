@@ -53,11 +53,11 @@ The tools adapt SuperSplat's gesture and modifier conventions ([MIT notice](publ
 
 ## Views
 
-The **Views** icon opens a shared mesh/splat reference tool. Capture the current camera, move or rotate its reference plane with PlayCanvas's native gizmos, preview the direction, and name/save/recall views. Recalling restores roll, framing, and orbit pivot; the asset is unchanged. Q exits. Views last until leaving the asset. Use X/Y/Z normal alignment or pick three surface points to define a reference. See [reference views](docs/views.md) for the workflow and limits.
+The **Views** icon opens saved views and **Create view**. Name a draft and rotate the asset against a fixed world grid using PlayCanvas's native rotation gizmo, or align it using three surface points. The native navigation widget changes only the camera; optional orthographic projection is independent of asset orientation. Saved entries restore the asset orientation, camera, framing, and orbit pivot and open for editing. Cancel/Q restores an unsaved draft's previous arrangement. Measurement and annotation anchors remain attached. Source geometry is unchanged and views remain session-local. See [saved views](docs/views.md).
 
 ## Cross sections
 
-The **Cross section** icon enables a shared world-space clipping plane for meshes and splats. Copy a saved reference view or use the current view, then adjust offset, two tilts, flip, guide visibility, and camera alignment. Q exits the controls while retaining clipping. Removed surfaces are also excluded by surface/ID picking. This preserves source geometry; filled caps, contours, and persistent storage remain deferred. See [sectioning](docs/sectioning.md).
+The **Cross section** icon enables a shared world-space clipping plane for meshes and splats. Load a saved view or use **From current camera**, choose the cutting-plane normal (View or world X/Y/Z), then adjust offset, two tilts, flip, guide visibility, and camera alignment. The reference dropdown retains the chosen name. Sectioned mesh reverse faces use neutral grey without the exterior texture; explicit region colors remain visible. Q exits the controls while retaining clipping. Removed surfaces are also excluded by surface/ID picking. This preserves source geometry; filled caps, contours, and persistent storage remain deferred. See [sectioning](docs/sectioning.md).
 
 ## Measurement
 

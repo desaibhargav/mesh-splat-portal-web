@@ -25,7 +25,7 @@ export function AnnotationLayer({ handle, records, interactive, hoverRegions, mo
     // manager on the next frame so that initialization cannot overwrite its layers.
     const frame = requestAnimationFrame(() => {
       const entity = new Entity("Annotations"); root.current = entity;
-      handle.app.root.addChild(entity); entity.addComponent("script");
+      handle.space.root.addChild(entity); entity.addComponent("script");
       const color = new Color().fromString(getComputedStyle(container.current!).getPropertyValue("--gold").trim());
       const annotationManager = entity.script!.create(ViewerAnnotationManager, { properties: {
         container: container.current!, viewCamera: handle.camera().entity, hotspotColor: color,
@@ -57,7 +57,7 @@ export function AnnotationLayer({ handle, records, interactive, hoverRegions, mo
         entity.script!.create(Annotation, { properties: { label: String(index + 1), title: record.title, text: record.text } });
         entities.current.set(record.id, entity);
       }
-      entity.setPosition(record.position);
+      entity.setLocalPosition(record.position);
       const annotation = entity.script!.get("annotation") as unknown as Annotation;
       annotation.label = String(index + 1); annotation.title = record.title; annotation.text = record.text;
       if (record.color) manager.current!.shades.set(annotation, new Color().fromString(record.color));
@@ -117,7 +117,7 @@ export function AnnotationLayer({ handle, records, interactive, hoverRegions, mo
         if (!position || (region && (!hit || !snapshotContains(region, hit.part, hit.index)))) {
           throw new Error(region ? "Drop the marker on its annotated selection." : "Drop the marker on the model.");
         }
-        if (!cancelled) commitMove(id, position);
+        if (!cancelled) commitMove(id, handle.space.toLocal(position));
       } catch (error) {
         if (cancelled) return;
         entity!.setPosition(original);

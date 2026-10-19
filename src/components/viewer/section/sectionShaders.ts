@@ -1,4 +1,6 @@
-import type { StandardMaterial } from "playcanvas";
+import { Color, type StandardMaterial } from "playcanvas";
+
+export const reverseFaceColor = new Color(0.55, 0.55, 0.55);
 
 export const sectionDeclaration = {
   glsl: `uniform vec4 portalSectionPlane;
@@ -10,12 +12,30 @@ fn portalSectionClipped(world: vec3f) -> bool { return uniform.portalSectionEnab
 };
 
 // The engine's user-main hook runs in forward, depth, shadow, and picker passes.
-export function configureSectionMaterial(material: StandardMaterial) {
+export function configureSectionMaterial(material: StandardMaterial, reverseFaces = true) {
   for (const language of ["glsl", "wgsl"] as const) {
     const chunks = material.shaderChunks[language];
     chunks.set("litUserDeclarationPS", `${chunks.get("litUserDeclarationPS") ?? ""}\n${sectionDeclaration[language]}`);
     chunks.set("litUserMainStartPS", `${chunks.get("litUserMainStartPS") ?? ""}\nif (portalSectionClipped(vPositionW)) { discard; }`);
+    if (reverseFaces) {
+      const facing = language === "glsl" ? "gl_FrontFacing" : "pcFrontFacing";
+      const enabled = language === "glsl" ? "portalSectionEnabled" : "uniform.portalSectionEnabled";
+      const output = language === "glsl" ? "gl_FragColor" : "output.color";
+      const color = language === "glsl" ? "portalReverseColor" : "uniform.portalReverseColor";
+      chunks.set("litUserDeclarationPS", `${chunks.get("litUserDeclarationPS")}\n${language === "glsl" ? "uniform vec3 portalReverseColor;" : "uniform portalReverseColor: vec3f;"}`);
+      chunks.set("litUserMainEndPS", `${chunks.get("litUserMainEndPS") ?? ""}
+#if !defined(PICK_PASS) && !defined(PREPASS_PASS) && !defined(SHADOW_PASS)
+if (${enabled} > 0.5 && !${facing}) {
+    ${language === "glsl" ? "float portalReverseShade = 1.0;" : "var portalReverseShade: f32 = 1.0;"}
+    #ifdef LIT_NEEDS_NORMAL
+        portalReverseShade = 0.65 + 0.35 * abs(dot(dVertexNormalW, dViewDirW));
+    #endif
+    ${output} = ${language === "glsl" ? "vec4" : "vec4f"}(${color} * portalReverseShade, ${output}.a);
+}
+#endif`);
+    }
   }
+  if (reverseFaces) material.setParameter("portalReverseColor", [reverseFaceColor.r, reverseFaceColor.g, reverseFaceColor.b]);
 }
 
 // A signed plane distance interpolates linearly across each splat billboard.

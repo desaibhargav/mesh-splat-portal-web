@@ -52,6 +52,12 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
     setViews([]);
     return () => { generation.current++; };
   }, [handle]);
+  useEffect(() => {
+    if (!handle) return;
+    const changed = () => handle.selection.updateSection();
+    handle.space.on("change", changed);
+    return () => { handle.space.off("change", changed); };
+  }, [handle]);
   const unavailable = disabled || !handle || busy;
   const selecting = tool === "select";
   useEffect(() => {
