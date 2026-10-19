@@ -1,7 +1,7 @@
 import { BoundingBox, Vec3 } from "playcanvas";
 
 export interface MeasurementRecord {
-  id: number; name: string; visible: boolean; points: readonly Vec3[];
+  id: number; name: string; visible: boolean; saved: boolean; points: readonly Vec3[];
 }
 
 export class Measurement {
@@ -17,9 +17,25 @@ export class Measurement {
   get canRedo() { return this.cursor + 1 < this.snapshots.length; }
   add(point: Vec3, additional = false) {
     if (this.points.length === 2) {
-      if (additional) this.change([...this.records, this.create([point.clone()])]);
+      if (additional) this.change([...this.records.map(record => record.id === this.records.at(-1)!.id ? { ...record, saved: true } : record), this.create([point.clone()])]);
     } else if (!this.records.length) this.change([this.create([point.clone()])]);
     else this.change([...this.records.slice(0, -1), { ...this.records.at(-1)!, points: [...this.points, point.clone()] }]);
+  }
+  save(id: number, name: string) {
+    const previous = this.records.find(record => record.id === id);
+    if (!name.trim() || previous?.points.length !== 2 || (previous.saved && previous.name === name.trim())) return;
+    this.change(this.records.map(record => record.id === id
+      ? { ...record, name: name.trim(), saved: true } : record));
+  }
+  moveEndpoint(id: number, index: number, point: Vec3) {
+    const record = this.records.find(record => record.id === id);
+    const previous = record?.points[index];
+    if (!previous || previous.equals(point)) return;
+    this.change(this.records.map(item => item.id === id ? { ...item,
+      points: item.points.map((value, i) => i === index ? point.clone() : value) } : item));
+  }
+  remove(id: number) {
+    if (this.records.some(record => record.id === id)) this.change(this.records.filter(record => record.id !== id));
   }
   clear() { if (this.records.length) this.change([]); }
   rename(id: number, name: string) {
@@ -44,7 +60,7 @@ export class Measurement {
   }
   private create(points: readonly Vec3[]): MeasurementRecord {
     const id = this.nextId++;
-    return { id, name: `Measurement ${id}`, visible: true, points };
+    return { id, name: `Measurement ${id}`, visible: true, saved: false, points };
   }
   private change(points: MeasurementRecord[]) {
     this.snapshots.splice(++this.cursor);

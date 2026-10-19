@@ -140,7 +140,7 @@ a { color: #536d7d; }
   .selection-toolbar span { flex-basis: 100%; margin-left: 0; }
 }
 
-.viewer-frame { --measurement-marker-size: 10px; --measurement-label-gap: 12px; }
+.viewer-frame { --measurement-marker-size: 10px; --measurement-label-gap: 12px; --measurement-gizmo-scale: .5; }
 .measurement-actions { max-width: min(270px, calc(100% - 24px)); }
 .measurement-actions [role="status"] { font-size: .75rem; }
 .measurement-actions output { color: #fff; font-size: 1rem; font-variant-numeric: tabular-nums; }
@@ -156,7 +156,7 @@ a { color: #536d7d; }
 .annotation-actions label { max-width: none; gap: 4px; }
 .annotation-actions input, .annotation-actions textarea { width: 100%; padding: 6px; border: 1px solid #666; border-radius: 3px; color: #eee; background: #181818; font: inherit; }
 .annotation-actions textarea { resize: vertical; }
-.annotation-actions small { color: #bbb; font-size: .65rem; }
+.annotation-actions small, .measurement-actions small { color: #bbb; font-size: .65rem; }
 @media (max-width: 480px) {
   .selection-toolbar { gap: .3rem; }
   .selection-toolbar button { padding: .35rem .4rem; }
@@ -197,3 +197,6 @@ a { color: #536d7d; }
 
 .annotation-viewport { position: absolute; overflow: hidden; pointer-events: none; }
 .annotation-viewport > .pc-annotation { max-width: 90%; }
+
+.measurement-actions label { max-width: none; gap: 4px; }
+.measurement-actions input:not([type=range]) { min-width: 0; width: 100%; padding: 6px; border: 1px solid #666; color: inherit; background: #181818; font: inherit; }

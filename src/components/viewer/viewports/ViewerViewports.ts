@@ -7,7 +7,7 @@ export function viewportContains(camera: CameraComponent, u: number, v: number) 
   const r = camera.rect;
   return u >= r.x && u < r.x + r.z && v >= 1 - r.y - r.w && v < 1 - r.y;
 }
-export function viewportPoint(camera: CameraComponent, u: number, v: number) {
+export function viewportPoint(camera: Pick<CameraComponent, "rect">, u: number, v: number) {
   const r = camera.rect;
   return { u: (u - r.x) / r.z, v: (v - (1 - r.y - r.w)) / r.w };
 }

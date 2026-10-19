@@ -54,3 +54,37 @@ it("names measurements and independently controls their scene visibility", () =>
   expect(measurement.visibleSegments).toEqual([measurement.records[1]!.points]);
   measurement.undo(); expect(measurement.records[0]!.visible).toBe(true);
 });
+
+it("moves one endpoint as a single undoable edit without changing other measurements", () => {
+  const measurement = new Measurement();
+  measurement.add(Vec3.ZERO); measurement.add(new Vec3(3, 0, 0));
+  const first = measurement.records[0]!;
+  measurement.add(Vec3.ONE, true); measurement.add(new Vec3(1, 2, 1));
+  const second = measurement.records[1]!;
+  const position = new Vec3(0, 4, 0);
+  measurement.moveEndpoint(first.id, 1, position); position.set(100, 100, 100);
+  expect(measurement.records[0]!.points[1]!.toArray()).toEqual([0, 4, 0]);
+  expect(measurement.records[1]).toBe(second);
+  expect(first.points[1]!.toArray()).toEqual([3, 0, 0]);
+  measurement.undo(); expect(measurement.records[0]).toEqual({ ...first, saved: true });
+  measurement.redo(); expect(measurement.records[0]!.points[1]!.y).toBe(4);
+  const state = measurement.records;
+  measurement.moveEndpoint(first.id, 1, new Vec3(0, 4, 0));
+  measurement.moveEndpoint(first.id, 5, Vec3.ZERO);
+  expect(measurement.records).toBe(state);
+});
+
+it("saves measurements without hiding them, and supports undoable deletion", () => {
+  const measurement = new Measurement();
+  measurement.add(Vec3.ZERO); measurement.add(Vec3.ONE);
+  const id = measurement.records[0]!.id;
+  measurement.save(id, "Diagonal");
+  expect(measurement.records[0]).toMatchObject({ name: "Diagonal", saved: true, visible: true });
+  expect(measurement.visibleSegments).toHaveLength(1);
+  const saved = measurement.records;
+  measurement.save(id, "Diagonal"); expect(measurement.records).toBe(saved);
+  measurement.remove(id); expect(measurement.visibleSegments).toHaveLength(0);
+  measurement.undo(); expect(measurement.records).toBe(saved);
+  measurement.setVisible(id, false); expect(measurement.visibleSegments).toHaveLength(0);
+  expect(measurement.records[0]!.saved).toBe(true);
+});

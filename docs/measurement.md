@@ -10,7 +10,7 @@ The portal uses PlayCanvas's existing `Picker` with depth enabled. `prepare` ren
 
 `MeasurementRenderer` contains the scene visuals for both meshes and splats; `MeasurementVisuals` connects it to the shared measurement state. Font glyphs and the white unlit material are shared, unchanged segments retain their entities, and sliders update line width and font size without rebuilding renderer resources. Text, lines, and markers use a dedicated layer with a fresh depth buffer so measurements remain readable over the model. Picking is restricted to the asset's layers, so measurement and annotation visuals cannot become measurement endpoints.
 
-Label styling comes from the viewer's CSS variables. The font atlas uses PlayCanvas's documented 32-pixel glyph size with the browser's existing font family. Native line batching uses the application's existing immediate layer. Scene resources are released on application destruction before the graphics device, including navigation during a pick.
+Label styling comes from the viewer's CSS variables. The font atlas uses PlayCanvas's documented 32-pixel glyph size with the browser's existing font family. Scene resources are released on application destruction before the graphics device, including navigation during a pick.
 
 These are XR-renderable visuals. XR session entry, controller input, and XR control panels remain a separate roadmap item; headset validation is still required.
 
@@ -22,6 +22,12 @@ These are XR-renderable visuals. XR session entry, controller input, and XR cont
 - Respect currently isolated geometry. Preserve endpoints while navigating.
 - Leave uncalibrated distances unitless. Append a physical unit only with verified scale metadata or a known-distance calibration. Store calibration per asset rather than rescaling heritage geometry as a side effect of measuring.
 
-Endpoint gizmos, saved measurements, additional measurement types, and calibration UI can follow once the two-point interaction is validated. Splat surface points are depth estimates from Gaussian rendering; this does not by itself establish survey accuracy.
+**Save measurement** keeps the line, endpoints, and value in the scene and adds its name to the saved-measurements box above the options and to the model tree. Clicking a saved entry shows its two native `TranslateGizmo` handles for editing; saving/updating closes those handles without hiding the measurement. The tree eye hides/shows it, and the saved-list minus button deletes it. Records remain local to this asset session; persistent storage is still deferred. Shift-click saves the current completed segment and starts another.
+
+Dragging an endpoint snaps its proposed screen position onto the visible retained model surface through the shared `SurfacePicker`. Only the selected measurement has gizmos, on the active panel camera. The depth target renders once per gesture; coalesced single-pixel GPU reads reuse it while the camera/model are fixed. Invalid/background drops restore the original endpoint. A committed drag creates one undo entry, and previews reuse line/text entities rather than rebuilding geometry. Q, cancellation, scene orientation/layout changes, and teardown cancel pending edits and release navigation. Gizmos are mouse/touch driven; XR controller/hand bindings remain deferred and should call the same `moveEndpoint` operation.
+
+Distance labels stay horizontal and offset toward the upper side of the projected line (beside a vertical line). Clearance uses the native text width, font height, line thickness, and CSS gap so larger text does not overlap the line. Projection uses the active camera and viewport. Additional measurement types and calibration UI remain deferred. Splat surface points are depth estimates from Gaussian rendering; this does not by itself establish survey accuracy.
 
 Engine reference: [Picker](https://api.playcanvas.com/engine/classes/Picker.html).
+
+Development and minified-production Chromium checks cover save/reopen without hiding, both asset formats, surface-snapped native handle drags, one-entry undo/redo, background rejection, model-tree hide/show, deletion, four-view edits, Q cancellation, and leaving with handles active. A known cube fixture also checks a sectioned span and an endpoint dragged along its retained face. A browser counter verifies one depth-image capture per drag. These checks do not establish Safari, WebGPU, or actual XR-controller compatibility.

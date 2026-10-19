@@ -1,5 +1,5 @@
 import {
-  CanvasFont, Color, ELEMENTTYPE_TEXT, Entity, Layer, PROJECTION_ORTHOGRAPHIC, Quat, StandardMaterial, Vec3,
+  CanvasFont, Color, ELEMENTTYPE_TEXT, Entity, Layer, PROJECTION_ORTHOGRAPHIC, Quat, StandardMaterial, Vec2, Vec3,
   type AppBase, type CameraComponent
 } from "playcanvas";
 import type { SelectionHandle } from "../selection/types";
@@ -48,6 +48,10 @@ export class MeasurementRenderer {
   private readonly gap: number;
   private readonly delta = new Vec3();
   private readonly direction = new Vec3();
+  private readonly screenStart = new Vec3();
+  private readonly screenEnd = new Vec3();
+  private readonly normal = new Vec2();
+  private readonly labelOffset = new Vec3();
   private readonly rotation = new Quat();
   private style = defaultMeasurementStyle;
   private visuals: SegmentVisual[] = [];
@@ -90,7 +94,12 @@ export class MeasurementRenderer {
     this.visuals.slice(segments.length).forEach(visual => visual.root.destroy());
     this.visuals.length = Math.min(this.visuals.length, segments.length);
     segments.forEach((points, i) => {
-      if (this.visuals[i]?.points === points) return;
+      const existing = this.visuals[i];
+      if (existing?.points.length === points.length) {
+        existing.points = points;
+        if (existing.label) existing.label.element!.text = formatDistance(points[0]!.distance(points[1]!));
+        return;
+      }
       this.visuals[i]?.root.destroy();
       const root = new Entity("Measurement segment"); this.root.addChild(root);
       const markerLabels: Entity[] = [];
@@ -120,12 +129,12 @@ export class MeasurementRenderer {
       (this.camera.projectionMatrix.data[5]! * this.handle.app.graphicsDevice.clientRect.height * this.camera.rect.w);
   }
 
-  private billboard(entity: Entity, point: Vec3, offset = 0) {
+  private billboard(entity: Entity, point: Vec3, offset?: Vec3) {
     const depth = this.delta.sub2(point, this.camera.entity.getPosition()).dot(this.camera.entity.forward);
     entity.enabled = depth >= this.camera.nearClip && depth <= this.camera.farClip;
     if (!entity.enabled) return;
     const scale = this.pixelScale(point);
-    entity.setPosition(this.delta.copy(this.camera.entity.up).mulScalar(offset * scale).add(point));
+    entity.setPosition(offset ? this.delta.copy(offset).mulScalar(scale).add(point) : point);
     entity.setRotation(this.camera.entity.getRotation()); entity.setLocalScale(scale, scale, scale);
   }
 
@@ -135,7 +144,17 @@ export class MeasurementRenderer {
       visual.markers.forEach((marker, i) => this.billboard(marker, visual.worldPoints[i]!));
       if (!visual.line || !visual.label) continue;
       visual.midpoint.lerp(visual.worldPoints[0]!, visual.worldPoints[1]!, 0.5);
-      this.billboard(visual.label, visual.midpoint, this.gap);
+      this.camera.worldToScreen(visual.worldPoints[0]!, this.screenStart);
+      this.camera.worldToScreen(visual.worldPoints[1]!, this.screenEnd);
+      this.normal.set(this.screenEnd.y - this.screenStart.y, this.screenStart.x - this.screenEnd.x);
+      if (this.normal.lengthSq() === 0) this.normal.set(0, -1);
+      this.normal.normalize();
+      if (this.normal.y > 0 || (this.normal.y === 0 && this.normal.x < 0)) this.normal.mulScalar(-1);
+      const clearance = this.gap + this.style.lineWidth / 2 +
+        Math.abs(this.normal.x) * visual.label.element!.textWidth / 2 + Math.abs(this.normal.y) * this.style.fontSize / 2;
+      this.labelOffset.copy(this.camera.entity.right).mulScalar(this.normal.x)
+        .add(this.delta.copy(this.camera.entity.up).mulScalar(-this.normal.y)).mulScalar(clearance);
+      this.billboard(visual.label, visual.midpoint, this.labelOffset);
       const length = this.direction.sub2(visual.worldPoints[1]!, visual.worldPoints[0]!).length();
       visual.line.enabled = length > 0;
       if (!visual.line.enabled) continue;

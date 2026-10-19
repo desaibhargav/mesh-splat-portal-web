@@ -142,7 +142,7 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
         }));
         documentChanged();
       } },
-    { id: "measurements", label: "Measurements", items: measurement.records,
+    { id: "measurements", label: "Measurements", items: measurement.records.filter(record => record.saved),
       onRename: (id, name) => { measurement.rename(id, name); documentChanged(); },
       onVisible: (id, visible) => { measurement.setVisible(id, visible); documentChanged(); } },
     { id: "annotations", label: "Annotations", items: annotations.records.map(record => ({ id: record.id, name: record.title, visible: record.visible })),

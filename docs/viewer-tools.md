@@ -12,6 +12,7 @@ Mesh and splat viewers supply the same `SelectionController` contract to `Select
 | Saved views and orientation | `RotateGizmo`, shared parent `Entity`, `ViewCube`, `Pose`, camera projection, and `AppBase.drawLines`; [workflow and camera adapter](views.md) |
 | Place measurement/annotation endpoints | Depth-enabled `Picker.prepare` and `getWorldPointAsync`, through shared `SurfacePicker` / `useSurfacePick` |
 | Visible region selection | `RenderPassPicker` for GPU triangle IDs or splat depth |
+| Edit measurement endpoints | Native `TranslateGizmo` plus the shared GPU surface picker; one cached depth image per drag and one undoable commit |
 | Measurement visuals | Built-in cylinder/sphere render primitives, world-space text elements, `CanvasFont`, and `Layer` |
 | Annotation hotspots and tooltips | Bundled `Annotation` and `AnnotationManager` scripts; picker render IDs for bound-region hover |
 | Mesh region colors | `StandardMaterial`, `Mesh`, `MeshInstance`, and `Layer` with shared vertex data and index subsets |
