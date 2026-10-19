@@ -16,6 +16,19 @@ export function ViewControls({ handle, active, views, onViewsChange }: {
   useEffect(() => { if (!active) setPicking(false); }, [active]);
 
   useEffect(() => {
+    if (!active || picking) return;
+    const viewer = handle.app.graphicsDevice.canvas.closest(".viewer-frame")!;
+    function keyDown(event: Event) {
+      const key = event as KeyboardEvent;
+      if (key.repeat || key.ctrlKey || key.metaKey || key.altKey || (key.target as HTMLElement).closest("input, textarea, select, [contenteditable]:not([contenteditable=false])")) return;
+      const mode = key.key.toLowerCase() === "w" ? "move" : key.key.toLowerCase() === "e" ? "rotate" : null;
+      if (mode) { key.preventDefault(); setMode(mode); }
+    }
+    viewer.addEventListener("keydown", keyDown);
+    return () => viewer.removeEventListener("keydown", keyDown);
+  }, [handle, active, picking]);
+
+  useEffect(() => {
     if (active && !frame) setFrame(captureFrame(handle.camera()));
   }, [handle, active, frame]);
   useEffect(() => {
@@ -56,8 +69,8 @@ export function ViewControls({ handle, active, views, onViewsChange }: {
       <button onClick={() => setPicking(true)}>Align to three points</button>
       <fieldset className="selection-shapes">
         <legend>Reference frame</legend>
-        <button aria-pressed={mode === "move"} onClick={() => setMode("move")}>Move</button>
-        <button aria-pressed={mode === "rotate"} onClick={() => setMode("rotate")}>Rotate</button>
+        <button title="Move (W)" aria-keyshortcuts="W" aria-pressed={mode === "move"} onClick={() => setMode("move")}>Move</button>
+        <button title="Rotate (E)" aria-keyshortcuts="E" aria-pressed={mode === "rotate"} onClick={() => setMode("rotate")}>Rotate</button>
       </fieldset>
       <button onClick={captureCurrentView}>Use current view</button>
       <button disabled={!frame} onClick={() => frame && recallFrame(handle.camera(), frame)}>Look along reference</button>

@@ -5,7 +5,7 @@ The shared **Views** tool defines named reference frames without transforming th
 ## Workflow
 
 1. Navigate to a useful angle and open Views. **Use current view** captures the camera direction, roll, framing, and orbit pivot.
-2. Choose **Move** or **Rotate** and drag PlayCanvas's native handles on the reference helper. A square guide shows the plane and a line indicates its normal. This changes the reference, not the asset or the camera.
+2. Choose **Move** (W) or **Rotate** (E) and drag PlayCanvas's native handles on the reference helper. Shortcuts apply while Views is active, outside text entry and three-point placement. A square guide shows the plane and a line indicates its normal. This changes the reference, not the asset or the camera.
 3. **Look along reference** previews the edited frame and sets the orbit pivot to its origin. Navigation remains available outside handles, with Alt/Option to orbit over them; right-drag orbits, middle-drag pans, and the wheel zooms.
 4. Enter a name and **Save view**. Click a saved name to recall it; edit its name/reference and **Update view**, or choose **New view**. The minus button deletes a view. Q/Escape removes the helper and returns to navigation.
 
