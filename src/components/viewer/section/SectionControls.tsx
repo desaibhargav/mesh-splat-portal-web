@@ -1,3 +1,4 @@
+import { ResetButton } from "../ResetButton";
 import { useEffect, useEffectEvent, useId, useMemo, useState } from "react";
 import type { BoundingBox } from "playcanvas";
 import type { SavedPresets } from "../presets/SavedPresets";
@@ -101,12 +102,8 @@ export function SectionControls({ handle, active, views, sections }: {
       <div className="section-adjustment-controls">
         <input id={`${sliderId}-${key}`} aria-label={key === "offset" ? "Section offset" : label} type="range" min={-limit} max={limit} value={options[key] * scale}
           onChange={event => setOptions({ ...options, [key]: Number(event.target.value) / scale })} />
-        <button type="button" title={`Reset ${label.toLowerCase()}`} aria-label={`Reset ${label.toLowerCase()}`}
-          disabled={options[key] === initialOptions[key]} onClick={() => setOptions({ ...options, [key]: initialOptions[key] })}>
-          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M4 4v6h6M4 10a8 8 0 1 1 1 8" />
-          </svg>
-        </button>
+        <ResetButton label={`Reset ${label.toLowerCase()}`} disabled={options[key] === initialOptions[key]}
+          onClick={() => setOptions({ ...options, [key]: initialOptions[key] })} />
       </div>
     </div>)}
     <div className="section-buttons">

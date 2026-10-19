@@ -122,6 +122,16 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
     try { paint(encodeColor(hex)); }
     catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)); }
   }, [paint]);
+  function activateSelection(id: number) {
+    if (!handle || !history || busy) return;
+    const area = handle.selection.areas.find(item => item.id === id);
+    if (!area) return;
+    setSummary(history.perform(() => {
+      handle.selection.setAreaVisible(id, true);
+      return handle.selection.restore(unpackSelection(area.snapshot));
+    }));
+    documentChanged();
+  }
   const groups: ViewerTreeGroup[] = handle && history && measurement && annotations ? [
     { id: "views", label: "Views", items: views.records,
       onRename: (id, name) => views.rename(id, name),
@@ -133,15 +143,7 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
     { id: "selections", label: "Selections", items: handle.selection.areas,
       onRename: (id, name) => { setSummary(history.perform(() => handle.selection.renameArea(id, name))); documentChanged(); },
       onVisible: (id, visible) => { setSummary(history.perform(() => handle.selection.setAreaVisible(id, visible))); documentChanged(); },
-      onActivate: id => {
-        const area = handle.selection.areas.find(item => item.id === id);
-        if (!area) return;
-        setSummary(history.perform(() => {
-          handle.selection.setAreaVisible(id, true);
-          return handle.selection.restore(unpackSelection(area.snapshot));
-        }));
-        documentChanged();
-      } },
+      onActivate: activateSelection },
     { id: "measurements", label: "Measurements", items: measurement.records.filter(record => record.saved),
       onRename: (id, name) => { measurement.rename(id, name); documentChanged(); },
       onVisible: (id, visible) => { measurement.setVisible(id, visible); documentChanged(); } },
@@ -158,21 +160,29 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
       </button>)}
       <span role="status">{busy ? busyLabel : summary ? `${summary.selected.toLocaleString()} / ${summary.total.toLocaleString()} selected` : "Preparing selection…"}</span>
     </div>
-    {selecting && <div className="selection-actions selection-options" role="group" aria-label="Selection actions">
-      <fieldset className="selection-shapes" disabled={unavailable}>
-        <legend>Selection type</legend>
-        {selectionShapes.map(({ shape, label }) => <button key={shape} type="button"
-          aria-pressed={selectionShape === shape} onClick={() => setSelectionShape(shape)}>{label}</button>)}
-      </fieldset>
-      {selectionShape === "brush" && <label>Brush size <input aria-label="Brush size" type="range" min="1" max="128" value={brushSize} disabled={busy} onChange={event => setBrushSize(Number(event.target.value))} /></label>}
-      <button disabled={unavailable} aria-pressed={xray} title={xray ? "Select through the object" : "Select only visible surfaces"}
-        onClick={() => setXray(!xray)}>X-ray {xray ? "on" : "off"}</button>
-      <button disabled={unavailable || !summary?.selected} aria-pressed={summary?.isolated ?? false}
-        onClick={() => { setSummary(history!.perform(() => handle!.selection.toggleIsolation())); documentChanged(); }}>{summary?.isolated ? "Show all" : "Isolate"}</button>
-      <SelectionColorPicker disabled={unavailable || !summary?.selected}
-        onApply={applyColor}
-        onReset={() => paint(0)} />
-      <button disabled={unavailable || !summary?.selected} onClick={() => { setSummary(history!.perform(() => handle!.selection.clear())); documentChanged(); }}>Clear</button>
+    {selecting && <div className="annotation-panels selection-panels">
+      {!!handle?.selection.areas.length && <div className="selection-actions annotation-list selection-list" role="group" aria-label="Saved selections">
+        <strong>Selections</strong>
+        <ol>{handle.selection.areas.map(area => <li key={area.id}>
+          <button className="annotation-edit" disabled={unavailable} onClick={() => activateSelection(area.id)}>{area.name}</button>
+        </li>)}</ol>
+      </div>}
+      <div className="selection-actions selection-options" role="group" aria-label="Selection actions">
+        <fieldset className="selection-shapes" disabled={unavailable}>
+          <legend>Selection type</legend>
+          {selectionShapes.map(({ shape, label }) => <button key={shape} type="button"
+            aria-pressed={selectionShape === shape} onClick={() => setSelectionShape(shape)}>{label}</button>)}
+        </fieldset>
+        {selectionShape === "brush" && <label>Brush size <input aria-label="Brush size" type="range" min="1" max="128" value={brushSize} disabled={busy} onChange={event => setBrushSize(Number(event.target.value))} /></label>}
+        <button disabled={unavailable} aria-pressed={xray} title={xray ? "Select through the object" : "Select only visible surfaces"}
+          onClick={() => setXray(!xray)}>X-ray {xray ? "on" : "off"}</button>
+        <button disabled={unavailable || !summary?.selected} aria-pressed={summary?.isolated ?? false}
+          onClick={() => { setSummary(history!.perform(() => handle!.selection.toggleIsolation())); documentChanged(); }}>{summary?.isolated ? "Show all" : "Isolate"}</button>
+        <SelectionColorPicker disabled={unavailable || !summary?.selected}
+          onApply={applyColor}
+          onReset={() => paint(0)} />
+        <button disabled={unavailable || !summary?.selected} onClick={() => { setSummary(history!.perform(() => handle!.selection.clear())); documentChanged(); }}>Clear</button>
+      </div>
     </div>}
     {error && <div className="selection-error" role="alert">{error}</div>}
     {groups.length > 0 && <ViewerTree groups={groups} />}

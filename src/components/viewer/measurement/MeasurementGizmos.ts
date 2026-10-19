@@ -42,13 +42,15 @@ export class MeasurementGizmos {
   }
   sync() {
     const retained = new Set<string>();
+    // Native gizmos scale with camera height; compensate for smaller viewports.
+    const size = parseFloat(getComputedStyle(this.handle.app.graphicsDevice.canvas)
+      .getPropertyValue("--measurement-gizmo-scale")) / this.camera.rect.w;
     for (const record of this.measurement.records) if (record.visible && record.id === this.selectedId) record.points.forEach((point, index) => {
       const key = `${record.id}:${index}`; retained.add(key);
       let endpoint = this.endpoints.get(key);
       if (!endpoint) {
         const entity = new Entity("Measurement handle"); this.handle.app.root.addChild(entity);
         const gizmo = new TranslateGizmo(this.camera, this.layer);
-        gizmo.size = parseFloat(getComputedStyle(this.handle.app.graphicsDevice.canvas).getPropertyValue("--measurement-gizmo-scale"));
         gizmo.mouseButtons[1] = false; gizmo.mouseButtons[2] = false;
         endpoint = { id: record.id, index, entity, gizmo }; this.endpoints.set(key, endpoint);
         const target = endpoint;
@@ -57,6 +59,7 @@ export class MeasurementGizmos {
         gizmo.on(TransformGizmo.EVENT_TRANSFORMMOVE, () => this.queue());
         gizmo.on(TransformGizmo.EVENT_TRANSFORMEND, () => this.end(target));
       }
+      endpoint.gizmo.size = size;
       if (this.drag?.endpoint !== endpoint) endpoint.entity.setPosition(this.handle.space.toWorld(point));
     });
     for (const [key, endpoint] of this.endpoints) if (!retained.has(key)) {

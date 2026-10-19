@@ -1,4 +1,5 @@
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { ResetButton } from "../ResetButton";
+import { useEffect, useEffectEvent, useId, useMemo, useRef, useState } from "react";
 import type { SelectionHandle } from "../selection/types";
 import { focusSelection } from "../selection/focusSelection";
 import { formatDistance, Measurement } from "./Measurement";
@@ -7,9 +8,15 @@ import { defaultMeasurementStyle } from "./MeasurementRenderer";
 import { MeasurementGizmos, type EndpointPreview } from "./MeasurementGizmos";
 import { useSurfacePick } from "../picking/useSurfacePick";
 
+const adjustments = [
+  { key: "lineWidth", label: "Line width", min: 1, max: 8 },
+  { key: "fontSize", label: "Font size", min: 10, max: 28 }
+] as const;
+
 export function MeasurementControls({ handle, measurement, active, onChange }: {
   handle: SelectionHandle; measurement: Measurement; active: boolean; onChange(): void;
 }) {
+  const sliderId = useId();
   const [style, setStyle] = useState(defaultMeasurementStyle);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [name, setName] = useState("");
@@ -102,10 +109,15 @@ export function MeasurementControls({ handle, measurement, active, onChange }: {
         <label>Measurement name<input aria-label="Measurement name" value={name} onChange={event => setName(event.target.value)} /></label>
         <button disabled={busy || selected.points.length !== 2 || !name.trim()} onClick={save}>{selected.saved ? "Update measurement" : "Save measurement"}</button>
       </>}
-      <label>Line width<input type="range" min="1" max="8" step="1" value={style.lineWidth}
-        onChange={event => setStyle(current => ({ ...current, lineWidth: Number(event.target.value) }))} /></label>
-      <label>Font size<input type="range" min="10" max="28" step="1" value={style.fontSize}
-        onChange={event => setStyle(current => ({ ...current, fontSize: Number(event.target.value) }))} /></label>
+      {adjustments.map(({ key, label, min, max }) => <div key={key}>
+        <label htmlFor={`${sliderId}-${key}`}>{label}</label>
+        <div className="section-adjustment-controls">
+          <input id={`${sliderId}-${key}`} type="range" min={min} max={max} step="1" value={style[key]}
+            onChange={event => setStyle(current => ({ ...current, [key]: Number(event.target.value) }))} />
+          <ResetButton label={`Reset ${label.toLowerCase()}`} disabled={style[key] === defaultMeasurementStyle[key]}
+            onClick={() => setStyle(current => ({ ...current, [key]: defaultMeasurementStyle[key] }))} />
+        </div>
+      </div>)}
       <button disabled={busy || measurement.points.length === 0} onClick={clearMeasurements}>Clear measurements</button>
         <small>Measurements last until you leave this asset.</small>
       </div>
