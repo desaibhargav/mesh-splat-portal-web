@@ -2,6 +2,8 @@ import {
   Picker, ShaderChunks, SHADERLANGUAGE_GLSL, SHADERLANGUAGE_WGSL, TYPE_UINT32,
   type AppBase, type CameraComponent, type RenderTarget, type Texture
 } from "playcanvas";
+import { setSectionPlane } from "../section/sectionPlane";
+import { splatSectionFragment, splatSectionVertex } from "../section/sectionShaders";
 
 type PickerBuffers = { colorBuffer: Texture; renderTarget: RenderTarget };
 
@@ -48,10 +50,11 @@ export class SplatPicker {
 }
 
 export function configureSplatPicking(app: AppBase): () => void {
+  setSectionPlane(app, null);
   const material = app.scene.gsplat.material, previousIds = app.scene.gsplat.enableIds;
   const chunks = [material.shaderChunks.glsl, material.shaderChunks.wgsl] as const;
   const previous = chunks.map(value => ({
-    vertex: value.get("gsplatVS"), modify: value.get("gsplatModifyVS")
+    vertex: value.get("gsplatVS"), fragment: value.get("gsplatPS"), modify: value.get("gsplatModifyVS")
   }));
   app.scene.gsplat.varyings.add([{ name: "portalPrimitiveId", type: TYPE_UINT32, components: 1 }]);
   for (const [chunks, language] of [
@@ -59,10 +62,12 @@ export function configureSplatPicking(app: AppBase): () => void {
     [material.shaderChunks.wgsl, SHADERLANGUAGE_WGSL]
   ] as const) {
     const source = ShaderChunks.get(app.graphicsDevice, language).get("gsplatVS")!;
-    chunks.set("gsplatVS", source.replace(
+    const languageName = language === SHADERLANGUAGE_GLSL ? "glsl" : "wgsl";
+    chunks.set("gsplatVS", splatSectionVertex(source.replace(
       "loadPcId().r",
       language === SHADERLANGUAGE_GLSL ? "user_portalPrimitiveId" : "output.user_portalPrimitiveId"
-    ));
+    ), languageName));
+    chunks.set("gsplatPS", splatSectionFragment(ShaderChunks.get(app.graphicsDevice, language).get("gsplatPS")!, languageName));
     chunks.set("gsplatModifyVS", language === SHADERLANGUAGE_GLSL ? `
       void modifySplatCenter(inout vec3 center) { setPortalPrimitiveId(splat.index); }
       void modifySplatRotationScale(vec3 originalCenter, vec3 modifiedCenter, inout vec4 rotation, inout vec3 scale) {}
@@ -77,6 +82,7 @@ export function configureSplatPicking(app: AppBase): () => void {
     chunks.forEach((value, i) => {
       const source = previous[i]!;
       if (source.vertex === undefined) value.delete("gsplatVS"); else value.set("gsplatVS", source.vertex);
+      if (source.fragment === undefined) value.delete("gsplatPS"); else value.set("gsplatPS", source.fragment);
       if (source.modify === undefined) value.delete("gsplatModifyVS"); else value.set("gsplatModifyVS", source.modify);
     });
     app.scene.gsplat.varyings.remove(["portalPrimitiveId"]);

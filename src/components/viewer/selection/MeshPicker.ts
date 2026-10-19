@@ -1,9 +1,10 @@
 import {
-  Color, Layer, Mesh, MeshInstance, PIXELFORMAT_RGBA8, PRIMITIVE_TRIANGLES, RenderPassPicker, RenderTarget,
+  CULLFACE_NONE, Color, Layer, Mesh, MeshInstance, PIXELFORMAT_RGBA8, PRIMITIVE_TRIANGLES, RenderPassPicker, RenderTarget,
   SEMANTIC_COLOR, SEMANTIC_POSITION, ShaderMaterial, Texture, TYPE_UINT8,
   type AppBase, type CameraComponent
 } from "playcanvas";
 import type { SelectionRegion } from "./types";
+import { sectionDeclaration } from "../section/sectionShaders";
 
 interface PickPart { source: MeshInstance; positions: Float32Array; indices: number[]; mask: Uint8Array }
 interface PickImage { pixels: Uint8Array; left: number; top: number; width: number; height: number; screenWidth: number; screenHeight: number; flipY: boolean }
@@ -67,16 +68,17 @@ export class MeshPicker {
         uniqueName: "PortalTriangleIDs",
         attributes: { vertex_position: SEMANTIC_POSITION, vertex_color: SEMANTIC_COLOR },
         vertexGLSL: `attribute vec3 vertex_position; attribute vec4 vertex_color;
-          uniform mat4 matrix_model; uniform mat4 matrix_viewProjection; varying vec4 faceId;
-          void main() { gl_Position = matrix_viewProjection * matrix_model * vec4(vertex_position, 1.0); faceId = vertex_color; }`,
-        fragmentGLSL: `varying vec4 faceId; void main() { pcFragColor0 = faceId; }`,
+          uniform mat4 matrix_model; uniform mat4 matrix_viewProjection; varying vec4 faceId; varying vec3 sectionWorld;
+          void main() { vec4 world = matrix_model * vec4(vertex_position, 1.0); gl_Position = matrix_viewProjection * world; sectionWorld = world.xyz; faceId = vertex_color; }`,
+        fragmentGLSL: `${sectionDeclaration.glsl}\nvarying vec3 sectionWorld; varying vec4 faceId; void main() { if (portalSectionClipped(sectionWorld)) { discard; } pcFragColor0 = faceId; }`,
         vertexWGSL: `attribute vertex_position: vec3f; attribute vertex_color: vec4f;
-          uniform matrix_model: mat4x4f; uniform matrix_viewProjection: mat4x4f; varying faceId: vec4f;
+          uniform matrix_model: mat4x4f; uniform matrix_viewProjection: mat4x4f; varying faceId: vec4f; varying sectionWorld: vec3f;
           @vertex fn vertexMain(input: VertexInput) -> VertexOutput { var output: VertexOutput;
-            output.position = uniform.matrix_viewProjection * uniform.matrix_model * vec4f(input.vertex_position, 1.0);
+            let world = uniform.matrix_model * vec4f(input.vertex_position, 1.0);
+            output.position = uniform.matrix_viewProjection * world; output.sectionWorld = world.xyz;
             output.faceId = input.vertex_color; return output; }`,
-        fragmentWGSL: `varying faceId: vec4f;
-          @fragment fn fragmentMain(input: FragmentInput) -> FragmentOutput { var output: FragmentOutput; output.color = input.faceId; return output; }`
+        fragmentWGSL: `${sectionDeclaration.wgsl}\nvarying faceId: vec4f; varying sectionWorld: vec3f;
+          @fragment fn fragmentMain(input: FragmentInput) -> FragmentOutput { var output: FragmentOutput; if (portalSectionClipped(input.sectionWorld)) { discard; } output.color = input.faceId; return output; }`
       });
       material.cull = part.source.material.cull;
       this.materials.push(material);
@@ -100,6 +102,7 @@ export class MeshPicker {
     }
     this.parts.forEach((part, i) => {
       const instance = this.instances[i]!;
+      this.materials[i]!.cull = this.app.graphicsDevice.scope.resolve("portalSectionEnabled").getValue() ? CULLFACE_NONE : part.source.material.cull;
       instance.visible = !isolated || part.mask.some(Boolean);
       if (!isolated) {
         Object.assign(instance.mesh.primitive[0]!, { indexed: false, base: 0, count: instance.mesh.vertexBuffer.numVertices });

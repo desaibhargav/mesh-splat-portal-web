@@ -1,10 +1,33 @@
-import { Pose, Quat, Vec3, type CameraComponent } from "playcanvas";
+import { Mat4, Pose, Quat, Vec3, type CameraComponent } from "playcanvas";
 import { cameraControls } from "../CameraControls";
 
 // Origin is the reference-plane center and orbit pivot. Local +Z faces the
 // camera; local X/Y span the future section plane. Scale has no role here.
 export interface ViewFrame { origin: Vec3; rotation: Quat; distance: number; fov: number }
 export interface NamedView { id: number; name: string; frame: ViewFrame }
+export type ViewAxis = "X" | "Y" | "Z";
+
+export function axisFrame(frame: ViewFrame, axis: ViewAxis): ViewFrame {
+  const normal = { X: Vec3.RIGHT, Y: Vec3.UP, Z: Vec3.BACK }[axis];
+  const rotation = new Quat().setFromMat4(new Mat4().setLookAt(Vec3.ZERO, normal.clone().mulScalar(-1), axis === "Y" ? Vec3.FORWARD : Vec3.UP));
+  return { ...copyFrame(frame), rotation };
+}
+
+export function threePointFrame(frame: ViewFrame, points: readonly [Vec3, Vec3, Vec3]): ViewFrame {
+  const [origin, second, third] = points;
+  const x = second.clone().sub(origin), other = third.clone().sub(origin);
+  const normal = new Vec3().cross(x, other);
+  if (x.lengthSq() === 0 || other.lengthSq() === 0 || normal.lengthSq() <= Number.EPSILON * x.lengthSq() * other.lengthSq()) {
+    throw new Error("Choose three distinct, non-collinear points.");
+  }
+  normal.normalize(); x.normalize();
+  // A plane has two normals. Keep the view on the user's current side rather
+  // than making click winding unexpectedly send the camera behind the object.
+  if (normal.dot(frame.rotation.transformVector(Vec3.BACK, new Vec3())) < 0) normal.mulScalar(-1);
+  const up = new Vec3().cross(normal, x).normalize();
+  const rotation = new Quat().setFromMat4(new Mat4().setLookAt(origin, origin.clone().sub(normal), up));
+  return { ...copyFrame(frame), origin: origin.clone(), rotation };
+}
 
 export function copyFrame(frame: ViewFrame): ViewFrame {
   return { ...frame, origin: frame.origin.clone(), rotation: frame.rotation.clone() };

@@ -1,5 +1,5 @@
 import {
-  BLEND_NORMAL, Color, Entity, Mat4, Mesh, MeshInstance, PRIMITIVE_TRIANGLES, SEMANTIC_POSITION, StandardMaterial,
+  BLEND_NORMAL, CULLFACE_NONE, Color, Entity, Mat4, Mesh, MeshInstance, PRIMITIVE_TRIANGLES, SEMANTIC_POSITION, StandardMaterial,
   TYPE_INT8, TYPE_INT16, TYPE_UINT8, TYPE_UINT16, VertexBuffer,
   type AppBase, type CameraComponent, type Layer, type RenderComponent
 } from "playcanvas";
@@ -9,6 +9,8 @@ import type { SelectionOperation } from "./rectangle";
 import { MeshPicker } from "./MeshPicker";
 import { SelectionBounds } from "./selectionBounds";
 import { snapshotContains } from "./selectionSnapshot";
+import { configureSectionMaterial } from "../section/sectionShaders";
+import { sectionTest, setSectionPlane } from "../section/sectionPlane";
 import type { SelectionArea, SelectionCamera, SelectionRegion, SelectionSnapshot, SelectionState, SelectionSummary } from "./types";
 
 interface Part {
@@ -46,6 +48,7 @@ export class MeshSelection {
   private selected = 0;
   private isolated = false;
   private disposed = false;
+  private sectionEnabled = false;
   private picker?: MeshPicker;
   private paintState: PaintState = [];
   private selectionAreas: readonly SelectionArea[] = [];
@@ -53,7 +56,8 @@ export class MeshSelection {
   private preview: SelectionArea | null = null;
   private readonly previews = new Map<SelectionSnapshot, { part: Part; instance: MeshInstance }[]>();
 
-  constructor(entity: Entity, app: AppBase, private readonly tint: Color) {
+  constructor(entity: Entity, private readonly app: AppBase, private readonly tint: Color) {
+    setSectionPlane(app, null);
     const device = app.graphicsDevice;
     const components = entity.findComponents("render") as RenderComponent[];
     const instances = components.filter(c => c.enabled && c.entity.enabled).flatMap(c => c.meshInstances).filter(instance => instance.visible);
@@ -80,7 +84,9 @@ export class MeshSelection {
         const centers = triangleCenters(decoded, indices);
         const buffer = mesh.vertexBuffer;
         const vertices = new VertexBuffer(device, buffer.format, buffer.numVertices, { data: buffer.storage.slice(0) });
-        this.parts.push({ source, positions: decoded, indices, centers, mask: new Uint8Array(indices.length / 3), vertices, baseMaterial: source.material as StandardMaterial, layers: components.find(component => component.meshInstances.includes(source))!.layers.map(id => app.scene.layers.getLayerById(id)!), groups: new Map() });
+        const baseMaterial = (source.material as StandardMaterial).clone();
+        configureSectionMaterial(baseMaterial); baseMaterial.update();
+        this.parts.push({ source, positions: decoded, indices, centers, mask: new Uint8Array(indices.length / 3), vertices, baseMaterial, layers: components.find(component => component.meshInstances.includes(source))!.layers.map(id => app.scene.layers.getLayerById(id)!), groups: new Map() });
       }
       this.paintState = this.parts.map(part => new Uint32Array(part.mask.length));
       this.refresh();
@@ -89,6 +95,23 @@ export class MeshSelection {
   }
 
   get layers(): readonly number[] { return [...new Set(this.parts.flatMap(part => part.layers.map(layer => layer.id)))]; }
+  updateSection() {
+    const enabled = !!this.app.graphicsDevice.scope.resolve("portalSectionEnabled").getValue();
+    if (enabled !== this.sectionEnabled) {
+      this.sectionEnabled = enabled;
+      for (const part of this.parts) {
+        const original = part.source.material as StandardMaterial;
+        const materials = new Set([part.baseMaterial, ...Array.from(part.groups.values(), group => group.material)]);
+        if (part.previewMaterial) materials.add(part.previewMaterial);
+        for (const material of materials) {
+          material.cull = enabled ? CULLFACE_NONE : original.cull;
+          material.twoSidedLighting = enabled || original.twoSidedLighting;
+          material.update();
+        }
+      }
+    }
+    this.picker?.invalidate();
+  }
   get summary(): SelectionSummary {
     return { selected: this.selected, total: this.parts.reduce((sum, p) => sum + p.mask.length, 0), isolated: this.isolated };
   }
@@ -128,6 +151,7 @@ export class MeshSelection {
         if (!indices.length) return [];
         if (!part.previewMaterial) {
           part.previewMaterial = new StandardMaterial();
+          configureSectionMaterial(part.previewMaterial);
           part.previewMaterial.useLighting = false;
           part.previewMaterial.cull = part.baseMaterial.cull;
           part.previewMaterial.blendType = BLEND_NORMAL;
@@ -188,13 +212,19 @@ export class MeshSelection {
     this.currentArea = currentSelectionArea(this.state, this.selectionAreas);
     this.refresh(); return this.summary;
   }
-  bounds(state: SelectionState = this.state) {
+  bounds(state: SelectionState | null = this.state) {
     const bounds = new SelectionBounds();
-    const selected = state.masks.some(mask => mask.some(Boolean));
+    const selected = state !== null && state.masks.some(mask => mask.some(Boolean));
+    if (!selected) {
+      const whole = this.parts[0]?.source.aabb.clone();
+      if (!whole) return null;
+      for (let i = 1; i < this.parts.length; i++) whole.add(this.parts[i]!.source.aabb);
+      return whole;
+    }
     for (const [partIndex, part] of this.parts.entries()) {
       const transform = part.source.node.getWorldTransform();
-      const mask = state.masks[partIndex]!;
-      for (let face = 0; face < part.mask.length; face++) if (!selected || mask[face]) {
+      const mask = state?.masks[partIndex];
+      for (let face = 0; face < part.mask.length; face++) if (!selected || mask![face]) {
         for (let corner = 0; corner < 3; corner++) bounds.add(part.positions, part.indices[face * 3 + corner]! * 3, transform);
       }
     }
@@ -207,7 +237,8 @@ export class MeshSelection {
     for (const [i, part] of this.parts.entries()) {
       const matrix = new Mat4().mul2(viewProjection, part.source.node.getWorldTransform());
       this.selected += hits ? applySelection(part.mask, hits[i]!, operation, this.isolated) :
-        projectSelection(part.centers, part.mask, matrix.data, region, operation, this.isolated);
+        projectSelection(part.centers, part.mask, matrix.data, region, operation, this.isolated,
+          sectionTest(this.app, part.centers, part.source.node.getWorldTransform()));
     }
     if (!this.selected) this.isolated = false;
     this.selectionAreas = recordSelectionGesture(this.selectionAreas, this.state, operation, previous);
@@ -278,7 +309,7 @@ export class MeshSelection {
         instance.destroy();
         if (material !== part.baseMaterial) material.destroy();
       }
-      part.previewMaterial?.destroy(); part.vertices.destroy();
+      part.previewMaterial?.destroy(); part.baseMaterial.destroy(); part.vertices.destroy();
     }
     for (const { component, enabled } of this.originals) component.enabled = enabled;
   }

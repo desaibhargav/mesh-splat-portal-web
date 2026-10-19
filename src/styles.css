@@ -93,7 +93,7 @@ a { color: #536d7d; }
 .view-options { width: min(245px, calc(100% - 24px)); }
 .view-options p { margin: 0; }
 .view-options label { max-width: none; gap: 4px; font-size: inherit; }
-.view-options input { min-width: 0; padding: 6px; color: inherit; background: #181818; border: 1px solid #666; font: inherit; }
+.view-options input, .view-options select { min-width: 0; padding: 6px; color: inherit; background: #181818; border: 1px solid #666; font: inherit; }
 .view-options ul { display: flex; flex-direction: column; gap: 4px; list-style: none; margin: 0; padding: 0; }
 .view-options li { display: flex; gap: 4px; }
 .view-options li button:first-child { flex: 1; min-width: 0; overflow-wrap: anywhere; text-align: left; }

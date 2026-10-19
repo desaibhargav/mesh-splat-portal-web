@@ -2,7 +2,7 @@ import type { AppBase, BoundingBox, CameraComponent } from "playcanvas";
 import type { PaintState } from "./selectionColors";
 import type { SelectionOperation } from "./rectangle";
 
-export type SelectionTool = "navigate" | "select" | "measure" | "annotate" | "views";
+export type SelectionTool = "navigate" | "select" | "measure" | "annotate" | "views" | "section";
 export type SelectionShape = "rectangle" | "lasso" | "brush";
 export interface SelectionRegion { pixels: Uint8ClampedArray; width: number; height: number }
 export interface SelectionSummary { selected: number; total: number; isolated: boolean }
@@ -14,6 +14,7 @@ export interface SelectionArea {
 }
 export type VisibilityTest = (id: number, u: number, v: number, w: number, z: number) => boolean;
 export interface SelectionController {
+  updateSection(): void;
   readonly layers: readonly number[];
   primitiveAt(app: AppBase, camera: CameraComponent, u: number, v: number): Promise<{ part: number; index: number } | null>;
   hitTest(app: AppBase, camera: CameraComponent, region: SelectionRegion): Promise<Uint8Array[]>;
@@ -26,7 +27,8 @@ export interface SelectionController {
   setAreaVisible(id: number, visible: boolean): SelectionSummary;
   paint(color: number): SelectionSummary;
   restore(state: SelectionState, colors?: PaintState, areas?: readonly SelectionArea[]): SelectionSummary;
-  bounds(state?: SelectionState): BoundingBox | null;
+  // null measures the entire asset; omitted measures the current selection/object.
+  bounds(state?: SelectionState | null): BoundingBox | null;
   readonly summary: SelectionSummary;
   select(region: SelectionRegion, operation: SelectionOperation, camera: SelectionCamera, hits?: Uint8Array[]): SelectionSummary;
   clear(): SelectionSummary;

@@ -53,7 +53,11 @@ The tools adapt SuperSplat's gesture and modifier conventions ([MIT notice](publ
 
 ## Views
 
-The **Views** icon opens a shared mesh/splat reference tool. Capture the current camera, move or rotate its reference plane with PlayCanvas's native gizmos, preview the direction, and name/save/recall views. Recalling restores roll, framing, and orbit pivot; the asset is unchanged. Q exits. Views last until leaving the asset. See [reference views](docs/views.md) for the workflow and current limits; sectioning is the next feature family.
+The **Views** icon opens a shared mesh/splat reference tool. Capture the current camera, move or rotate its reference plane with PlayCanvas's native gizmos, preview the direction, and name/save/recall views. Recalling restores roll, framing, and orbit pivot; the asset is unchanged. Q exits. Views last until leaving the asset. Use X/Y/Z normal alignment or pick three surface points to define a reference. See [reference views](docs/views.md) for the workflow and limits.
+
+## Cross sections
+
+The **Cross section** icon enables a shared world-space clipping plane for meshes and splats. Copy a saved reference view or use the current view, then adjust offset, two tilts, flip, guide visibility, and camera alignment. Q exits the controls while retaining clipping. Removed surfaces are also excluded by surface/ID picking. This preserves source geometry; filled caps, contours, and persistent storage remain deferred. See [sectioning](docs/sectioning.md).
 
 ## Measurement
 

@@ -1,5 +1,5 @@
 import {
-  Color, FILTER_NEAREST, Mat4, PIXELFORMAT_R8, PIXELFORMAT_RGBA8, Texture, WORKBUFFER_UPDATE_ONCE,
+  BoundingBox, Color, FILTER_NEAREST, Mat4, PIXELFORMAT_R8, PIXELFORMAT_RGBA8, Texture, WORKBUFFER_UPDATE_ONCE,
   type AppBase, type CameraComponent, type GSplatComponent
 } from "playcanvas";
 import { currentSelectionArea, paintSelection, decodeColor, recordSelectionGesture, selectionAreaAt, updateSelectionAreas, visiblePaint, visibleSelections, type PaintState } from "./selectionColors";
@@ -11,6 +11,7 @@ import type { SelectionArea, SelectionCamera, SelectionRegion, SelectionState, S
 import { SplatPicker, configureSplatPicking } from "./SplatPicker";
 import { SelectionBounds } from "./selectionBounds";
 import { snapshotContains } from "./selectionSnapshot";
+import { sectionTest } from "../section/sectionPlane";
 
 const modifier = {
   glsl: `
@@ -107,6 +108,7 @@ export class SplatSelection {
   get summary(): SelectionSummary {
     return { selected: this.selected, total: this.centers.length / 3, isolated: this.isolated };
   }
+  updateSection() { this.picker?.invalidate(); }
 
   async hitTest(app: AppBase, camera: CameraComponent, region: SelectionRegion): Promise<Uint8Array[]> {
     const matrix = new Mat4().mul2(camera.projectionMatrix, camera.viewMatrix).mul(this.component.entity.getWorldTransform());
@@ -126,7 +128,8 @@ export class SplatSelection {
     matrix.mul(this.component.entity.getWorldTransform());
     const previous = operation === "add" ? [this.mask.slice()] : undefined;
     this.selected = hits ? applySelection(this.mask, hits[0]!, operation, this.isolated) :
-      projectSelection(this.centers, this.mask, matrix.data, region, operation, this.isolated);
+      projectSelection(this.centers, this.mask, matrix.data, region, operation, this.isolated,
+        sectionTest(this.component.system.app, this.centers, this.component.entity.getWorldTransform()));
     if (!this.selected) this.isolated = false;
     this.selectionAreas = recordSelectionGesture(this.selectionAreas, this.state, operation, previous);
     this.currentArea = currentSelectionArea(this.state, this.selectionAreas);
@@ -201,10 +204,14 @@ export class SplatSelection {
     this.currentArea = currentSelectionArea(this.state, this.selectionAreas);
     this.update(); return this.summary;
   }
-  bounds(state: SelectionState = this.state) {
+  bounds(state: SelectionState | null = this.state) {
     const bounds = new SelectionBounds(), transform = this.component.entity.getWorldTransform();
-    const mask = state.masks[0]!, selected = mask.some(Boolean);
-    for (let i = 0; i < this.mask.length; i++) if (!selected || mask[i]) bounds.add(this.centers, i * 3, transform);
+    const mask = state === null ? null : state.masks[0]!, selected = mask !== null && mask.some(Boolean);
+    if (!selected) {
+      const whole = new BoundingBox(); whole.setFromTransformedAabb(this.component.resource!.aabb, transform);
+      return whole;
+    }
+    for (let i = 0; i < this.mask.length; i++) if (!selected || mask![i]) bounds.add(this.centers, i * 3, transform);
     return bounds.value;
   }
   private update() {

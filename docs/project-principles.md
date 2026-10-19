@@ -16,6 +16,8 @@ Avoid duplicate mesh/splat tool implementations, speculative frameworks, dead co
 
 Prefer public APIs. Isolate unavoidable adapters around pinned engine scripts, document why they exist, and review them on upgrades. Fix initialization and lifecycle ordering at their source rather than adding arbitrary delays or asset-specific exceptions.
 
+For nontrivial geometry algorithms, investigate established domain libraries before implementing one ourselves. Compare correctness, numerical robustness and degenerate inputs, performance, maintenance, bundle impact, and integration cost. A short custom implementation is not automatically preferable to a hardened implementation. Reuse existing PlayCanvas math for elementary operations; consider libraries such as JSCAD, math.gl, or VTK.js when a genuine geometry capability is missing. In particular, evaluate robust library implementations before tackling intersections, topology changes, or filled section caps.
+
 ## Efficient interaction and explicit ownership
 
 Use engine GPU picking and rendering for dense assets. Do not reintroduce CPU rays per candidate face for box, lasso, or brush selection. Reuse buffers, geometry, materials, and font atlases. Avoid copying entire assets for each selection or color; keep masks and undo state compact and share unchanged data. Perform edit work on edits rather than every frame; camera-facing visuals naturally update with the camera.

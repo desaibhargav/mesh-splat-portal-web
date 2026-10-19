@@ -37,9 +37,10 @@ export function ArtifactViewer({ artifact }: { artifact: Artifact }) {
         if (!(event.target as HTMLElement).closest("button, input, select, textarea")) frame.current?.focus({ preventScroll: true });
       }}
       onKeyDown={event => {
-        if (event.repeat || event.ctrlKey || event.metaKey || event.altKey || (event.target as HTMLElement).closest("input, textarea, select, [contenteditable]:not([contenteditable=false])")) return;
-        if (event.key.toLowerCase() === "q") { event.preventDefault(); changeTool("navigate"); }
-        else if (event.key === "Escape") changeTool("navigate");
+        if (event.repeat || event.ctrlKey || event.metaKey || event.altKey || (event.target as HTMLElement).closest("input:not([type=range]), textarea, select, [contenteditable]:not([contenteditable=false])")) return;
+        if (event.key.toLowerCase() === "q" || event.key === "Escape") {
+          event.preventDefault(); frame.current?.focus({ preventScroll: true }); changeTool("navigate");
+        }
       }}>
       <div className="viewer-toolbar">
         <span>{artifact.type === "mesh" ? "Mesh" : "Gaussian splat"}</span>
@@ -54,7 +55,7 @@ export function ArtifactViewer({ artifact }: { artifact: Artifact }) {
       </div>
       {status.loading && <div className="viewer-loading" role="status"><span>Loading 3D asset</span><progress value={status.progress} max={1} /></div>}
       {status.error && <div className="viewer-error" role="alert">{status.error}</div>}
-      <p className="viewer-help">{tool === "views" ? "Move or rotate the reference · Drag outside handles: orbit · Middle-drag: pan · Scroll: zoom · Q: exit" : tool === "annotate" ? "Choose optional area binding, then click a surface to place the marker · Alt/Option or right-drag: orbit · Middle-drag: pan · Scroll: zoom · Q: exit" : tool === "measure" ? "Click two points · Shift-click: new measurement · Alt/Option or right-drag: orbit · Middle-drag: pan · Scroll: zoom · F: focus · Q: exit" : selecting ? "Drag to select · Shift: add · Ctrl/Cmd: remove · Shift + Ctrl/Cmd: intersect · Alt/Option or right-drag: orbit · Middle-drag: pan · Scroll: zoom · Q: exit" :
+      <p className="viewer-help">{tool === "section" ? "Slide or tilt the cutting plane · Alt/Option or right-drag: orbit · Middle-drag: pan · Scroll: zoom · Q: exit" : tool === "views" ? "Move or rotate the reference · Drag outside handles: orbit · Middle-drag: pan · Scroll: zoom · Q: exit" : tool === "annotate" ? "Choose optional area binding, then click a surface to place the marker · Alt/Option or right-drag: orbit · Middle-drag: pan · Scroll: zoom · Q: exit" : tool === "measure" ? "Click two points · Shift-click: new measurement · Alt/Option or right-drag: orbit · Middle-drag: pan · Scroll: zoom · F: focus · Q: exit" : selecting ? "Drag to select · Shift: add · Ctrl/Cmd: remove · Shift + Ctrl/Cmd: intersect · Alt/Option or right-drag: orbit · Middle-drag: pan · Scroll: zoom · Q: exit" :
         "Drag to orbit · Shift-drag or middle-drag to pan · Scroll to zoom · F: focus"}</p>
     </section>
   );

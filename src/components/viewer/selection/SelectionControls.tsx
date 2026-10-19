@@ -12,13 +12,16 @@ import { encodeColor } from "./selectionColors";
 import { SelectionColorPicker } from "./SelectionColorPicker";
 import { focusSelection } from "./focusSelection";
 import { ViewControls } from "../views/ViewControls";
+import type { NamedView } from "../views/viewFrame";
+import { SectionControls } from "../section/SectionControls";
 
 const tools: { tool: SelectionTool; label: string; path: string }[] = [
   { tool: "navigate", label: "Navigate (Q)", path: "M5 3l14 10-7 1-3 7z" },
   { tool: "select", label: "Select", path: "M4 4h16v16H4z" },
   { tool: "measure", label: "Measure distance", path: "M3 16L16 3l5 5L8 21zM7 12l3 3m0-6 3 3m0-6 3 3" },
   { tool: "annotate", label: "Annotate", path: "M4 4h16v12H9l-5 5zM8 8h8m-8 4h5" },
-  { tool: "views", label: "Views", path: "M12 12V3m0 9 8 5m-8-5-8 5M9 6l3-3 3 3m2 5 3 6-6-1M4 11v6l6-1" }
+  { tool: "views", label: "Views", path: "M12 12V3m0 9 8 5m-8-5-8 5M9 6l3-3 3 3m2 5 3 6-6-1M4 11v6l6-1" },
+  { tool: "section", label: "Cross section", path: "M3 8l9-5 9 5-9 5zM3 8v9l9 4 9-4V8M12 13v8M2 14l20-5" }
 ];
 const selectionShapes: { shape: SelectionShape; label: string }[] = [
   { shape: "rectangle", label: "Box" },
@@ -31,6 +34,7 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
 }) {
   const [summary, setSummary] = useState(handle?.selection.summary);
   const [xray, setXray] = useState(false);
+  const [views, setViews] = useState<NamedView[]>([]);
   const [selectionShape, setSelectionShape] = useState<SelectionShape>("rectangle");
   const [brushSize, setBrushSize] = useState(32);
   const [busy, setBusy] = useState(false);
@@ -45,6 +49,7 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
   const documentChanged = useCallback(() => refreshDocument(value => value + 1), []);
   useEffect(() => {
     setSummary(handle?.selection.summary); setError(null); setBusy(false); setBusyLabel("Selecting…");
+    setViews([]);
     return () => { generation.current++; };
   }, [handle]);
   const unavailable = disabled || !handle || busy;
@@ -157,6 +162,7 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
       hoverRegions={!disabled && (tool === "navigate" || tool === "annotate" || tool === "select")}
       onChange={documentChanged} />}
     {handle && measurement && <MeasurementControls handle={handle} measurement={measurement} active={tool === "measure" && !disabled} onChange={documentChanged} />}
-    {handle && <ViewControls handle={handle} active={tool === "views" && !disabled} />}
+    {handle && <ViewControls handle={handle} active={tool === "views" && !disabled} views={views} onViewsChange={setViews} />}
+    {handle && <SectionControls handle={handle} active={tool === "section" && !disabled} views={views} />}
   </>;
 }
