@@ -176,8 +176,9 @@ a { color: #536d7d; }
 .annotation-list .annotation-delete { color: #ff7474; font-size: 1.25rem; line-height: 1; }
 .annotation-list svg { width: 16px; height: 16px; display: block; fill: none; stroke: currentColor; stroke-width: 1.5; }
 
-.view-navigation { position: absolute; top: calc(54px + var(--selection-toolbar-height)); left: 12px; z-index: 3; width: 130px; height: 130px; pointer-events: none; }
+.view-navigation { position: absolute; top: calc(54px + var(--selection-toolbar-height)); right: 12px; z-index: 3; width: 130px; height: 130px; pointer-events: none; }
 .view-navigation svg text { pointer-events: none; }
+.view-panels { max-height: calc(100% - var(--selection-toolbar-height) - 54px - 130px - 12px - 43px); }
 .section-buttons { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
 
 .section-adjustment-heading, .section-adjustment-controls { display: flex; align-items: center; gap: 6px; }
