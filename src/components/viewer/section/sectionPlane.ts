@@ -1,5 +1,5 @@
 import { BoundingBox, Mat4, Plane, Quat, Vec3, type AppBase } from "playcanvas";
-import type { ViewFrame } from "../views/viewFrame";
+import { copyFrame, type ViewFrame } from "../views/viewFrame";
 
 export interface SectionOptions { offset: number; tiltX: number; tiltY: number; flip: boolean }
 
@@ -10,6 +10,14 @@ export function sectionFrame(reference: ViewFrame, bounds: BoundingBox, options:
   const span = Math.abs(normal.dot(bounds.center.clone().sub(reference.origin))) + extent;
   const origin = reference.origin.clone().add(normal.mulScalar(options.offset * span));
   return { ...reference, origin, rotation };
+}
+
+// View from the removed half-space into the retained geometry. A local half
+// turn reverses the normal while preserving the reference's upright direction.
+export function cutawayView(frame: ViewFrame, flip: boolean): ViewFrame {
+  const view = copyFrame(frame);
+  if (!flip) view.rotation.mul(new Quat().setFromAxisAngle(Vec3.UP, 180));
+  return view;
 }
 
 export function planeCoefficients(frame: ViewFrame, flip: boolean): Float32Array {

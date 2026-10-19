@@ -1,6 +1,8 @@
 import { expect, it } from "vitest";
 import { BoundingBox, GraphicsDevice, Mat4, NullGraphicsDevice, Quat, Vec3, type AppBase } from "playcanvas";
-import { planeCoefficients, sectionFrame, sectionTest, setSectionPlane } from "./sectionPlane";
+import { cutawayView, planeCoefficients, sectionFrame, sectionTest, setSectionPlane } from "./sectionPlane";
+
+import { framePose } from "../views/viewFrame";
 
 const reference = { origin: new Vec3(2, 3, 4), rotation: new Quat(), distance: 10, fov: 45 };
 const bounds = new BoundingBox(new Vec3(8, -2, 6), new Vec3(2, 3, 4));
@@ -39,4 +41,18 @@ it("X-ray classification uses the same world plane on transformed geometry", () 
   setSectionPlane(app, null);
   expect(sectionTest(app, positions, transform)).toBeUndefined();
   device.destroy();
+});
+
+it("views into the retained section from its removed side for both flips and tilted planes", () => {
+  for (const flip of [false, true]) for (const tiltX of [0, 35, -90]) {
+    const frame = sectionFrame(reference, bounds, { offset: .25, tiltX, tiltY: 40, flip });
+    const original = frame.rotation.clone();
+    const view = cutawayView(frame, flip), pose = framePose(view);
+    const coefficients = planeCoefficients(frame, flip), normal = new Vec3(coefficients[0]!, coefficients[1]!, coefficients[2]!);
+    expect(normal.dot(pose.position) + coefficients[3]!).toBeCloseTo(-frame.distance, 5);
+    expect(view.rotation.transformVector(Vec3.FORWARD).dot(normal)).toBeCloseTo(1);
+    expect(view.rotation.transformVector(Vec3.UP).equalsApprox(frame.rotation.transformVector(Vec3.UP))).toBe(true);
+    expect(pose.getFocus(new Vec3()).equalsApprox(frame.origin)).toBe(true);
+    expect(frame.rotation.equals(original)).toBe(true);
+  }
 });

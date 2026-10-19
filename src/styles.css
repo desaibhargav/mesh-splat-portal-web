@@ -179,3 +179,9 @@ a { color: #536d7d; }
 .view-navigation { position: absolute; top: calc(54px + var(--selection-toolbar-height)); left: 12px; z-index: 3; width: 130px; height: 130px; pointer-events: none; }
 .view-navigation svg text { pointer-events: none; }
 .section-buttons { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+
+.section-adjustment-heading, .section-adjustment-controls { display: flex; align-items: center; gap: 6px; }
+.section-adjustment-heading { justify-content: space-between; }
+.section-adjustment-controls input { flex: 1; min-width: 0; }
+.section-adjustment-controls button { flex: none; padding: 4px; }
+.section-adjustment-controls svg { display: block; width: 16px; height: 16px; }
