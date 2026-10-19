@@ -82,7 +82,7 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
       if (unavailable) return;
       if (undo) setSummary(key.shiftKey ? history.redo() : history.undo());
       else {
-        const bounds = handle.selection.bounds();
+        const bounds = handle.selection.bounds(selecting ? undefined : null);
         if (bounds) focusSelection(bounds, handle.camera());
       }
     };

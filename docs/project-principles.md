@@ -35,7 +35,7 @@ Give resources clear owners and release them before the graphics device is destr
 - Q/Escape returns to navigation; ordinary typing and text editing retain their shortcuts.
 - Allow navigation during tool use: Alt/Option-left-drag or right-drag orbits, middle-drag pans, and the wheel zooms.
 - Viewer layouts belong to the shared workspace. Route tools through the active viewport rather than adding independent multi-view implementations inside each tool. Share model/document data and allocate camera-facing visuals only for visible views.
-- F frames the relevant selection/object or measurement and updates the orbit pivot.
+- F frames the active selection only in the Selection tool; after exiting that tool it frames the entire asset. In Measurement it frames measurement endpoints, falling back to the asset when empty. Focus updates the orbit pivot. Keep text input shortcuts intact; avoid duplicate focus buttons.
 - Share selection modifiers and Ctrl/Cmd+Z / Ctrl/Cmd+Shift+Z undo/redo behavior across formats.
 - Support select → color → annotate directly, without requiring Q between tools. Switching tools preserves selection; annotations retain independent region snapshots.
 - Render user notes as plain text. Keep edits non-destructive to source assets.

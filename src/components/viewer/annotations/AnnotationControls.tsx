@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import type { Vec3 } from "playcanvas";
 import { useSurfacePick } from "../picking/useSurfacePick";
-import { unpackSelection } from "../selection/SelectionHistory";
 import { decodeColor } from "../selection/selectionColors";
 import { focusSelection } from "../selection/focusSelection";
 import { snapshotContains } from "../selection/selectionSnapshot";
@@ -80,10 +79,6 @@ export function AnnotationControls({ handle, annotations, active, interactive, h
     setStep("marker");
   });
 
-  function focusRegion(region: NonNullable<AnnotationDraft["region"]>) {
-    const bounds = handle.selection.bounds(unpackSelection(region));
-    if (bounds) focusSelection(bounds, handle.camera());
-  }
   useEffect(() => {
     if (!active) return;
     const frame = (handle.app.graphicsDevice.canvas as HTMLCanvasElement).closest(".viewer-frame")!;
@@ -97,7 +92,7 @@ export function AnnotationControls({ handle, annotations, active, interactive, h
       if (busy) return;
       if (undo) { if (key.shiftKey) annotations.redo(); else annotations.undo(); cancelAnnotation(); redraw(); onChange(); }
       else {
-        const bounds = handle.selection.bounds();
+        const bounds = handle.selection.bounds(null);
         if (bounds) focusSelection(bounds, handle.camera());
       }
     }
@@ -150,7 +145,6 @@ export function AnnotationControls({ handle, annotations, active, interactive, h
           <label>Title<input name="title" required value={draft.title} onChange={event => setDraft({ ...draft, title: event.target.value })} /></label>
           <label>Description<textarea name="description" rows={3} value={draft.text} onChange={event => setDraft({ ...draft, text: event.target.value })} /></label>
           <button type="submit" disabled={!draft.title.trim() || busy}>Save annotation</button>
-          <button type="button" disabled={!draft.region} onClick={() => draft.region && focusRegion(draft.region)}>Focus on annotated area</button>
           <button type="button" onClick={cancelAnnotation}>Cancel</button>
         </form>}
         {!draft && <button type="button" onClick={createAnnotation}>New annotation</button>}

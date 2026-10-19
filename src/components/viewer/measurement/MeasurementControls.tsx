@@ -83,7 +83,7 @@ export function MeasurementControls({ handle, measurement, active, onChange }: {
       if (undo) { if (key.shiftKey) measurement.redo(); else measurement.undo(); redraw(); }
       else {
         const local = measurement.bounds();
-        const bounds = local ? handle.space.worldBounds(local) : handle.selection.bounds();
+        const bounds = local ? handle.space.worldBounds(local) : handle.selection.bounds(null);
         if (bounds) focusSelection(bounds, handle.camera());
       }
     }
