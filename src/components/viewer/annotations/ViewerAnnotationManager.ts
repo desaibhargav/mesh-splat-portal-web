@@ -1,4 +1,4 @@
-import { Color, Entity } from "playcanvas";
+import { Color, Entity, PROJECTION_ORTHOGRAPHIC, Vec3 } from "playcanvas";
 import { Annotation, AnnotationManager } from "playcanvas/scripts/esm/annotations.mjs";
 
 // Confine the engine example's DOM to the canvas, including embedded/fullscreen
@@ -25,6 +25,22 @@ export class ViewerAnnotationManager extends AnnotationManager {
   }
   hotspot(annotation: Annotation) {
     return (this._annotationResources as unknown as Map<Annotation, { hotspotDom: HTMLDivElement }>).get(annotation)?.hotspotDom;
+  }
+  // Each native manager owns only its viewport's scene-visual replicas.
+  protected override _registerAnnotation(annotation: Annotation) {
+    if (annotation.entity.parent === this.entity) super._registerAnnotation(annotation);
+  }
+  protected override _updateAnnotationPositions(annotation: Annotation, resources: { hotspotDom: HTMLDivElement }, point: Vec3) {
+    const camera = this.viewCamera.camera!, { width, height } = this.app.graphicsDevice.clientRect;
+    point.x -= camera.rect.x * width; point.y -= (1 - camera.rect.y - camera.rect.w) * height;
+    super._updateAnnotationPositions(annotation, resources, point);
+  }
+  protected override _updateAnnotationRotationAndScale(annotation: Annotation, depth: number) {
+    const camera = this.viewCamera.camera!;
+    annotation.entity.setRotation(this.viewCamera.getRotation()); annotation.entity.rotateLocal(90, 0, 0);
+    const height = this.app.graphicsDevice.clientRect.height * camera.rect.w;
+    const size = this._hotspotSize * 2 * (camera.projection === PROJECTION_ORTHOGRAPHIC ? 1 : depth) / (height * camera.projectionMatrix.data[5]!);
+    annotation.entity.setLocalScale(size, size, size);
   }
   initialize() {
     this._parentDom = this.container; this._camera = this.viewCamera;

@@ -3,6 +3,11 @@ declare module "playcanvas/scripts/esm/camera-controls.mjs" {
 
   export class CameraControls extends Script {
     update(dt: number): void;
+    enableFly: boolean;
+    focusDamping: number;
+    moveDamping: number;
+    rotateDamping: number;
+    zoomDamping: number;
     focusPoint: Vec3;
     zoomRange: Vec2;
     protected _pose: Pose;
@@ -27,6 +32,10 @@ declare module "playcanvas/scripts/esm/annotations.mjs" {
     protected _camera: Entity | null;
     protected _mesh: Mesh | null;
     protected _annotationResources: Map<Annotation, { materials: StandardMaterial[] }>;
+    protected _hotspotSize: number;
+    protected _registerAnnotation(annotation: Annotation): void;
+    protected _updateAnnotationPositions(annotation: Annotation, resources: { hotspotDom: HTMLDivElement }, point: import("playcanvas").Vec3): void;
+    protected _updateAnnotationRotationAndScale(annotation: Annotation, depth: number): void;
     protected _activeAnnotation: Annotation | null;
     protected _setAnnotationHover(annotation: Annotation, hover: boolean): void;
     protected _showTooltip(annotation: Annotation): void;

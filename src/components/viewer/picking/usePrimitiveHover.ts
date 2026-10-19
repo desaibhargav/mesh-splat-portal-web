@@ -1,3 +1,4 @@
+import type { CameraComponent } from "playcanvas";
 import { useEffect, useState } from "react";
 import type { SelectionHandle } from "../selection/types";
 
@@ -13,14 +14,14 @@ export function usePrimitiveHover(handle: SelectionHandle, active: boolean) {
     if (!active) return;
     const canvas = handle.app.graphicsDevice.canvas as HTMLCanvasElement;
     let pending = false, cancelled = false, sequence = 0, frame = 0;
-    let latest: { u: number; v: number; token: number } | null = null;
+    let latest: { u: number; v: number; token: number; camera: CameraComponent } | null = null;
     function clear() { sequence++; latest = null; cancelAnimationFrame(frame); frame = 0; setHit(null); }
     async function sample() {
       frame = 0;
       if (pending || !latest || cancelled) return;
-      const { u, v, token } = latest; latest = null; pending = true;
+      const { u, v, token, camera } = latest; latest = null; pending = true;
       try {
-        const next = await handle.selection.primitiveAt(handle.app, handle.camera(), u, v);
+        const next = await handle.selection.primitiveAt(handle.app, camera, u, v);
         if (cancelled || token !== sequence) return;
         setHit(next); setError(null);
       } catch (failure) {
@@ -32,7 +33,7 @@ export function usePrimitiveHover(handle: SelectionHandle, active: boolean) {
       const bounds = canvas.getBoundingClientRect();
       const u = (event.clientX - bounds.left) / bounds.width, v = (event.clientY - bounds.top) / bounds.height;
       if (u < 0 || u >= 1 || v < 0 || v >= 1) { clear(); return; }
-      latest = { u, v, token: sequence };
+      latest = { u, v, token: sequence, camera: handle.camera() };
       if (!pending && !frame) frame = requestAnimationFrame(sample);
     }
     canvas.addEventListener("pointermove", move); canvas.addEventListener("pointerleave", clear);

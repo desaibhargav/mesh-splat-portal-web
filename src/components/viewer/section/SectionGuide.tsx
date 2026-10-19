@@ -6,7 +6,7 @@ import type { ViewFrame } from "../views/viewFrame";
 export function SectionGuide({ handle, frame, extent }: { handle: SelectionHandle; frame: ViewFrame; extent: number }) {
   const entities = useRef<{ root: Entity; plane: Entity } | null>(null);
   useEffect(() => {
-    const camera = handle.camera(), layer = new Layer({ name: "Section guide" });
+    const layer = new Layer({ name: "Section guide" });
     const material = new StandardMaterial();
     material.useLighting = false; material.emissive.copy(Color.WHITE);
     material.opacity = 0.15; material.blendType = BLEND_NORMAL; material.cull = CULLFACE_NONE;
@@ -16,12 +16,13 @@ export function SectionGuide({ handle, frame, extent }: { handle: SelectionHandl
     entities.current = { root, plane };
     plane.setLocalEulerAngles(90, 0, 0);
     plane.addComponent("render", { type: "plane", material, layers: [layer.id], castShadows: false, receiveShadows: false });
-    handle.app.scene.layers.push(layer); camera.layers = [...camera.layers, layer.id];
+    handle.app.scene.layers.push(layer);
+    const releaseLayer = handle.viewports.shareLayer(layer.id);
     let disposed = false;
     const dispose = () => {
       if (disposed) return; disposed = true;
       handle.app.off("destroy", dispose); root.destroy(); material.destroy(); entities.current = null;
-      camera.layers = camera.layers.filter(id => id !== layer.id); handle.app.scene.layers.remove(layer);
+      releaseLayer(); handle.app.scene.layers.remove(layer);
     };
     handle.app.on("destroy", dispose);
     return dispose;

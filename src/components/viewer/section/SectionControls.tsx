@@ -1,5 +1,6 @@
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useEffectEvent, useId, useMemo, useState } from "react";
 import type { BoundingBox } from "playcanvas";
+import type { SavedPresets } from "../presets/SavedPresets";
 import type { SelectionHandle } from "../selection/types";
 import { axisFrame, captureFrame, copyFrame, recallFrame, restoreView, type NamedView, type ViewAxis, type ViewFrame } from "../views/viewFrame";
 import { cutawayView, planeCoefficients, sectionFrame, setSectionPlane, type SectionOptions } from "./sectionPlane";
@@ -12,7 +13,15 @@ const adjustments = [
 ] as const;
 const initialOptions: SectionOptions = { offset: 0, tiltX: 0, tiltY: 0, flip: false };
 
-export function SectionControls({ handle, active, views }: { handle: SelectionHandle; active: boolean; views: readonly NamedView[] }) {
+export interface NamedSection {
+  id: number; name: string; view: NamedView; reference: ViewFrame; source: string;
+  alignment: ViewAxis | "view"; options: SectionOptions;
+}
+
+export function SectionControls({ handle, active, views, sections }: {
+  handle: SelectionHandle; active: boolean; views: readonly NamedView[]; sections: SavedPresets<NamedSection>;
+}) {
+  const [name, setName] = useState("");
   const sliderId = useId();
   const [reference, setReference] = useState<ViewFrame | null>(null);
   const [source, setSource] = useState("camera");
@@ -55,6 +64,24 @@ export function SectionControls({ handle, active, views }: { handle: SelectionHa
     if (view) { restoreView(handle, view); useReference(view.frame, value); }
   }
 
+  const load = useEffectEvent((section: NamedSection) => {
+    restoreView(handle, section.view);
+    setReference(copyFrame(section.reference)); setSource(section.source);
+    setAlignment(section.alignment); setOptions({ ...section.options });
+    setBounds(handle.selection.bounds(null)); setName(section.name); setEnabled(true);
+  });
+  const close = useEffectEvent(() => setEnabled(false));
+  useEffect(() => {
+    sections.on("open", load); sections.on("close", close);
+    return () => { sections.off("open", load); sections.off("close", close); };
+  }, [sections]);
+  function save() {
+    if (!reference || !name.trim()) return;
+    sections.save({ name: name.trim(), reference: copyFrame(reference), source, alignment, options: { ...options },
+      view: { id: 0, name: "", frame: captureFrame(handle.camera()), assetRotation: handle.space.rotation } });
+    setName("");
+  }
+
   if (!active) return null;
   return <div className="selection-actions selection-options view-options section-options" role="group" aria-label="Section">
     <strong>Cross section</strong>
@@ -83,14 +110,16 @@ export function SectionControls({ handle, active, views }: { handle: SelectionHa
       </div>
     </div>)}
     <div className="section-buttons">
-      <button aria-pressed={enabled} disabled={!frame} onClick={() => setEnabled(!enabled)}>{enabled ? "Disable section" : "Enable section"}</button>
+      <button aria-pressed={enabled} disabled={!frame} onClick={() => { if (enabled) sections.close(); else setEnabled(true); }}>{enabled ? "Disable section" : "Enable section"}</button>
       <button aria-pressed={options.flip} onClick={() => setOptions({ ...options, flip: !options.flip })}>Flip retained side</button>
       <button aria-pressed={showPlane} onClick={() => setShowPlane(!showPlane)}>Show cutting plane</button>
       <button onClick={fromCamera}>From current camera</button>
       <button disabled={!frame} onClick={() => frame && recallFrame(handle.camera(), cutawayView(frame, options.flip))}>Look perpendicular to cut</button>
       <button onClick={() => setOptions(initialOptions)}>Reset section position</button>
     </div>
-    <small>Q exits this tool; the section stays enabled.</small>
+    <label>Section name<input aria-label="Section name" value={name} onChange={event => setName(event.target.value)} /></label>
+    <button disabled={!enabled || !name.trim()} onClick={save}>Save section</button>
+    <small>Saved sections are in the model tree. Q exits this tool; the section stays enabled.</small>
     {enabled && showPlane && frame && bounds && <SectionGuide handle={handle} frame={frame} extent={bounds.halfExtents.length()} />}
   </div>;
 }

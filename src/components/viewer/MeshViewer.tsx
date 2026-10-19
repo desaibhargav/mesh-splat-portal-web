@@ -2,10 +2,11 @@ import { Entity, Gltf } from "@playcanvas/react";
 import { Environment } from "@playcanvas/react/components";
 import { useApp, useEnvAtlas, useModel } from "@playcanvas/react/hooks";
 import { useEffect, useState } from "react";
-import { BoundingBox, Color, type Entity as PlayCanvasEntity, type MeshInstance } from "playcanvas";
+import { BoundingBox, Color, type Entity as PlayCanvasEntity, type CameraComponent, type MeshInstance } from "playcanvas";
+import { ViewerViewports } from "./viewports/ViewerViewports";
 import { ViewerSpace } from "./ViewerSpace";
 import type { ViewerStatus } from "./ArtifactViewer";
-import { frameBounds, interactiveCamera, ViewerCamera, type ViewerView } from "./ViewerCamera";
+import { frameBounds, ViewerCamera, type ViewerView } from "./ViewerCamera";
 import { MeshSelection } from "./selection/MeshSelection";
 import type { SelectionHandle } from "./selection/types";
 
@@ -15,6 +16,7 @@ export function MeshViewer({ url, onStatus, onSelectionReady }: {
   const app = useApp();
   const result = useModel(url);
   const environment = useEnvAtlas("/lighting/studio-small-08.png");
+  const [camera, setCamera] = useState<CameraComponent | null>(null);
   const [target, setTarget] = useState<PlayCanvasEntity | null>(null);
   const [view, setView] = useState<ViewerView | null>(null);
 
@@ -29,30 +31,36 @@ export function MeshViewer({ url, onStatus, onSelectionReady }: {
       return;
     }
 
-    // Gltf attaches its render hierarchy in an effect. Measure it on the next frame.
+    const frame = requestAnimationFrame(() => setView(getEntityView(target)));
+    return () => cancelAnimationFrame(frame);
+  }, [target, result.asset]);
+  useEffect(() => {
+    if (!target || !result.asset || !camera) return;
+    let viewports: ViewerViewports | undefined;
     let space: ViewerSpace | undefined;
     let selection: MeshSelection | undefined;
-    const dispose = () => { cancelAnimationFrame(frame); selection?.destroy(); selection = undefined; space?.destroy(); space = undefined; };
+    const dispose = () => { cancelAnimationFrame(frame); selection?.destroy(); selection = undefined; space?.destroy(); space = undefined; viewports?.destroy(); viewports = undefined; };
     app.on("destroy", dispose);
     const frame = requestAnimationFrame(() => {
-      setView(getEntityView(target));
       try {
         const tint = new Color().fromString(getComputedStyle(app.graphicsDevice.canvas).getPropertyValue("--gold").trim()).linear();
         tint.a = 0.5;
         selection = new MeshSelection(target, app, tint);
         space = new ViewerSpace(target, selection.bounds(null)!.center.clone());
-        onSelectionReady({ app, space, selection, camera: () => interactiveCamera(app) });
+        viewports = new ViewerViewports(app, camera);
+        const rig = viewports;
+        onSelectionReady({ app, space, viewports: rig, selection, camera: () => rig.active.camera });
       } catch (error) {
         onStatus({ loading: false, progress: 1, error: `Selection unavailable: ${error instanceof Error ? error.message : String(error)}` });
       }
     });
     return () => { app.off("destroy", dispose); dispose(); onSelectionReady(null); };
-  }, [result.asset, target, app, onSelectionReady, onStatus]);
+  }, [result.asset, target, camera, app, onSelectionReady, onStatus]);
 
   return (
     <>
       {result.asset && <Entity ref={setTarget}><Gltf asset={result.asset} key={result.asset.id} /></Entity>}
-      {view && <ViewerCamera view={view} />}
+      {view && <ViewerCamera view={view} onReady={setCamera} />}
       {environment.asset && <Environment envAtlas={environment.asset} showSkybox={false} />}
     </>
   );

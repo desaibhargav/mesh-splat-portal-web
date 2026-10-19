@@ -1,19 +1,18 @@
-import { useEffect, useRef, useState } from "react";
-import { PROJECTION_ORTHOGRAPHIC, Quat } from "playcanvas";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { Quat } from "playcanvas";
 import type { SelectionHandle } from "../selection/types";
 import { ViewGizmo } from "./ViewGizmo";
 import { captureFrame, copyFrame, restoreView, type NamedView, type ViewFrame } from "./viewFrame";
 import { ThreePointAlignment } from "./ThreePointAlignment";
-import { setOrthographic, ViewNavigation } from "./ViewNavigation";
+import type { SavedPresets } from "../presets/SavedPresets";
 
-export function ViewControls({ handle, active, views, onViewsChange }: {
-  handle: SelectionHandle; active: boolean; views: NamedView[]; onViewsChange(views: NamedView[]): void;
+export function ViewControls({ handle, active, views }: {
+  handle: SelectionHandle; active: boolean; views: SavedPresets<NamedView>;
 }) {
   const [drafting, setDrafting] = useState(false);
   const [name, setName] = useState("");
   const [editing, setEditing] = useState<number | null>(null);
   const [picking, setPicking] = useState(false);
-  const [orthographic, setProjection] = useState(false);
   const [frame, setFrame] = useState<ViewFrame | null>(null);
   const before = useRef<NamedView | null>(null);
 
@@ -36,25 +35,27 @@ export function ViewControls({ handle, active, views, onViewsChange }: {
     if (drafting) cancel();
     before.current = snapshot(); setFrame(before.current.frame);
     setEditing(null); setName(""); setPicking(false); setDrafting(true);
-    setProjection(handle.camera().projection === PROJECTION_ORTHOGRAPHIC);
   }
   function open(view: NamedView) {
     if (drafting) cancel();
     before.current = snapshot(); restoreView(handle, view);
     setEditing(view.id); setName(view.name); setFrame(copyFrame(view.frame));
-    setProjection(handle.camera().projection === PROJECTION_ORTHOGRAPHIC);
     setPicking(false); setDrafting(true);
   }
+  const openRequested = useEffectEvent(open);
+  useEffect(() => {
+    views.on("open", openRequested);
+    return () => { views.off("open", openRequested); };
+  }, [views]);
+
   function save() {
     if (!name.trim()) return;
-    const id = editing ?? Math.max(0, ...views.map(view => view.id)) + 1;
-    const record = { ...snapshot(), id, name: name.trim() };
-    onViewsChange(editing === null ? [...views, record] : views.map(view => view.id === id ? record : view));
+    views.save({ ...snapshot(), id: editing ?? undefined, name: name.trim() });
     before.current = null; setDrafting(false); setPicking(false);
   }
   function remove(id: number) {
     if (editing === id) cancel();
-    onViewsChange(views.filter(view => view.id !== id));
+    views.remove(id);
   }
   function align(aligned: ViewFrame) {
     handle.space.setRotation(aligned.rotation.clone().invert().mul(handle.space.rotation));
@@ -63,11 +64,10 @@ export function ViewControls({ handle, active, views, onViewsChange }: {
 
   if (!active) return null;
   return <>
-    <ViewNavigation handle={handle} />
     <div className="annotation-panels view-panels">
-      {views.length > 0 && <div className="selection-actions view-options" role="group" aria-label="Saved views">
+      {views.records.length > 0 && <div className="selection-actions view-options" role="group" aria-label="Saved views">
         <strong>Views</strong>
-        <ul>{views.map(view => <li key={view.id}>
+        <ul>{views.records.map(view => <li key={view.id}>
           <button aria-label={`Edit view ${view.name}`} onClick={() => open(view)}>{view.name}</button>
           <button className="annotation-delete" aria-label={`Delete view ${view.name}`} onClick={() => remove(view.id)}>−</button>
         </li>)}</ul>
@@ -80,9 +80,6 @@ export function ViewControls({ handle, active, views, onViewsChange }: {
             <p>Rotate the asset against the world grid. The current camera is saved with the view.</p>
             <button onClick={() => { setFrame(captureFrame(handle.camera())); setPicking(true); }}>Align to three points</button>
             <button onClick={() => handle.space.setRotation(Quat.IDENTITY)}>Reset orientation</button>
-            <button aria-pressed={orthographic} onClick={() => {
-              setOrthographic(handle, !orthographic); setProjection(!orthographic);
-            }}>Orthographic</button>
             <button disabled={!name.trim()} onClick={save}>{editing === null ? "Save view" : "Update view"}</button>
             <button onClick={cancel}>Cancel</button>
           </>}

@@ -186,3 +186,14 @@ a { color: #536d7d; }
 .section-adjustment-controls input { flex: 1; min-width: 0; }
 .section-adjustment-controls button { flex: none; padding: 4px; }
 .section-adjustment-controls svg { display: block; width: 16px; height: 16px; }
+
+.viewport-layout { position: absolute; inset: calc(42px + var(--selection-toolbar-height)) 0 31px; pointer-events: none; z-index: 2; }
+.viewport-panel { position: absolute; overflow: hidden; }
+.is-split .viewport-panel { border: 1px solid #555; }
+.is-split .viewport-panel.is-active { border-color: var(--gold); }
+.viewport-label { position: absolute; top: 6px; left: 8px; padding: 2px 5px; color: #fff; background: #252525b0; font-size: .7rem; pointer-events: auto; border: 0; cursor: pointer; font-family: inherit; }
+.viewport-panel .view-navigation { top: 6px; right: 6px; }
+.is-split .view-navigation { transform: scale(.65); transform-origin: top right; }
+
+.annotation-viewport { position: absolute; overflow: hidden; pointer-events: none; }
+.annotation-viewport > .pc-annotation { max-width: 90%; }

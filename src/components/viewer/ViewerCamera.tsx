@@ -1,7 +1,7 @@
 import { memo, useEffect, useState } from "react";
 import { Entity } from "@playcanvas/react";
 import { Camera, Script } from "@playcanvas/react/components";
-import { Vec2, Vec3, type AppBase, type BoundingBox, type CameraComponent } from "playcanvas";
+import { Vec2, Vec3, type BoundingBox, type CameraComponent } from "playcanvas";
 import { CameraControls } from "./CameraControls";
 
 export interface ViewerView {
@@ -9,12 +9,6 @@ export interface ViewerView {
   focusPoint: Vec3;
   radius: number;
   fov?: number;
-}
-
-export function interactiveCamera(app: AppBase): CameraComponent {
-  const camera = app.systems.camera?.cameras.find(candidate => candidate.entity.script?.get("cameraControls"));
-  if (!camera) throw new Error("Viewer camera is unavailable.");
-  return camera;
 }
 
 // CameraControls 2.21.4 listens for keyup but does not clear modifiers on window blur.
@@ -30,13 +24,14 @@ function releaseModifiers(shift = true, control = true) {
   }
 }
 
-export function ViewerCamera({ view }: { view: ViewerView }) {
+export function ViewerCamera({ view, onReady }: { view: ViewerView; onReady(camera: CameraComponent | null): void }) {
   const [controls, setControls] = useState<CameraControls | null>(null);
   useEffect(() => {
     if (!controls) return;
     controls.focusPoint = view.focusPoint;
     controls.zoomRange = new Vec2(Math.max(view.radius * 0.02, 0.01), Math.max(view.radius * 100, 100));
   }, [controls, view]);
+  useEffect(() => { onReady(controls?.entity.camera ?? null); }, [controls, onReady]);
   useEffect(() => {
     if (!controls) return;
     const canvas = controls.app.graphicsDevice.canvas;

@@ -1,5 +1,6 @@
 import { Color, PROJECTION_ORTHOGRAPHIC, PIXELFORMAT_RGBA8, RenderPassPicker, RenderTarget, Texture, type AppBase, type CameraComponent, type Layer } from "playcanvas";
 
+import { renderPickView } from "../picking/PickView";
 import type { VisibilityTest } from "./types";
 
 export interface DepthImage { values: Float32Array; width: number; height: number; near: number; far: number; orthographic: boolean }
@@ -9,7 +10,7 @@ export interface DepthImage { values: Float32Array; width: number; height: numbe
 export async function captureDepth(app: AppBase, camera: CameraComponent, layers: Layer[] = app.scene.layers.layerList): Promise<DepthImage> {
   const near = camera.nearClip, far = camera.farClip, orthographic = camera.projection === PROJECTION_ORTHOGRAPHIC;
   const device = app.graphicsDevice;
-  const width = device.width, height = device.height;
+  const width = Math.max(1, Math.floor(device.width * camera.rect.z)), height = Math.max(1, Math.floor(device.height * camera.rect.w));
   const color = Texture.createDataTexture2D(device, "Selection IDs", width, height, PIXELFORMAT_RGBA8);
   const depth = Texture.createDataTexture2D(device, "Selection depth", width, height, PIXELFORMAT_RGBA8);
   const target = new RenderTarget({ colorBuffers: [color, depth], depth: true });
@@ -24,7 +25,7 @@ export async function captureDepth(app: AppBase, camera: CameraComponent, layers
   try {
     pass.init(target); pass.setClearColor(Color.WHITE); pass.depthStencilOps.clearDepth = true;
     pass.update(camera, app.scene, layers, new Map(), true);
-    pass.render();
+    renderPickView(camera, () => pass.render());
     const pixels = await depth.read(0, 0, width, height, { immediate: true });
     if (disposed) throw new Error("Viewer closed during selection.");
     return { values: decodeDepth(pixels as Uint8Array, width, height, !device.isWebGPU), width, height, near, far, orthographic };

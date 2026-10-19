@@ -3,6 +3,8 @@ import {
   SEMANTIC_COLOR, SEMANTIC_POSITION, ShaderMaterial, Texture, TYPE_UINT8,
   type AppBase, type CameraComponent
 } from "playcanvas";
+import { renderPickView } from "../picking/PickView";
+import { viewportPoint } from "../viewports/ViewerViewports";
 import type { SelectionRegion } from "./types";
 import { sectionDeclaration } from "../section/sectionShaders";
 
@@ -91,11 +93,12 @@ export class MeshPicker {
 
   private prepare(camera: CameraComponent, isolated: boolean) {
     const device = this.app.graphicsDevice;
-    const signature = [device.width, device.height, ...camera.projectionMatrix.data, ...camera.viewMatrix.data].join();
+    const width = Math.max(1, Math.floor(device.width * camera.rect.z)), height = Math.max(1, Math.floor(device.height * camera.rect.w));
+    const signature = [width, height, ...camera.projectionMatrix.data, ...camera.viewMatrix.data].join();
     if (signature === this.signature) return;
-    if (this.texture?.width !== device.width || this.texture.height !== device.height) {
+    if (this.texture?.width !== width || this.texture.height !== height) {
       this.target?.destroy(); this.texture?.destroy();
-      this.texture = Texture.createDataTexture2D(device, "Triangle IDs", device.width, device.height, PIXELFORMAT_RGBA8);
+      this.texture = Texture.createDataTexture2D(device, "Triangle IDs", width, height, PIXELFORMAT_RGBA8);
       this.target = new RenderTarget({ colorBuffer: this.texture, depth: true });
       this.pass.init(this.target);
       this.pass.setClearColor(Color.WHITE); this.pass.depthStencilOps.clearDepth = true;
@@ -116,12 +119,14 @@ export class MeshPicker {
     try {
       camera.layers = [...layers, this.layer.id];
       this.pass.update(camera, this.app.scene, [this.layer], new Map(), false);
-      this.pass.render();
+      renderPickView(camera, () => this.pass.render());
     } finally { camera.layers = layers; }
     this.signature = signature;
   }
 
   async primitiveAt(camera: CameraComponent, u: number, v: number, isolated: boolean): Promise<{ part: number; index: number } | null> {
+    const local = viewportPoint(camera, u, v); u = local.u; v = local.v;
+    if (u < 0 || u >= 1 || v < 0 || v >= 1) return null;
     this.prepare(camera, isolated);
     const x = Math.floor(u * this.texture!.width), y = Math.floor(v * this.texture!.height);
     const bytes = await this.texture!.read(x, this.app.graphicsDevice.isWebGPU ? y : this.texture!.height - y - 1, 1, 1, { immediate: true, renderTarget: this.target });

@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { rectangleBetween, selectionOperation, type Point, type SelectionOperation } from "./rectangle";
-import type { SelectionRegion, SelectionShape } from "./types";
+import type { SelectionHandle, SelectionRegion, SelectionShape } from "./types";
 
-export function SelectionGesture({ tool, brushSize, onSelect }: {
+export function SelectionGesture({ handle, tool, brushSize, onSelect }: {
+  handle: SelectionHandle;
   tool: SelectionShape; brushSize: number;
   onSelect(region: SelectionRegion, operation: SelectionOperation): void;
 }) {
@@ -14,11 +15,12 @@ export function SelectionGesture({ tool, brushSize, onSelect }: {
     const canvas = overlay.current!.closest(".viewer-frame")!.querySelector<HTMLCanvasElement>(".viewer-canvas canvas")!;
     const previousCursor = canvas.style.cursor, previousTouchAction = canvas.style.touchAction;
     canvas.style.cursor = "crosshair"; canvas.style.touchAction = "none";
-    let drag: { id: number; points: Point[] } | null = null;
+    let drag: { id: number; points: Point[]; rect: { left: number; top: number; width: number; height: number } } | null = null;
     function point(event: PointerEvent): Point {
       const bounds = canvas.getBoundingClientRect();
-      return { x: Math.max(0, Math.min(bounds.width, event.clientX - bounds.left)),
-        y: Math.max(0, Math.min(bounds.height, event.clientY - bounds.top)) };
+      const r = drag?.rect ?? { left: 0, top: 0, width: bounds.width, height: bounds.height };
+      return { x: Math.max(r.left, Math.min(r.left + r.width, event.clientX - bounds.left)),
+        y: Math.max(r.top, Math.min(r.top + r.height, event.clientY - bounds.top)) };
     }
     function reset() {
       const id = drag?.id;
@@ -32,7 +34,12 @@ export function SelectionGesture({ tool, brushSize, onSelect }: {
       canvas.setPointerCapture(event.pointerId);
       const bounds = canvas.getBoundingClientRect();
       setSize({ width: bounds.width, height: bounds.height });
-      drag = { id: event.pointerId, points: [point(event)] };
+      const panel = handle.viewports.at((event.clientX - bounds.left) / bounds.width, (event.clientY - bounds.top) / bounds.height)!;
+      handle.viewports.activate(panel);
+      const r = panel.camera.rect;
+      drag = { id: event.pointerId, points: [point(event)], rect: {
+        left: Math.round(r.x * bounds.width), top: Math.round((1 - r.y - r.w) * bounds.height),
+        width: Math.round(r.z * bounds.width), height: Math.round(r.w * bounds.height) } };
       setPoints([...drag.points]);
     }
     function move(event: PointerEvent) {
@@ -58,8 +65,10 @@ export function SelectionGesture({ tool, brushSize, onSelect }: {
         if (tool === "lasso") { context.closePath(); context.fill("evenodd"); }
         else { context.lineWidth = brushSize; context.lineCap = "round"; context.lineJoin = "round"; context.stroke(); }
       }
+      const r = drag.rect;
+      const pixels = context.getImageData(r.left, r.top, r.width, r.height).data;
       reset();
-      onSelect({ pixels: context.getImageData(0, 0, bitmap.width, bitmap.height).data, width: bitmap.width, height: bitmap.height }, selectionOperation(event));
+      onSelect({ pixels, width: r.width, height: r.height }, selectionOperation(event));
     }
     function wheel(event: WheelEvent) {
       if (drag) { event.preventDefault(); event.stopImmediatePropagation(); }
@@ -83,7 +92,7 @@ export function SelectionGesture({ tool, brushSize, onSelect }: {
       reset();
       canvas.style.cursor = previousCursor; canvas.style.touchAction = previousTouchAction;
     };
-  }, [tool, brushSize, onSelect]);
+  }, [handle, tool, brushSize, onSelect]);
   const area = points.length ? rectangleBetween(points[0]!, points.at(-1)!) : null;
   return <div ref={overlay} className="selection-overlay" aria-label={`${tool} selection area`}>
     <svg className="selection-drawing" viewBox={`0 0 ${size.width} ${size.height}`} preserveAspectRatio="none">

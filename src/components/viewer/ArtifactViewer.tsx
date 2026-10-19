@@ -1,3 +1,4 @@
+import { ViewportLayout, ViewportToggle } from "./viewports/ViewportLayout";
 import { Application } from "@playcanvas/react";
 import { useEffect, useRef, useState } from "react";
 import type { Artifact } from "../../api/artifacts";
@@ -31,7 +32,7 @@ export function ArtifactViewer({ artifact }: { artifact: Artifact }) {
   return (
     <section ref={frame} className="viewer-frame has-selection-tools" tabIndex={0} aria-label={`${artifact.title} 3D viewer`}
       onClickCapture={event => {
-        if ((event.target as HTMLElement).closest(".selection-toolbar button, .selection-actions button")) frame.current?.focus({ preventScroll: true });
+        if ((event.target as HTMLElement).closest(".selection-toolbar button, .selection-actions button, .viewer-tree button, .viewer-toolbar button, .viewport-label")) frame.current?.focus({ preventScroll: true });
       }}
       onPointerDownCapture={event => {
         if (!(event.target as HTMLElement).closest("button, input, select, textarea")) frame.current?.focus({ preventScroll: true });
@@ -44,6 +45,7 @@ export function ArtifactViewer({ artifact }: { artifact: Artifact }) {
       }}>
       <div className="viewer-toolbar">
         <span>{artifact.type === "mesh" ? "Mesh" : "Gaussian splat"}</span>
+        {selection && <ViewportToggle handle={selection} />}
         <button onClick={() => void toggleFullscreen()}>{fullscreen ? "Exit fullscreen" : "Fullscreen"}</button>
       </div>
       <SelectionControls handle={selection} tool={tool} onToolChange={changeTool} disabled={status.loading || Boolean(status.error)} />
@@ -53,6 +55,7 @@ export function ArtifactViewer({ artifact }: { artifact: Artifact }) {
             <SplatViewer url={artifact.contentUrl} onStatus={setStatus} onSelectionReady={setSelection} />}
         </Application>
       </div>
+      {selection && <ViewportLayout handle={selection} />}
       {status.loading && <div className="viewer-loading" role="status"><span>Loading 3D asset</span><progress value={status.progress} max={1} /></div>}
       {status.error && <div className="viewer-error" role="alert">{status.error}</div>}
       <p className="viewer-help">{tool === "section" ? "Slide or tilt the cutting plane · Alt/Option or right-drag: orbit · Middle-drag: pan · Scroll: zoom · Q: exit" : tool === "views" ? "Rotate asset against world grid · Drag outside handles: orbit · Middle-drag: pan · Scroll: zoom · Q: exit" : tool === "annotate" ? "Choose optional area binding, then click a surface to place the marker · Alt/Option or right-drag: orbit · Middle-drag: pan · Scroll: zoom · Q: exit" : tool === "measure" ? "Click two points · Shift-click: new measurement · Alt/Option or right-drag: orbit · Middle-drag: pan · Scroll: zoom · F: focus · Q: exit" : selecting ? "Drag to select · Shift: add · Ctrl/Cmd: remove · Shift + Ctrl/Cmd: intersect · Alt/Option or right-drag: orbit · Middle-drag: pan · Scroll: zoom · Q: exit" :

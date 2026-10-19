@@ -27,13 +27,13 @@ export function useSurfacePick({ handle, active, acceptsClick, validateClick, on
       return { u: (event.clientX - bounds.left) / bounds.width, v: (event.clientY - bounds.top) / bounds.height };
     }
     async function click(point: { u: number; v: number }, event: PointerEvent) {
-      const shift = event.shiftKey;
+      const shift = event.shiftKey, camera = handle.camera();
       if (pending || !accepts(shift)) return;
       pending = true; setBusy(true); setMessage(null);
       try {
         const validation = await validate(point.u, point.v);
         if (validation) { if (!cancelled) setMessage(validation); return; }
-        const position = await picker.pick(handle.camera(), point.u, point.v);
+        const position = await picker.pick(camera, point.u, point.v);
         if (!cancelled) {
           if (position) apply(position, shift);
           else setMessage("No visible surface here. Click on the object.");

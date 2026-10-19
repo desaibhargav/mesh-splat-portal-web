@@ -160,3 +160,5 @@ Script inputs:
 The script pulls the latest `main`, installs dependencies from the lockfile, builds the Vite app, publishes `dist/` to `/var/www/mesh-splat-portal`, installs or updates the Nginx site, validates Nginx, and reloads it. It does not contain SSH keys, passwords, IP addresses, or other secrets.
 
 If the portal loads but says the artifact service is unavailable, the static frontend is working and the next step is to configure the `/api/` and `/files/` reverse proxy routes to the backend instance.
+
+The viewer-wide **Four views** button or **Space** over the canvas opens the shared Top/Front/Right/Perspective workspace; Space maximizes/restores the hovered panel. All tools share one asset and document across panels. Named views and **Save section** entries are available in the model tree for the current session. See [workspace details](docs/viewports.md).

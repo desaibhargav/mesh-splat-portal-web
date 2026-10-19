@@ -1,11 +1,12 @@
 # Shared viewer tools and engine reuse
 
-Mesh and splat viewers supply the same `SelectionController` contract to `SelectionControls`. Rectangle/lasso/brush gestures, modifiers, navigation, shortcuts, palette UI, selection/paint history, measurement state, and annotation editing are shared. `MeshSelection` and `SplatSelection` implement geometry-specific visibility, mask updates, and rendering. Tool components do not branch by asset type to implement operations; the measurement panel only varies its unit explanation.
+Mesh and splat viewers supply the same `SelectionController` contract to `SelectionControls`. Rectangle/lasso/brush gestures, modifiers, navigation, shortcuts, palette UI, selection/paint history, measurement state, and annotation editing are shared. `MeshSelection` and `SplatSelection` implement geometry-specific visibility, mask updates, and rendering. Tool components do not branch by asset type to implement operations; unit calibration remains a separate metadata concern.
 
-`ViewerTree` consumes the same small named/visible item contract for selections, measurements, and annotations. Selection masks stay bit-packed; measurement and annotation models own their immutable edit histories. Eye controls affect only derived scene visuals, and renaming does not modify source assets or annotation note content.
+`ViewerTree` consumes the same small named/visible item contract for selections, measurements, annotations, saved views, and saved sections. View/section snapshots share a small session preset collection; renaming a snapshot never activates it. Selection masks stay bit-packed; measurement and annotation models own their immutable edit histories. Eye controls affect only derived scene visuals, and renaming does not modify source assets or annotation note content.
 
 | Operation | Reused PlayCanvas API |
 | --- | --- |
+| Four-view workspace | Native cameras with `rect`/`scissorRect`, one scene and shared tools; [implementation and limits](viewports.md) |
 | Orbit, pan, zoom | Bundled `CameraControls` script |
 | Cross sections | `Plane`, `Quat`, `BoundingBox`, `StandardMaterial` shader hooks, splat shader chunks, and a scene plane; [implementation and limits](sectioning.md) |
 | Saved views and orientation | `RotateGizmo`, shared parent `Entity`, `ViewCube`, `Pose`, camera projection, and `AppBase.drawLines`; [workflow and camera adapter](views.md) |
@@ -28,7 +29,7 @@ A spherical brush affects Gaussian centers within a 3D radius around a picked su
 
 Measurement state and visuals use one implementation for both asset formats and camera modes. White cylinder lines, sphere endpoints, and text are ordinary scene elements; projection and stereo rendering belong to the engine. The browser tool panels and annotation tooltip still require XR presentation and controller bindings when XR sessions are implemented. Those bindings should call the existing shared operations.
 
-The runtime engine remains pinned in `package.json`. Embedded annotation layout has a small container adapter around the bundled manager; recheck it when upgrading the engine. Annotation markers use the viewer camera and the manager's native layers, without another camera or render pass. No editor framework or additional runtime dependency is imported.
+The runtime engine remains pinned in `package.json`. Embedded annotation layout has a small container adapter around the bundled manager; recheck it when upgrading the engine. Annotation markers use each visible viewport camera and the manager's native layers, without a dedicated annotation camera or render pass. Camera-facing visuals are replicated per visible panel; records and region masks stay shared. No editor framework or additional runtime dependency is imported.
 
 `ViewerAnnotationManager` retains one engine mesh reference for its shared marker plane. Without that owner reference, replacing the last draft marker destroys the plane through `MeshInstance.destroy`, and the bundled manager reuses its destroyed vertex buffer for the saved marker. This causes repeated render exceptions that look like frozen navigation. The manager releases its reference on teardown; a regression test exercises the real mesh reference-counting behavior.
 

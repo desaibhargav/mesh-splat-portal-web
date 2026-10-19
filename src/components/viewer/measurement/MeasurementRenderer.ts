@@ -1,6 +1,6 @@
 import {
   CanvasFont, Color, ELEMENTTYPE_TEXT, Entity, Layer, PROJECTION_ORTHOGRAPHIC, Quat, StandardMaterial, Vec3,
-  type CameraComponent
+  type AppBase, type CameraComponent
 } from "playcanvas";
 import type { SelectionHandle } from "../selection/types";
 import { formatDistance } from "./Measurement";
@@ -13,13 +13,36 @@ interface SegmentVisual {
   line: Entity | null; label: Entity | null; midpoint: Vec3;
 }
 
+interface MeasurementResources { font: CanvasFont; material: StandardMaterial; users: number }
+const resources = new WeakMap<AppBase, MeasurementResources>();
+function acquireResources(app: AppBase, fontName: string) {
+  let shared = resources.get(app);
+  if (!shared) {
+    const material = new StandardMaterial();
+    material.useLighting = false; material.useFog = false;
+    material.useSkybox = false; material.useTonemap = false;
+    material.diffuse.copy(Color.WHITE); material.emissive.copy(Color.WHITE); material.update();
+    const font = new CanvasFont(app, { fontName, fontSize: 32 });
+    font.createTextures("0123456789AB .,-");
+    shared = { font, material, users: 0 }; resources.set(app, shared);
+  }
+  shared.users++;
+  return shared;
+}
+function releaseResources(app: AppBase) {
+  const shared = resources.get(app)!;
+  if (--shared.users === 0) {
+    shared.font.destroy(); shared.material.destroy(); resources.delete(app);
+  }
+}
+
 // The line, markers, and text are PlayCanvas scene entities. The same renderer
 // is therefore used by the desktop camera and by each WebXR eye.
 export class MeasurementRenderer {
   private readonly root = new Entity("Measurements");
   private readonly layer = new Layer({ name: "Measurements", clearDepthBuffer: true });
   private readonly font: CanvasFont;
-  private readonly material = new StandardMaterial();
+  private readonly material: StandardMaterial;
   private readonly camera: CameraComponent;
   private readonly markerSize: number;
   private readonly gap: number;
@@ -35,11 +58,8 @@ export class MeasurementRenderer {
     const style = getComputedStyle(handle.app.graphicsDevice.canvas);
     this.markerSize = parseFloat(style.getPropertyValue("--measurement-marker-size"));
     this.gap = parseFloat(style.getPropertyValue("--measurement-label-gap"));
-    this.material.useLighting = false; this.material.useFog = false;
-    this.material.useSkybox = false; this.material.useTonemap = false;
-    this.material.diffuse.copy(Color.WHITE); this.material.emissive.copy(Color.WHITE); this.material.update();
-    this.font = new CanvasFont(handle.app, { fontName: style.fontFamily, fontSize: 32 });
-    this.font.createTextures("0123456789AB .,-");
+    const shared = acquireResources(handle.app, style.fontFamily);
+    this.font = shared.font; this.material = shared.material;
     handle.app.root.addChild(this.root);
     handle.app.scene.layers.push(this.layer);
     this.camera.layers = [...this.camera.layers, this.layer.id];
@@ -97,7 +117,7 @@ export class MeasurementRenderer {
   private pixelScale(point: Vec3) {
     const depth = this.delta.sub2(point, this.camera.entity.getPosition()).dot(this.camera.entity.forward);
     return 2 * (this.camera.projection === PROJECTION_ORTHOGRAPHIC ? 1 : depth) /
-      (this.camera.projectionMatrix.data[5]! * this.handle.app.graphicsDevice.clientRect.height);
+      (this.camera.projectionMatrix.data[5]! * this.handle.app.graphicsDevice.clientRect.height * this.camera.rect.w);
   }
 
   private billboard(entity: Entity, point: Vec3, offset = 0) {
@@ -130,7 +150,7 @@ export class MeasurementRenderer {
     if (this.disposed) return;
     this.disposed = true;
     this.handle.app.off("prerender", this.update, this); this.handle.app.off("destroy", this.destroy, this);
-    this.root.destroy(); this.font.destroy(); this.material.destroy(); this.handle.app.scene.layers.remove(this.layer);
+    this.root.destroy(); releaseResources(this.handle.app); this.handle.app.scene.layers.remove(this.layer);
     this.camera.layers = this.camera.layers.filter(id => id !== this.layer.id);
   }
 }

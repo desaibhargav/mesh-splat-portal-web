@@ -6,10 +6,10 @@ import type { SelectionHandle } from "../selection/types";
 // rotates; the grid is drawn in fixed world coordinates around its pivot.
 export class ViewGizmo {
   private readonly reference = new Entity("Asset rotation handle");
-  private readonly camera;
+  private camera;
   private readonly layer;
   private readonly gizmo;
-  private readonly controls: CameraControls;
+  private controls: CameraControls;
   private readonly grid: Vec3[] = [];
   private readonly color = new Color(0.35, 0.35, 0.35);
   private controlsEnabled: boolean | null = null;
@@ -21,6 +21,7 @@ export class ViewGizmo {
     handle.app.root.addChild(this.reference);
     this.reference.setPosition(handle.space.pivot); this.syncRotation();
     this.gizmo = new RotateGizmo(this.camera, this.layer);
+    handle.viewports.on("change", this.syncCamera, this);
     this.gizmo.coordSpace = "world";
     this.gizmo.mouseButtons[1] = false; this.gizmo.mouseButtons[2] = false;
     handle.app.graphicsDevice.canvas.addEventListener("pointerdown", this.chooseInput, true);
@@ -41,6 +42,11 @@ export class ViewGizmo {
     }
     handle.app.on("prerender", this.draw, this); handle.app.on("destroy", this.destroy, this);
   }
+  private syncCamera() {
+    if (this.camera === this.handle.camera()) return;
+    this.releaseCamera(); this.camera = this.handle.camera();
+    this.controls = cameraControls(this.camera); this.gizmo.camera = this.camera;
+  }
   private syncRotation() { this.reference.setRotation(this.handle.space.rotation); }
   private draw() { this.handle.app.drawLines(this.grid, this.color, true); }
   private releaseCamera() {
@@ -54,6 +60,7 @@ export class ViewGizmo {
     this.handle.app.graphicsDevice.canvas.removeEventListener("pointerdown", this.chooseInput, true);
     this.handle.app.graphicsDevice.canvas.removeEventListener("pointercancel", this.cancel);
     this.handle.app.off("prerender", this.draw, this); this.handle.app.off("destroy", this.destroy, this);
+    this.handle.viewports.off("change", this.syncCamera, this);
     this.handle.space.off("change", this.syncRotation, this);
     this.gizmo.destroy(); this.releaseCamera(); this.reference.destroy();
     this.camera.layers = this.camera.layers.filter(id => id !== this.layer.id);

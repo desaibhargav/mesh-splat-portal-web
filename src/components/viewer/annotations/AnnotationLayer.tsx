@@ -1,4 +1,7 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useViewports } from "../viewports/useViewports";
+import { useViewportHandle } from "../viewports/useViewportHandle";
+import type { Viewport } from "../viewports/ViewerViewports";
 import { Color, Entity, Vec3 } from "playcanvas";
 import { Annotation } from "playcanvas/scripts/esm/annotations.mjs";
 import { SurfacePicker } from "../picking/SurfacePicker";
@@ -12,7 +15,20 @@ export function AnnotationLayer({ handle, records, interactive, hoverRegions, mo
   handle: SelectionHandle; records: readonly AnnotationRecord[]; interactive: boolean; hoverRegions: boolean;
   movingId: number | null; onMove(id: number, position: Vec3): void;
 }) {
+  const rig = useViewports(handle);
   const { hovered, error } = useAnnotationHover(handle, records, hoverRegions);
+  return <div className="annotation-overlay" data-interactive={interactive}>
+    {error && <div className="selection-error" role="alert">Annotation hover: {error}</div>}
+    {rig.visible.map(panel => <AnnotationViewport key={panel.id} handle={handle} panel={panel} records={records}
+      interactive={interactive} hovered={panel === rig.active ? hovered : null} movingId={movingId} onMove={onMove} />)}
+  </div>;
+}
+
+function AnnotationViewport({ handle: shared, panel, records, interactive, hovered, movingId, onMove }: {
+  handle: SelectionHandle; panel: Viewport; records: readonly AnnotationRecord[]; interactive: boolean; hovered: number | null;
+  movingId: number | null; onMove(id: number, position: Vec3): void;
+}) {
+  const handle = useViewportHandle(shared, panel);
   const manager = useRef<ViewerAnnotationManager | null>(null);
   const container = useRef<HTMLDivElement>(null);
   const entities = useRef(new Map<number, Entity>());
@@ -21,23 +37,19 @@ export function AnnotationLayer({ handle, records, interactive, hoverRegions, mo
   const [moveError, setMoveError] = useState<string | null>(null);
   const commitMove = useEffectEvent(onMove);
   useEffect(() => {
-    // The React camera applies its initial layer list in an effect. Attach the
-    // manager on the next frame so that initialization cannot overwrite its layers.
-    const frame = requestAnimationFrame(() => {
-      const entity = new Entity("Annotations"); root.current = entity;
-      handle.space.root.addChild(entity); entity.addComponent("script");
-      const color = new Color().fromString(getComputedStyle(container.current!).getPropertyValue("--gold").trim());
-      const annotationManager = entity.script!.create(ViewerAnnotationManager, { properties: {
-        container: container.current!, viewCamera: handle.camera().entity, hotspotColor: color,
-        hoverColor: Color.WHITE, behindOpacity: 1
-      } }) as unknown as ViewerAnnotationManager;
-      manager.current = annotationManager;
-      setReady(value => value + 1);
-    });
-    const hotspotAdded = () => setReady(value => value + 1);
+    const entity = new Entity("Annotations"); root.current = entity;
+    handle.space.root.addChild(entity); entity.addComponent("script");
+    const color = new Color().fromString(getComputedStyle(container.current!).getPropertyValue("--gold").trim());
+    const annotationManager = entity.script!.create(ViewerAnnotationManager, { properties: {
+      container: container.current!, viewCamera: handle.camera().entity, hotspotColor: color,
+      hoverColor: Color.WHITE, behindOpacity: 1
+    } }) as unknown as ViewerAnnotationManager;
+    manager.current = annotationManager;
+    setReady(value => value + 1);
+    const hotspotAdded = (annotation: Annotation) => { if (annotation.entity.parent === root.current) setReady(value => value + 1); };
     handle.app.on("annotation:add", hotspotAdded);
     const destroy = () => {
-      cancelAnimationFrame(frame); handle.app.off("annotation:add", hotspotAdded);
+      handle.app.off("annotation:add", hotspotAdded);
       root.current?.destroy(); entities.current.clear(); root.current = null; manager.current = null;
     };
     handle.app.on("destroy", destroy);
@@ -142,6 +154,9 @@ export function AnnotationLayer({ handle, records, interactive, hoverRegions, mo
       overlay.removeEventListener("pointercancel", cancel, true);
     };
   }, [handle, records, ready, movingId]);
-  return <><div ref={container} className="annotation-overlay" data-interactive={interactive} />
-    {(error || moveError) && <div className="selection-error" role="alert">{moveError ?? `Annotation hover: ${error}`}</div>}</>;
+  const rect = panel.camera.rect;
+  return <><div ref={container} className="annotation-viewport" data-interactive={interactive}
+    onPointerDownCapture={() => handle.viewports.activate(panel)}
+    style={{ left: `${rect.x * 100}%`, top: `${(1 - rect.y - rect.w) * 100}%`, width: `${rect.z * 100}%`, height: `${rect.w * 100}%` }} />
+    {moveError && <div className="selection-error" role="alert">{moveError}</div>}</>;
 }

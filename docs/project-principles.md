@@ -33,6 +33,7 @@ Give resources clear owners and release them before the graphics device is destr
 - Use icon tools and contextual actions. Selection actions belong at the bottom right.
 - Q/Escape returns to navigation; ordinary typing and text editing retain their shortcuts.
 - Allow navigation during tool use: Alt/Option-left-drag or right-drag orbits, middle-drag pans, and the wheel zooms.
+- Viewer layouts belong to the shared workspace. Route tools through the active viewport rather than adding independent multi-view implementations inside each tool. Share model/document data and allocate camera-facing visuals only for visible views.
 - F frames the relevant selection/object or measurement and updates the orbit pivot.
 - Share selection modifiers and Ctrl/Cmd+Z / Ctrl/Cmd+Shift+Z undo/redo behavior across formats.
 - Support select → color → annotate directly, without requiring Q between tools. Switching tools preserves selection; annotations retain independent region snapshots.

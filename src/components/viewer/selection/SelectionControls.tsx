@@ -13,6 +13,8 @@ import { SelectionColorPicker } from "./SelectionColorPicker";
 import { focusSelection } from "./focusSelection";
 import { ViewControls } from "../views/ViewControls";
 import type { NamedView } from "../views/viewFrame";
+import { SavedPresets } from "../presets/SavedPresets";
+import type { NamedSection } from "../section/SectionControls";
 import { SectionControls } from "../section/SectionControls";
 
 const tools: { tool: SelectionTool; label: string; path: string }[] = [
@@ -34,7 +36,8 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
 }) {
   const [summary, setSummary] = useState(handle?.selection.summary);
   const [xray, setXray] = useState(false);
-  const [views, setViews] = useState<NamedView[]>([]);
+  const views = useMemo(() => new SavedPresets<NamedView>(), [handle]);
+  const sections = useMemo(() => new SavedPresets<NamedSection>(), [handle]);
   const [selectionShape, setSelectionShape] = useState<SelectionShape>("rectangle");
   const [brushSize, setBrushSize] = useState(32);
   const [busy, setBusy] = useState(false);
@@ -49,7 +52,6 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
   const documentChanged = useCallback(() => refreshDocument(value => value + 1), []);
   useEffect(() => {
     setSummary(handle?.selection.summary); setError(null); setBusy(false); setBusyLabel("Selecting…");
-    setViews([]);
     return () => { generation.current++; };
   }, [handle]);
   useEffect(() => {
@@ -58,6 +60,10 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
     handle.space.on("change", changed);
     return () => { handle.space.off("change", changed); };
   }, [handle]);
+  useEffect(() => {
+    views.on("change", documentChanged); sections.on("change", documentChanged);
+    return () => { views.off("change", documentChanged); sections.off("change", documentChanged); };
+  }, [views, sections, documentChanged]);
   const unavailable = disabled || !handle || busy;
   const selecting = tool === "select";
   useEffect(() => {
@@ -117,6 +123,13 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
     catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)); }
   }, [paint]);
   const groups: ViewerTreeGroup[] = handle && history && measurement && annotations ? [
+    { id: "views", label: "Views", items: views.records,
+      onRename: (id, name) => views.rename(id, name),
+      onActivate: id => { onToolChange("views"); views.open(id); } },
+    { id: "sections", label: "Sections", items: sections.records.map(item => ({ ...item, visible: sections.activeId === item.id })),
+      onRename: (id, name) => sections.rename(id, name),
+      onActivate: id => { onToolChange("section"); sections.open(id); },
+      onVisible: (id, visible) => visible ? sections.open(id) : sections.close() },
     { id: "selections", label: "Selections", items: handle.selection.areas,
       onRename: (id, name) => { setSummary(history.perform(() => handle.selection.renameArea(id, name))); documentChanged(); },
       onVisible: (id, visible) => { setSummary(history.perform(() => handle.selection.setAreaVisible(id, visible))); documentChanged(); },
@@ -163,12 +176,12 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
     </div>}
     {error && <div className="selection-error" role="alert">{error}</div>}
     {groups.length > 0 && <ViewerTree groups={groups} />}
-    {selecting && !unavailable && <SelectionGesture key={selectionShape} tool={selectionShape} brushSize={brushSize} onSelect={onSelect} />}
+    {selecting && !unavailable && <SelectionGesture handle={handle!} key={selectionShape} tool={selectionShape} brushSize={brushSize} onSelect={onSelect} />}
     {handle && annotations && <AnnotationControls handle={handle} annotations={annotations} active={tool === "annotate" && !disabled} interactive={tool === "navigate" || tool === "annotate"}
       hoverRegions={!disabled && (tool === "navigate" || tool === "annotate" || tool === "select")}
       onChange={documentChanged} />}
     {handle && measurement && <MeasurementControls handle={handle} measurement={measurement} active={tool === "measure" && !disabled} onChange={documentChanged} />}
-    {handle && <ViewControls handle={handle} active={tool === "views" && !disabled} views={views} onViewsChange={setViews} />}
-    {handle && <SectionControls handle={handle} active={tool === "section" && !disabled} views={views} />}
+    {handle && <ViewControls handle={handle} active={tool === "views" && !disabled} views={views} />}
+    {handle && <SectionControls handle={handle} active={tool === "section" && !disabled} views={views.records} sections={sections} />}
   </>;
 }

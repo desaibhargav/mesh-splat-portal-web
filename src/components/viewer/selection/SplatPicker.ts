@@ -5,6 +5,9 @@ import {
 import { setSectionPlane } from "../section/sectionPlane";
 import { splatSectionFragment, splatSectionVertex } from "../section/sectionShaders";
 
+import { renderPickView } from "../picking/PickView";
+import { viewportPoint } from "../viewports/ViewerViewports";
+
 type PickerBuffers = { colorBuffer: Texture; renderTarget: RenderTarget };
 
 // PlayCanvas's public Picker handles unified-splat render preparation and depth.
@@ -21,17 +24,20 @@ export class SplatPicker {
   }
 
   async pick(camera: CameraComponent, u: number, v: number): Promise<number | null> {
+    const local = viewportPoint(camera, u, v); u = local.u; v = local.v;
+    if (u < 0 || u >= 1 || v < 0 || v >= 1) return null;
     const device = this.app.graphicsDevice;
-    const signature = [device.width, device.height, ...camera.projectionMatrix.data, ...camera.viewMatrix.data].join();
+    const width = Math.max(1, Math.floor(device.width * camera.rect.z)), height = Math.max(1, Math.floor(device.height * camera.rect.w));
+    const signature = [width, height, ...camera.projectionMatrix.data, ...camera.viewMatrix.data].join();
     if (signature !== this.signature) {
-      this.picker.resize(device.width, device.height);
-      this.picker.prepare(camera, this.app.scene, this.layers.map(id => this.app.scene.layers.getLayerById(id)!));
+      this.picker.resize(width, height);
+      renderPickView(camera, () => this.picker.prepare(camera, this.app.scene, this.layers.map(id => this.app.scene.layers.getLayerById(id)!)));
       this.signature = signature;
     }
-    const x = Math.floor(u * device.width), y = Math.floor(v * device.height);
+    const x = Math.floor(u * width), y = Math.floor(v * height);
     const buffers = this.picker as unknown as PickerBuffers;
     const pixels = await buffers.colorBuffer.read(
-      x, device.isWebGPU ? y : device.height - y - 1, 1, 1,
+      x, device.isWebGPU ? y : height - y - 1, 1, 1,
       { immediate: true, renderTarget: buffers.renderTarget }
     ) as Uint8Array;
     if (this.disposed) return null;

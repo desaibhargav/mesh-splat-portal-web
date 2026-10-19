@@ -2,10 +2,11 @@ import { Entity } from "@playcanvas/react";
 import { GSplat } from "@playcanvas/react/components";
 import { useApp, useSplat } from "@playcanvas/react/hooks";
 import { useEffect, useMemo, useState } from "react";
-import { Color, Vec3, type BoundingBox, type Entity as PlayCanvasEntity } from "playcanvas";
+import { Color, Vec3, type BoundingBox, type CameraComponent, type Entity as PlayCanvasEntity } from "playcanvas";
+import { ViewerViewports } from "./viewports/ViewerViewports";
 import { ViewerSpace } from "./ViewerSpace";
 import type { ViewerStatus } from "./ArtifactViewer";
-import { frameBounds, interactiveCamera, ViewerCamera, type ViewerView } from "./ViewerCamera";
+import { frameBounds, ViewerCamera, type ViewerView } from "./ViewerCamera";
 import { SplatSelection } from "./selection/SplatSelection";
 import type { SelectionHandle } from "./selection/types";
 
@@ -16,15 +17,17 @@ export function SplatViewer({ url, onStatus, onSelectionReady }: {
   const app = useApp();
   const result = useSplat(url);
   const view = useMemo(() => getSplatView(result.asset?.resource), [result.asset]);
+  const [camera, setCamera] = useState<CameraComponent | null>(null);
   const [entity, setEntity] = useState<PlayCanvasEntity | null>(null);
 
   useEffect(() => result.subscribe(({ progress }) => onStatus({ loading: true, progress, error: null })), [result.subscribe, onStatus]);
   useEffect(() => onStatus({ loading: result.loading, progress: result.loading ? 0 : 1, error: result.error }), [result.loading, result.error, onStatus]);
   useEffect(() => {
-    if (!entity || !result.asset) return;
+    if (!entity || !result.asset || !camera) return;
+    let viewports: ViewerViewports | undefined;
     let space: ViewerSpace | undefined;
     let selection: SplatSelection | undefined;
-    const dispose = () => { cancelAnimationFrame(frame); selection?.destroy(); selection = undefined; space?.destroy(); space = undefined; };
+    const dispose = () => { cancelAnimationFrame(frame); selection?.destroy(); selection = undefined; space?.destroy(); space = undefined; viewports?.destroy(); viewports = undefined; };
     app.on("destroy", dispose);
     const frame = requestAnimationFrame(() => {
       try {
@@ -34,7 +37,9 @@ export function SplatViewer({ url, onStatus, onSelectionReady }: {
         tint.a = 0.5;
         selection = new SplatSelection(entity.gsplat, tint);
         space = new ViewerSpace(entity, selection.bounds(null)!.center.clone());
-        onSelectionReady({ app, space, selection, camera: () => interactiveCamera(app) });
+        viewports = new ViewerViewports(app, camera);
+        const rig = viewports;
+        onSelectionReady({ app, space, viewports: rig, selection, camera: () => rig.active.camera });
       } catch (error) {
         onStatus({ loading: false, progress: 1, error: `Selection unavailable: ${error instanceof Error ? error.message : String(error)}` });
       }
@@ -43,7 +48,7 @@ export function SplatViewer({ url, onStatus, onSelectionReady }: {
       app.off("destroy", dispose);
       dispose(); onSelectionReady(null);
     };
-  }, [app, entity, result.asset, onSelectionReady, onStatus]);
+  }, [app, entity, result.asset, camera, onSelectionReady, onStatus]);
 
   return (
     <>
@@ -52,7 +57,7 @@ export function SplatViewer({ url, onStatus, onSelectionReady }: {
           <GSplat asset={result.asset} key={result.asset.id} unified />
         </Entity>
       )}
-      {result.asset && <ViewerCamera view={view} />}
+      {result.asset && <ViewerCamera view={view} onReady={setCamera} />}
     </>
   );
 }
