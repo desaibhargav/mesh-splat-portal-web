@@ -15,6 +15,8 @@ export function ViewControls({ handle, active, views }: {
   const [picking, setPicking] = useState(false);
   const [frame, setFrame] = useState<ViewFrame | null>(null);
   const before = useRef<NamedView | null>(null);
+  const savedName = views.records.find(record => record.id === editing)?.name;
+  useEffect(() => { if (savedName !== undefined) setName(savedName); }, [savedName]);
 
   function snapshot(): NamedView {
     return { id: 0, name: "", frame: captureFrame(handle.camera()), assetRotation: handle.space.rotation };

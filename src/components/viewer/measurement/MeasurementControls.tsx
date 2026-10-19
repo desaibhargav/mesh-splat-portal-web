@@ -27,6 +27,7 @@ export function MeasurementControls({ handle, measurement, active, onChange }: {
   const [, refresh] = useState(0);
   const redraw = () => { refresh(value => value + 1); onChange(); };
   const selected = measurement.records.find(record => record.id === selectedId);
+  useEffect(() => { if (selected) setName(selected.name); }, [selected?.name]);
   function open(id: number) {
     const record = measurement.records.find(record => record.id === id)!;
     setSelectedId(id); setName(record.name); setEditError(null);

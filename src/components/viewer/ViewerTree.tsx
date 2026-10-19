@@ -3,7 +3,7 @@ import { useState } from "react";
 export interface ViewerTreeItem { id: number; name: string; visible?: boolean }
 export interface ViewerTreeGroup {
   id: string; label: string; items: readonly ViewerTreeItem[];
-  onRename(id: number, name: string): void; onVisible?(id: number, visible: boolean): void; onActivate?(id: number): void;
+  onRename(id: number, name: string): void; onVisible?(id: number, visible: boolean): void;
 }
 
 export function ViewerTree({ groups }: { groups: readonly ViewerTreeGroup[] }) {
@@ -35,8 +35,7 @@ export function ViewerTree({ groups }: { groups: readonly ViewerTreeGroup[] }) {
                 if (event.key === "Enter") event.currentTarget.blur();
                 else if (event.key === "Escape") setEditing(null);
               }} onBlur={() => commit(group)} aria-label={`Rename ${item.name}`} /> :
-            <button className="viewer-tree-name" title={group.onActivate ? "Activate; double-click to rename" : "Double-click to rename"}
-              onClick={() => group.onActivate?.(item.id)}
+            <button className="viewer-tree-name" title="Double-click to rename"
               onDoubleClick={() => setEditing({ group: group.id, item: item.id, name: item.name })}>{item.name}</button>}
           <button className="viewer-tree-rename" title={`Rename ${item.name}`} aria-label={`Rename ${item.name}`}
             onClick={() => setEditing({ group: group.id, item: item.id, name: item.name })}>✎</button>

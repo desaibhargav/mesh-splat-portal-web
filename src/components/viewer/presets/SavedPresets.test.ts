@@ -26,3 +26,20 @@ it("updates a saved entry without duplicating it and closes without deleting it"
   expect(presets.records).toEqual([{ id: first.id, name: "Updated orientation" }]);
   expect(presets.activeId).toBeNull();
 });
+
+it("toggles scene visibility without opening an editor or restoring a camera", () => {
+  const presets = new SavedPresets<{ id: number; name: string }>();
+  const opened = vi.fn(), visibility = vi.fn();
+  presets.on("open", opened); presets.on("visibility", visibility);
+  const first = presets.save({ name: "First cut" });
+  const second = presets.save({ name: "Second cut" });
+  presets.setVisible(first.id, true);
+  expect(presets.activeId).toBe(first.id);
+  expect(visibility.mock.calls.at(-1)![0]).toBe(first);
+  presets.setVisible(second.id, false);
+  expect(presets.activeId).toBe(first.id);
+  presets.setVisible(first.id, false);
+  expect(visibility.mock.calls.at(-1)![0]).toBeNull();
+  expect(presets.activeId).toBeNull();
+  expect(opened).not.toHaveBeenCalled();
+});

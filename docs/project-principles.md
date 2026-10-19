@@ -30,6 +30,7 @@ Give resources clear owners and release them before the graphics device is destr
 
 ## Consistent editing workflow
 
+- Use explicit Save actions and a saved-items box above each tool’s options for selections, annotations, measurements, views, and sections. Open entries there to edit/update/delete them. The model tree inventories scene records and controls visibility; renaming is allowed there and must synchronize with the saved list and any open editor. Tree rows must not activate tool editors or move the camera.
 - Use icon tools and contextual actions. Selection actions belong at the bottom right.
 - Q/Escape returns to navigation; ordinary typing and text editing retain their shortcuts.
 - Allow navigation during tool use: Alt/Option-left-drag or right-drag orbits, middle-drag pans, and the wheel zooms.

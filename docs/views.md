@@ -11,7 +11,7 @@ The shared **Views** tool saves a non-destructive asset orientation and camera a
 5. **Save view** creates an entry; **Update view** updates the entry being edited. Both record asset rotation, camera origin/orbit target, orientation, distance, FOV, projection, and orthographic height. **Cancel** or leaving the tool with an unsaved draft restores the previous arrangement. Saving commits the arrangement for continued use of other tools. The minus button deletes an entry.
 6. In [Cross section](sectioning.md), choosing a saved view restores its asset orientation and camera. Choose the cutting-plane normal there: the saved viewing direction or world X/Y/Z, then offset/tilt/flip it independently of the asset.
 
-Views also appear in the model tree, where they can be restored for editing or renamed. See [four-view workspace](viewports.md) for shared panel navigation and tool composition.
+Views reopen for editing from the saved box above the tool options. They also appear in the model tree, where they can be renamed without restoring the view; the saved box and open editor share the same name. See [four-view workspace](viewports.md) for shared panel navigation and tool composition.
 
 Views remain session-local and disappear when leaving or refreshing the asset. They do not duplicate or overwrite model geometry, selections, colors, measurements, or annotations. Complete working-document persistence/export remains deferred.
 

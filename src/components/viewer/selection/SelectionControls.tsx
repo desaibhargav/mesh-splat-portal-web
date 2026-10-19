@@ -8,7 +8,8 @@ import { SelectionGesture } from "./SelectionGesture";
 import type { SelectionHandle, SelectionRegion, SelectionShape, SelectionTool } from "./types";
 import type { SelectionOperation } from "./rectangle";
 import { SelectionHistory, unpackSelection } from "./SelectionHistory";
-import { encodeColor } from "./selectionColors";
+import { SavedItems } from "../SavedItems";
+import { encodeColor, saveSelectionArea } from "./selectionColors";
 import { SelectionColorPicker } from "./SelectionColorPicker";
 import { focusSelection } from "./focusSelection";
 import { ViewControls } from "../views/ViewControls";
@@ -35,6 +36,8 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
   handle: SelectionHandle | null; tool: SelectionTool; onToolChange(tool: SelectionTool): void; disabled: boolean;
 }) {
   const [summary, setSummary] = useState(handle?.selection.summary);
+  const [selectionName, setSelectionName] = useState("");
+  const [editingSelection, setEditingSelection] = useState<number | null>(null);
   const [xray, setXray] = useState(false);
   const views = useMemo(() => new SavedPresets<NamedView>(), [handle]);
   const sections = useMemo(() => new SavedPresets<NamedSection>(), [handle]);
@@ -130,20 +133,38 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
       handle.selection.setAreaVisible(id, true);
       return handle.selection.restore(unpackSelection(area.snapshot));
     }));
+    setEditingSelection(id); setSelectionName(area.name);
     documentChanged();
   }
+  function saveSelection() {
+    if (!handle || !history || unavailable) return;
+    const selection = handle.selection;
+    setSummary(history.perform(() => selection.restore(selection.state, selection.colors,
+      saveSelectionArea(selection.areas, selection.state, selectionName, editingSelection))));
+    setEditingSelection(null); setSelectionName(""); documentChanged();
+  }
+  function removeSelection(id: number) {
+    if (!handle || !history || unavailable) return;
+    const selection = handle.selection;
+    const state = editingSelection === id
+      ? { masks: selection.state.masks.map(mask => new Uint8Array(mask.length)), isolated: false } : selection.state;
+    setSummary(history.perform(() => selection.restore(state, selection.colors, selection.areas.filter(area => area.id !== id))));
+    if (editingSelection === id) { setEditingSelection(null); setSelectionName(""); }
+    documentChanged();
+  }
+  const savedSelections = handle?.selection.areas.filter(area => area.saved) ?? [];
+  const editingSavedSelection = savedSelections.some(area => area.id === editingSelection);
+  const savedSelectionName = savedSelections.find(area => area.id === editingSelection)?.name;
+  useEffect(() => { if (savedSelectionName !== undefined) setSelectionName(savedSelectionName); }, [savedSelectionName]);
   const groups: ViewerTreeGroup[] = handle && history && measurement && annotations ? [
     { id: "views", label: "Views", items: views.records,
-      onRename: (id, name) => views.rename(id, name),
-      onActivate: id => { onToolChange("views"); views.open(id); } },
+      onRename: (id, name) => views.rename(id, name) },
     { id: "sections", label: "Sections", items: sections.records.map(item => ({ ...item, visible: sections.activeId === item.id })),
       onRename: (id, name) => sections.rename(id, name),
-      onActivate: id => { onToolChange("section"); sections.open(id); },
-      onVisible: (id, visible) => visible ? sections.open(id) : sections.close() },
-    { id: "selections", label: "Selections", items: handle.selection.areas,
+      onVisible: (id, visible) => sections.setVisible(id, visible) },
+    { id: "selections", label: "Selections", items: savedSelections,
       onRename: (id, name) => { setSummary(history.perform(() => handle.selection.renameArea(id, name))); documentChanged(); },
-      onVisible: (id, visible) => { setSummary(history.perform(() => handle.selection.setAreaVisible(id, visible))); documentChanged(); },
-      onActivate: activateSelection },
+      onVisible: (id, visible) => { setSummary(history.perform(() => handle.selection.setAreaVisible(id, visible))); documentChanged(); } },
     { id: "measurements", label: "Measurements", items: measurement.records.filter(record => record.saved),
       onRename: (id, name) => { measurement.rename(id, name); documentChanged(); },
       onVisible: (id, visible) => { measurement.setVisible(id, visible); documentChanged(); } },
@@ -161,12 +182,8 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
       <span role="status">{busy ? busyLabel : summary ? `${summary.selected.toLocaleString()} / ${summary.total.toLocaleString()} selected` : "Preparing selection…"}</span>
     </div>
     {selecting && <div className="annotation-panels selection-panels">
-      {!!handle?.selection.areas.length && <div className="selection-actions annotation-list selection-list" role="group" aria-label="Saved selections">
-        <strong>Selections</strong>
-        <ol>{handle.selection.areas.map(area => <li key={area.id}>
-          <button className="annotation-edit" disabled={unavailable} onClick={() => activateSelection(area.id)}>{area.name}</button>
-        </li>)}</ol>
-      </div>}
+      <SavedItems label="Selections" items={savedSelections} selectedId={editingSelection} disabled={unavailable}
+        className="selection-list" onOpen={activateSelection} onRemove={removeSelection} />
       <div className="selection-actions selection-options" role="group" aria-label="Selection actions">
         <fieldset className="selection-shapes" disabled={unavailable}>
           <legend>Selection type</legend>
@@ -178,6 +195,14 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
           onClick={() => setXray(!xray)}>X-ray {xray ? "on" : "off"}</button>
         <button disabled={unavailable || !summary?.selected} aria-pressed={summary?.isolated ?? false}
           onClick={() => { setSummary(history!.perform(() => handle!.selection.toggleIsolation())); documentChanged(); }}>{summary?.isolated ? "Show all" : "Isolate"}</button>
+        <label>Selection name<input aria-label="Selection name" value={selectionName} disabled={unavailable}
+          onChange={event => setSelectionName(event.target.value)} /></label>
+        <button disabled={unavailable || !summary?.selected || !selectionName.trim()} onClick={saveSelection}>
+          {editingSavedSelection ? "Update selection" : "Save selection"}
+        </button>
+        {editingSavedSelection && <button disabled={unavailable} onClick={() => {
+          setEditingSelection(null); setSelectionName(""); setSummary(history!.perform(() => handle!.selection.clear())); documentChanged();
+        }}>New selection</button>}
         <SelectionColorPicker disabled={unavailable || !summary?.selected}
           onApply={applyColor}
           onReset={() => paint(0)} />

@@ -17,6 +17,13 @@ export class SavedPresets<T extends { id: number; name: string }> extends EventH
     if (!record) return;
     this.activeId = id; this.fire("open", record); this.fire("change");
   }
+  // Visibility applies scene state without invoking the editor's open operation.
+  setVisible(id: number, visible: boolean) {
+    const record = this.records.find(item => item.id === id);
+    if (!record || (!visible && this.activeId !== id)) return;
+    this.activeId = visible ? id : null;
+    this.fire("visibility", visible ? record : null); this.fire("change");
+  }
   close() { this.activeId = null; this.fire("close"); this.fire("change"); }
   rename(id: number, name: string) {
     if (!name.trim()) return;

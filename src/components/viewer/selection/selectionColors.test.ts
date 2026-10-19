@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { currentSelectionArea, decodeColor, encodeColor, paintSelection, recordSelectionArea, recordSelectionGesture, updateSelectionAreas, visiblePaint, visibleSelections } from "./selectionColors";
+import { currentSelectionArea, decodeColor, encodeColor, paintSelection, recordSelectionArea, recordSelectionGesture, saveSelectionArea, updateSelectionAreas, visiblePaint, visibleSelections } from "./selectionColors";
 
 it("paints only selected primitives and keeps previous color buffers immutable", () => {
   const original = [new Uint32Array([0, 1, 0]), new Uint32Array([0, 0])];
@@ -52,4 +52,30 @@ it("records only the area added by each selection gesture", () => {
   const areas = recordSelectionGesture(recordSelectionGesture([], first, "set"), combined, "add", first.masks);
   expect([...areas[0]!.snapshot.masks[0]!.bits]).toEqual([1]);
   expect([...areas[1]!.snapshot.masks[0]!.bits]).toEqual([2]);
+});
+
+it("saves regions explicitly without duplicating masks or losing painted metadata", () => {
+  const state = { masks: [new Uint8Array([255, 0, 255])], isolated: true };
+  const drafts = updateSelectionAreas(recordSelectionArea([], state), [new Uint32Array(3)], state.masks, 2);
+  expect(drafts[0]!.saved).toBeUndefined();
+  const saved = saveSelectionArea(drafts, state, "  Painted region  ", null);
+  expect(saved).toHaveLength(1);
+  expect(saved[0]).toMatchObject({ saved: true, name: "Painted region", color: 2, visible: true });
+  expect(saved[0]!.snapshot).toBe(drafts[0]!.snapshot);
+  expect(saved[0]!.snapshot.isolated).toBe(false);
+  expect(drafts[0]!.saved).toBeUndefined();
+});
+
+it("updates one saved region while retaining independent regions and their snapshots", () => {
+  const first = { masks: [new Uint8Array([255, 0, 0])], isolated: false };
+  const second = { masks: [new Uint8Array([0, 255, 0])], isolated: false };
+  const edited = { masks: [new Uint8Array([0, 0, 255])], isolated: false };
+  const saved = saveSelectionArea(saveSelectionArea([], first, "First", null), second, "Second", null);
+  const withDraft = recordSelectionArea(saved, edited);
+  const updated = saveSelectionArea(withDraft, edited, "Updated", saved[0]!.id);
+  expect(updated).toHaveLength(2);
+  expect(updated.find(area => area.id === saved[1]!.id)).toBe(saved[1]);
+  expect(updated.find(area => area.id === saved[0]!.id)).toMatchObject({ name: "Updated", saved: true });
+  expect(updated.find(area => area.id === saved[0]!.id)!.snapshot).toBe(withDraft.at(-1)!.snapshot);
+  expect(saveSelectionArea(updated, edited, "  ", null)).toBe(updated);
 });

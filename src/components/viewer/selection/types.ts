@@ -12,7 +12,8 @@ export type SelectionCamera = Pick<CameraComponent, "projectionMatrix" | "viewMa
 export interface SelectionState { masks: Uint8Array[]; isolated: boolean }
 export interface SelectionSnapshot { masks: { bits: Uint8Array; length: number }[]; isolated: boolean }
 export interface SelectionArea {
-  id: number; name: string; visible: boolean; snapshot: SelectionSnapshot; color: number;
+  // Gesture/paint regions remain drafts until explicitly saved.
+  id: number; name: string; visible: boolean; snapshot: SelectionSnapshot; color: number; saved?: boolean;
 }
 export type VisibilityTest = (id: number, u: number, v: number, w: number, z: number) => boolean;
 export interface SelectionController {

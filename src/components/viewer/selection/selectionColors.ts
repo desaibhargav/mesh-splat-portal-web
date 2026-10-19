@@ -59,7 +59,21 @@ export function recordSelectionArea(areas: readonly SelectionArea[], state: Sele
   return [...areas, { id, name: `Selection ${id}`, visible: true, color: 0, snapshot }];
 }
 
-// Saved areas describe one selection gesture, while the active mask may contain
+// Promote the current region, reusing its packed mask and paint metadata. Editing
+// a saved entry replaces that entry; unchanged regions and snapshots stay shared.
+export function saveSelectionArea(areas: readonly SelectionArea[], state: SelectionState,
+  name: string, editing: number | null): readonly SelectionArea[] {
+  if (!name.trim() || !state.masks.some(mask => mask.some(Boolean))) return areas;
+  const snapshot = packSelection({ masks: state.masks, isolated: false });
+  const matching = areas.find(area => selectionsEqual(area.snapshot, snapshot));
+  const previous = areas.find(area => area.id === editing) ?? matching;
+  const record: SelectionArea = { id: previous?.id ?? areas.reduce((max, area) => Math.max(max, area.id), 0) + 1,
+    name: name.trim(), saved: true, visible: true, color: matching?.color ?? 0,
+    snapshot: matching?.snapshot ?? snapshot };
+  return [...areas.filter(area => area.id !== record.id && (area.saved || area !== matching)), record];
+}
+
+// Draft areas describe one selection gesture, while the active mask may contain
 // several Shift-added gestures. Keeping those concepts separate lets a user
 // address, color, annotate, and hover each area independently.
 export function recordSelectionGesture(areas: readonly SelectionArea[], state: SelectionState,

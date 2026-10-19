@@ -23,6 +23,8 @@ export function AnnotationControls({ handle, annotations, active, interactive, h
   const [kind, setKind] = useState<AnnotationKind | null>(null);
   const [step, setStep] = useState<AnnotationStep>(null);
   const redraw = () => refresh(value => value + 1);
+  const savedTitle = annotations.records.find(record => record.id === draft?.id)?.title;
+  useEffect(() => { if (savedTitle !== undefined) setDraft(current => current && { ...current, title: savedTitle }); }, [savedTitle]);
 
   function createAnnotation() { setDraft(newDraft()); setKind(null); setStep("choose"); }
   function editAnnotation(record: AnnotationRecord) {
