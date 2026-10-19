@@ -60,6 +60,8 @@ Integration and composability tests are required for new features. Identify the 
 
 Commit and push reusable code, then pull and deploy on AWS. Heavy derivative and thumbnail processing currently runs on macOS; transfer outputs with checksums and publish with the catalog script. Keep AWS focused on serving. Read current deployment configuration rather than reusing historical public IPs. Keep temporary processing/browser scripts outside the repositories; do not commit original assets, generated derivatives, or private manifests as code.
 
+The Mac processing arrangement is temporary; the intended future home for the complete pipeline is AWS. Preserve Linux portability and document platform-specific dependencies and unverified behavior as explicit migration gaps. Do not equate successful AWS serving with tested AWS processing. Before moving processing, verify clean native builds, the complete derivative/thumbnail/publication workflow, and resource capacity on the target instance; the backend README tracks the currently unverified RPly/Linux migration checks.
+
 The owner prefers autonomous completion of authorized work without repeated confirmation. This does not bypass actual environment permission requirements or authorize unrelated destructive actions.
 
 ## Deferred work
