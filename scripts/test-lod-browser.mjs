@@ -264,16 +264,7 @@ try {
   holdFineMesh = true;
   await page.goto(`${base}/artifacts/${fixtures[0].id}`);
   await page.waitForSelector('button[aria-label="Four views"]');
-  const pendingHandle = await handle(), pendingPoint = await point(.4, .4);
-  await page.mouse.move(pendingPoint.x, pendingPoint.y);
-  for (let frame = 0; !delayedMesh && frame < 120; frame++) {
-    if (frame % 8 === 0) {
-      const deltaY = await pendingHandle.evaluate(h => -h.camera().entity.getPosition().distance(h.selection.bounds(null).center) * .15 /
-        h.camera().entity.script.get('cameraControls').zoomSpeed);
-      await page.mouse.wheel({ deltaY });
-    }
-    await settle();
-  }
+  for (let frame = 0; !delayedMesh && frame < 120; frame++) await settle();
   assert.ok(delayedMesh, 'No finer mesh download was intercepted');
   await page.locator('.back-link').click(); await page.waitForSelector('.catalog-page');
   await delayedMesh.continue();
