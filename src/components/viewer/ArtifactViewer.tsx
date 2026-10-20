@@ -1,4 +1,3 @@
-import { LodData } from "./lod/LodData";
 import { ViewportLayout, ViewportToggle } from "./viewports/ViewportLayout";
 import { Application } from "@playcanvas/react";
 import { useEffect, useRef, useState } from "react";
@@ -13,27 +12,11 @@ export type ViewerStatus = { loading: boolean; progress: number; error: string |
 export function ArtifactViewer({ artifact }: { artifact: Artifact }) {
   const frame = useRef<HTMLElement>(null);
   const [status, setStatus] = useState<ViewerStatus>({ loading: true, progress: 0, error: null });
-  const [lod, setLod] = useState<LodData | null>(null);
-  const [lodReady, setLodReady] = useState(!artifact.lodUrl);
   const [fullscreen, setFullscreen] = useState(false);
   const [selection, setSelection] = useState<SelectionHandle | null>(null);
   const [tool, setTool] = useState<SelectionTool>("navigate");
   const selecting = tool !== "navigate";
   function changeTool(next: SelectionTool) { setTool(next); }
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setLod(null); setLodReady(!artifact.lodUrl);
-    if (artifact.lodUrl) {
-      void LodData.load(artifact.lodUrl, controller.signal).then(data => {
-        if (controller.signal.aborted) return;
-        setLod(data); setLodReady(true);
-      }).catch(error => {
-        if (!controller.signal.aborted) setStatus({ loading: false, progress: 0, error: String(error) });
-      });
-    }
-    return () => controller.abort();
-  }, [artifact.lodUrl]);
 
   useEffect(() => {
     const updateFullscreen = () => setFullscreen(document.fullscreenElement === frame.current);
@@ -68,8 +51,8 @@ export function ArtifactViewer({ artifact }: { artifact: Artifact }) {
       <SelectionControls handle={selection} tool={tool} onToolChange={changeTool} disabled={status.loading || Boolean(status.error)} />
       <div className="viewer-canvas">
         <Application graphicsDeviceOptions={{ antialias: artifact.type === "mesh" }}>
-          {lodReady && (artifact.type === "mesh" ? <MeshViewer url={artifact.contentUrl} {...(lod ? { lod } : {})} onStatus={setStatus} onSelectionReady={setSelection} /> :
-            <SplatViewer url={artifact.contentUrl} {...(lod ? { lod } : {})} onStatus={setStatus} onSelectionReady={setSelection} />)}
+          {artifact.type === "mesh" ? <MeshViewer url={artifact.contentUrl} onStatus={setStatus} onSelectionReady={setSelection} /> :
+            <SplatViewer url={artifact.contentUrl} onStatus={setStatus} onSelectionReady={setSelection} />}
         </Application>
       </div>
       {selection && <ViewportLayout handle={selection} />}
