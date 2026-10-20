@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { Quat } from "playcanvas";
 import type { SelectionHandle } from "../selection/types";
 import { ViewGizmo } from "./ViewGizmo";
@@ -6,7 +6,8 @@ import { captureFrame, copyFrame, restoreView, type NamedView, type ViewFrame } 
 import { ThreePointAlignment } from "./ThreePointAlignment";
 import type { SavedPresets } from "../presets/SavedPresets";
 
-export function ViewControls({ handle, active, views }: {
+export function ViewControls({ handle, active, views, openRequest }: {
+  openRequest: { id: number } | null;
   handle: SelectionHandle; active: boolean; views: SavedPresets<NamedView>;
 }) {
   const [drafting, setDrafting] = useState(false);
@@ -26,7 +27,8 @@ export function ViewControls({ handle, active, views }: {
     before.current = null; setDrafting(false); setPicking(false);
   }
   // Exit cancels an unsaved draft; saved orientation survives tool switching.
-  useEffect(() => { if (!active) cancel(); }, [active]);
+  // Restore a cancelled draft before another tool applies its camera focus.
+  useLayoutEffect(() => { if (!active) cancel(); }, [active]);
   useEffect(() => {
     if (!active || !drafting || picking) return;
     const gizmo = new ViewGizmo(handle);
@@ -49,6 +51,10 @@ export function ViewControls({ handle, active, views }: {
     views.on("open", openRequested);
     return () => { views.off("open", openRequested); };
   }, [views]);
+
+  useEffect(() => {
+    if (active && openRequest) views.open(openRequest.id);
+  }, [active, openRequest, views]);
 
   function save() {
     if (!name.trim()) return;
@@ -81,9 +87,9 @@ export function ViewControls({ handle, active, views }: {
           {picking && frame ? <ThreePointAlignment handle={handle} frame={frame} onAlign={align} onCancel={() => setPicking(false)} /> : <>
             <p>Rotate the asset against the world grid. The current camera is saved with the view.</p>
             <button onClick={() => { setFrame(captureFrame(handle.camera())); setPicking(true); }}>Align to three points</button>
-            <button onClick={() => handle.space.setRotation(Quat.IDENTITY)}>Reset orientation</button>
-            <button disabled={!name.trim()} onClick={save}>{editing === null ? "Save view" : "Update view"}</button>
-            <button onClick={cancel}>Cancel</button>
+            <button className="tool-action-reset" onClick={() => handle.space.setRotation(Quat.IDENTITY)}>Reset orientation</button>
+            <button disabled={!name.trim()} className="tool-action-save" onClick={save}>{editing === null ? "Save view" : "Update view"}</button>
+            <button className="tool-action-reset" onClick={cancel}>Cancel</button>
           </>}
         </>}
         <small>Views last until you leave this asset.</small>

@@ -412,6 +412,80 @@ try {
     await page.click(".viewer-tree-toggle");
     await exact("Return to asset");
     await page.click("[aria-label=\"Segment\"]");
+    // Tree names open the same editors as saved boxes; eye/pencil stay independent.
+    await page.click(".viewer-tree-toggle");
+    await exact("Alpha", ".viewer-tree");
+    check((await doc()).name === "Alpha", "Tree did not enter the segment");
+    check(await page.$(".segment-options"), "Tree did not open Segment");
+    if (await page.$('.viewer-tree[data-open="false"]')) await page.click(".viewer-tree-toggle");
+    const banner = await (await page.$(".workspace-banner")).boundingBox();
+    const canvasBox = await (await page.$(".viewer-canvas canvas")).boundingBox();
+    check(banner.x + banner.width / 2 > canvasBox.x + canvasBox.width / 2, "Return action is not on the right");
+    await exact("Local region", ".viewer-tree");
+    await page.waitForFunction(() => document.querySelector('[aria-label="Selection name"]')?.value === "Local region");
+    check((await doc()).selected > 0, "Tree did not activate the saved selection");
+    await exact("Isolate", ".selection-options");
+    await exact("Show all", ".selection-options");
+    await exact("Brush", ".selection-shapes");
+    await page.focus('[aria-label="Brush size"]'); await page.keyboard.press("End");
+    await pointer("front", .2, .3);
+    check(await page.$eval('[aria-label="Brush size"]', e => e.value === "50"), "Brush does not reach 50 percent");
+    check(await page.$eval('.selection-brush-cursor', e => parseFloat(e.style.width) > 0), "Brush cursor not projected");
+    await exact("Alpha span", ".viewer-tree");
+    await page.waitForFunction(() => document.querySelector('[aria-label="Measurement name"]')?.value === "Alpha span");
+    check(await page.$('.measurement-actions .tool-action-save'), "Tree did not open measurement editor");
+    const rows = await page.$$eval('.measurement-actions .tool-slider', rows => rows.every(row => {
+      const label = row.querySelector('label').getBoundingClientRect(), input = row.querySelector('input').getBoundingClientRect();
+      return Math.abs(label.y + label.height / 2 - input.y - input.height / 2) < 2;
+    }));
+    check(rows, "Slider labels are not inline");
+    await page.focus('[aria-label="Font size"]'); await page.keyboard.press("End");
+    await page.focus('[aria-label="Line width"]'); await page.keyboard.press("End");
+    await page.click('[aria-label="Reset font size"]');
+    check(await page.$eval('[aria-label="Line width"]', e => e.value === "8"), "Font reset changed line width");
+    await page.click('[aria-label="Reset line width"]');
+    await page.screenshot({ path: path.join(output, slug + "-tree-measurement.png") });
+    await page.click('[aria-label="Hide Alpha note"]');
+    await exact("Alpha note", ".viewer-tree");
+    await page.waitForFunction(() => document.querySelector('input[name="title"]')?.value === "Alpha note");
+    await exact("Save annotation", ".annotation-actions");
+    check(await page.$('[aria-label="Hide Alpha note"]'), "Saving tree-opened annotation hid it again");
+    await page.keyboard.press("q");
+    await page.click('[aria-label="Annotate"]');
+    check(await page.$('.annotation-kinds'), "Old tree request reopened after leaving the tool");
+    await exact("Segment reference", ".viewer-tree");
+    await page.waitForFunction(() => document.querySelector('[aria-label="View name"]')?.value === "Segment reference");
+    // Leaving a recalled view cancels its draft before the next tool frames.
+    await exact("Alpha span", ".viewer-tree");
+    await page.waitForFunction(() => document.querySelector('[aria-label="Measurement name"]')?.value === "Alpha span");
+    const centered = await (await appHandle()).evaluate(h => {
+      const node = document.querySelector(".selection-toolbar");
+      let f = node[Object.keys(node).find(k => k.startsWith("__reactFiber$"))];
+      while (f && !f.memoizedProps?.workspaces) f = f.return;
+      const m = f.memoizedProps.workspaces.current.measurement;
+      const record = m.records.find(item => item.name === "Alpha span");
+      const bounds = h.space.worldBounds(m.bounds(record.id));
+      return h.camera().entity.script.get("cameraControls").focusPoint.distance(bounds.center) < 1e-6;
+    });
+    check(centered, "View cancellation overwrote measurement framing");
+    await exact("Segment cut", ".viewer-tree");
+    await page.waitForFunction(() => document.querySelector('[aria-label="Section name"]')?.value === "Segment cut");
+    await page.screenshot({ path: path.join(output, slug + "-tree-section.png") });
+    await exact("Segment reference", ".viewer-tree");
+    await exact("Alpha", ".viewer-tree");
+    check(await (await appHandle()).evaluate(h => h.camera().entity.script.get("cameraControls").focusPoint.distance(h.selection.bounds(null).center) < 1e-6),
+      "View cancellation overwrote segment framing");
+    await page.setViewport({ width: 600, height: 1000, deviceScaleFactor: 1 }); await settle();
+    const separated = await page.evaluate(() => {
+      const a = document.querySelector('.workspace-banner').getBoundingClientRect(), b = document.querySelector('.annotation-panels').getBoundingClientRect();
+      return a.right <= innerWidth && a.left >= 0 && (a.bottom <= b.top || b.bottom <= a.top || a.right <= b.left || b.right <= a.left);
+    });
+    check(separated, "Return card overlaps the tool options on a narrow screen");
+    await page.screenshot({ path: path.join(output, slug + "-return-narrow.png") });
+    await page.setViewport({ width: 1200, height: 1000, deviceScaleFactor: 1 }); await settle();
+
+    await exact("Return to asset");
+    await page.click('[aria-label="Segment"]');
     await page.click("[aria-label=\"Delete Renamed segment\"]");
     await page.click("[aria-label=\"Delete Beta\"]");
     await page.click("[aria-label=\"Delete Alpha\"]");

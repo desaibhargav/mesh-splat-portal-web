@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { brushDiameter } from "./brushDiameter";
 import { rectangleBetween, selectionOperation, type Point, type SelectionOperation } from "./rectangle";
 import type { SelectionHandle, SelectionRegion, SelectionShape } from "./types";
 
@@ -10,11 +11,22 @@ export function SelectionGesture({ handle, tool, brushSize, onSelect }: {
   const overlay = useRef<HTMLDivElement>(null);
   const [points, setPoints] = useState<Point[]>([]);
   const [cursor, setCursor] = useState<Point | null>(null);
+  const [diameter, setDiameter] = useState(1);
   const [size, setSize] = useState({ width: 1, height: 1 });
   useEffect(() => {
     const canvas = overlay.current!.closest(".viewer-frame")!.querySelector<HTMLCanvasElement>(".viewer-canvas canvas")!;
     const previousCursor = canvas.style.cursor, previousTouchAction = canvas.style.touchAction;
     canvas.style.cursor = "crosshair"; canvas.style.touchAction = "none";
+    let bounds = handle.selection.bounds(null);
+    const refreshBounds = () => { bounds = handle.selection.bounds(null); };
+    handle.space.on("change", refreshBounds);
+    let brushPixels = 1;
+    function updateBrush(event: PointerEvent) {
+      if (tool !== "brush" || drag || !bounds) return;
+      const rect = canvas.getBoundingClientRect();
+      const panel = handle.viewports.at((event.clientX - rect.left) / rect.width, (event.clientY - rect.top) / rect.height);
+      if (panel) { brushPixels = brushDiameter(bounds, panel.camera, brushSize); setDiameter(brushPixels); }
+    }
     let drag: { id: number; points: Point[]; rect: { left: number; top: number; width: number; height: number } } | null = null;
     function point(event: PointerEvent): Point {
       const bounds = canvas.getBoundingClientRect();
@@ -30,6 +42,7 @@ export function SelectionGesture({ handle, tool, brushSize, onSelect }: {
     function down(event: PointerEvent) {
       // Leave navigation gestures to PlayCanvas's own canvas input handlers.
       if (!event.isPrimary || event.button !== 0 || event.altKey || drag) return;
+      updateBrush(event);
       event.preventDefault(); event.stopImmediatePropagation();
       canvas.setPointerCapture(event.pointerId);
       const bounds = canvas.getBoundingClientRect();
@@ -43,6 +56,7 @@ export function SelectionGesture({ handle, tool, brushSize, onSelect }: {
       setPoints([...drag.points]);
     }
     function move(event: PointerEvent) {
+      updateBrush(event);
       const next = point(event); setCursor(next);
       if (drag?.id !== event.pointerId) return;
       event.preventDefault(); event.stopImmediatePropagation();
@@ -63,7 +77,7 @@ export function SelectionGesture({ handle, tool, brushSize, onSelect }: {
         context.beginPath(); context.moveTo(path[0]!.x, path[0]!.y);
         for (const p of path.slice(1)) context.lineTo(p.x, p.y);
         if (tool === "lasso") { context.closePath(); context.fill("evenodd"); }
-        else { context.lineWidth = brushSize; context.lineCap = "round"; context.lineJoin = "round"; context.stroke(); }
+        else { context.lineWidth = brushPixels; context.lineCap = "round"; context.lineJoin = "round"; context.stroke(); }
       }
       const r = drag.rect;
       const pixels = context.getImageData(r.left, r.top, r.width, r.height).data;
@@ -90,6 +104,7 @@ export function SelectionGesture({ handle, tool, brushSize, onSelect }: {
       canvas.removeEventListener("pointerleave", leave);
       canvas.removeEventListener("wheel", wheel, true);
       reset();
+      handle.space.off("change", refreshBounds);
       canvas.style.cursor = previousCursor; canvas.style.touchAction = previousTouchAction;
     };
   }, [handle, tool, brushSize, onSelect]);
@@ -98,8 +113,8 @@ export function SelectionGesture({ handle, tool, brushSize, onSelect }: {
     <svg className="selection-drawing" viewBox={`0 0 ${size.width} ${size.height}`} preserveAspectRatio="none">
       {tool === "rectangle" && area && <rect x={area.start.x} y={area.start.y} width={area.end.x - area.start.x} height={area.end.y - area.start.y} />}
       {tool === "lasso" && <polygon points={points.map(p => `${p.x},${p.y}`).join(" ")} />}
-      {tool === "brush" && <polyline points={points.map(p => `${p.x},${p.y}`).join(" ")} style={{ strokeWidth: brushSize, fill: "none", strokeLinecap: "round", strokeLinejoin: "round", opacity: .35 }} />}
+      {tool === "brush" && <polyline points={points.map(p => `${p.x},${p.y}`).join(" ")} style={{ strokeWidth: diameter, fill: "none", strokeLinecap: "round", strokeLinejoin: "round", opacity: .35 }} />}
     </svg>
-    {tool === "brush" && cursor && <span className="selection-brush-cursor" style={{ left: cursor.x, top: cursor.y, width: brushSize, height: brushSize }} />}
+    {tool === "brush" && cursor && <span className="selection-brush-cursor" style={{ left: cursor.x, top: cursor.y, width: diameter, height: diameter }} />}
   </div>;
 }

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import type { Vec3 } from "playcanvas";
+import { BoundingBox, Vec3 } from "playcanvas";
 import { useSurfacePick } from "../picking/useSurfacePick";
 import { decodeColor } from "../selection/selectionColors";
 import { focusSelection } from "../selection/focusSelection";
+import { unpackSelection } from "../selection/SelectionHistory";
 import { snapshotContains } from "../selection/selectionSnapshot";
 import type { SelectionHandle } from "../selection/types";
 import { AnnotationLayer } from "./AnnotationLayer";
@@ -13,9 +14,9 @@ const newDraft = (): AnnotationDraft => ({ title: "", text: "", position: null, 
 type AnnotationKind = "selection" | "point";
 type AnnotationStep = "choose" | "selection" | "marker" | "details" | "drag" | null;
 
-export function AnnotationControls({ handle, annotations, active, interactive, hoverRegions, onChange }: {
+export function AnnotationControls({ handle, annotations, active, interactive, hoverRegions, onChange, openRequest }: {
   handle: SelectionHandle; annotations: Annotations; active: boolean; interactive: boolean; hoverRegions: boolean;
-  onChange(): void;
+  onChange(): void; openRequest: { id: number } | null;
 }) {
   const [, refresh] = useState(0);
   const [draft, setDraft] = useState<AnnotationDraft | null>(null);
@@ -54,9 +55,14 @@ export function AnnotationControls({ handle, annotations, active, interactive, h
   }
 
   useEffect(() => {
-    if (active) createAnnotation();
-    else cancelAnnotation();
-  }, [handle, active]);
+    if (!active) { cancelAnnotation(); return; }
+    const record = annotations.records.find(item => item.id === openRequest?.id);
+    if (!record) { createAnnotation(); return; }
+    annotations.setVisible(record.id, true); editAnnotation({ ...record, visible: true }); onChange();
+    const bounds = record.region ? handle.selection.bounds(unpackSelection(record.region)) :
+      new BoundingBox(handle.space.toWorld(record.position), new Vec3());
+    if (bounds) focusSelection(bounds, handle.camera());
+  }, [handle, active, openRequest]);
 
   const { busy, message } = useSurfacePick({
     handle,
@@ -140,12 +146,12 @@ export function AnnotationControls({ handle, annotations, active, interactive, h
           <button type="button" disabled={!hasSelections} onClick={() => chooseKind("selection")}>Annotate a selection</button>
           <button type="button" onClick={() => chooseKind("point")}>Annotate with a point</button>
         </div>}
-        {(step === "selection" || step === "marker" || step === "drag") && <button type="button" onClick={cancelAnnotation}>Cancel</button>}
+        {(step === "selection" || step === "marker" || step === "drag") && <button type="button" className="tool-action-reset" onClick={cancelAnnotation}>Cancel</button>}
         {draft?.position && step === "details" && <form onSubmit={saveAnnotation}>
           <label>Title<input name="title" required value={draft.title} onChange={event => setDraft({ ...draft, title: event.target.value })} /></label>
           <label>Description<textarea name="description" rows={3} value={draft.text} onChange={event => setDraft({ ...draft, text: event.target.value })} /></label>
-          <button type="submit" disabled={!draft.title.trim() || busy}>Save annotation</button>
-          <button type="button" onClick={cancelAnnotation}>Cancel</button>
+          <button className="tool-action-save" type="submit" disabled={!draft.title.trim() || busy}>Save annotation</button>
+          <button type="button" className="tool-action-reset" onClick={cancelAnnotation}>Cancel</button>
         </form>}
         {!draft && <button type="button" onClick={createAnnotation}>New annotation</button>}
         <small>Annotations last until you leave this asset.</small>

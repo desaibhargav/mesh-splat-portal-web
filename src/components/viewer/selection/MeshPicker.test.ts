@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { facesInRegion } from "./MeshPicker";
+import { facesInRegion, selectionPickScale } from "./MeshPicker";
 import { applySelection } from "./projectSelection";
 
 function image(ids: number[], width: number, height: number) {
@@ -37,4 +37,12 @@ it("keeps add/remove/intersection and isolation semantics for GPU face masks", (
   expect(applySelection(mask, hits, "add", false)).toBe(3);
   expect(applySelection(mask, hits, "intersect", false)).toBe(2);
   expect(applySelection(mask, hits, "remove", false)).toBe(0);
+});
+
+it("bounds selection supersampling by texture limits and a pixel budget without reducing native resolution", () => {
+  expect(selectionPickScale(400, 300, 4096)).toBe(4);
+  const scale = selectionPickScale(1200, 800, 4096);
+  expect(1200 * 800 * scale * scale).toBeCloseTo(4 * 1024 * 1024);
+  expect(selectionPickScale(3840, 2160, 8192)).toBe(1);
+  expect(selectionPickScale(1200, 800, 2048)).toBeLessThanOrEqual(2048 / 1200);
 });

@@ -40,6 +40,15 @@ function regionBounds(region: SelectionRegion) {
   return { left, top, right, bottom };
 }
 
+// Spend additional coverage only on committed gestures, never ordinary scene
+// rendering or hover. Four samples per axis address small triangles; the 4 Mi-pixel
+// budget bounds the extra RGBA8/depth target to about 32 MiB (excluding readback).
+// Native targets already above the budget keep their existing resolution.
+export function selectionPickScale(width: number, height: number, maxTextureSize: number): number {
+  return Math.min(maxTextureSize / Math.max(width, height),
+    Math.max(1, Math.min(4, Math.sqrt(4 * 1024 * 1024 / (width * height)))));
+}
+
 // PlayCanvas supplies depth testing, culling, render submission and asynchronous readback.
 // The small ID shader identifies triangles instead of whole MeshInstances.
 export class MeshPicker {
@@ -91,9 +100,9 @@ export class MeshPicker {
     app.scene.layers.push(this.layer);
   }
 
-  private prepare(camera: CameraComponent, isolated: boolean) {
+  private prepare(camera: CameraComponent, isolated: boolean, scale = 1) {
     const device = this.app.graphicsDevice;
-    const width = Math.max(1, Math.floor(device.width * camera.rect.z)), height = Math.max(1, Math.floor(device.height * camera.rect.w));
+    const width = Math.max(1, Math.floor(device.width * camera.rect.z * scale)), height = Math.max(1, Math.floor(device.height * camera.rect.w * scale));
     const signature = [width, height, ...camera.projectionMatrix.data, ...camera.viewMatrix.data].join();
     if (signature === this.signature) return;
     if (this.texture?.width !== width || this.texture.height !== height) {
@@ -143,8 +152,10 @@ export class MeshPicker {
   async capture(camera: CameraComponent, region: SelectionRegion, isolated: boolean): Promise<Uint8Array[]> {
     const bounds = regionBounds(region);
     if (bounds.right === 0) return this.parts.map(part => new Uint8Array(part.mask.length));
-    this.prepare(camera, isolated);
     const device = this.app.graphicsDevice;
+    const viewWidth = device.width * camera.rect.z, viewHeight = device.height * camera.rect.w;
+    const scale = selectionPickScale(viewWidth, viewHeight, device.maxTextureSize);
+    this.prepare(camera, isolated, scale);
     const screenWidth = this.texture!.width, screenHeight = this.texture!.height;
     const left = Math.floor(bounds.left * screenWidth / region.width), top = Math.floor(bounds.top * screenHeight / region.height);
     const width = Math.ceil(bounds.right * screenWidth / region.width) - left, height = Math.ceil(bounds.bottom * screenHeight / region.height) - top;

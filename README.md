@@ -77,7 +77,7 @@ Hotspots use PlayCanvas's bundled `Annotation` and `AnnotationManager` scripts, 
 
 ## Model tree
 
-The tab at the left center opens a shared model tree for selections, measurements, and annotations. Explicitly saved selections, measurements, annotations, views, and sections become named children. The eye control independently shows or hides its viewport overlay, line, or marker; it does not alter source geometry. Reopen records from the saved box above each tool’s options to edit, update, or delete them; clicking a tree name does not open an editor. Double-click a child name or use its pencil button to rename it; the saved box and any open editor update together. These records and edits remain in the current viewer session and use the same state for meshes and splats.
+The tab at the left center opens a shared model tree for segments, selections, measurements, annotations, views, and sections. Explicitly saved selections, measurements, annotations, views, and sections become named children. The eye control independently shows or hides its viewport overlay, line, or marker; it does not alter source geometry. Reopen records from the saved box above each tool’s options to edit, update, or delete them; clicking a tree name opens the corresponding tool and frames that record. Use its pencil button to rename it; the saved box and any open editor update together. These records and edits remain in the current viewer session and use the same state for meshes and splats.
 
 Shared tool contracts and engine API reuse are documented in [docs/viewer-tools.md](docs/viewer-tools.md).
 

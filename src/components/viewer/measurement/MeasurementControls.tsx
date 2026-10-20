@@ -1,5 +1,5 @@
-import { ResetButton } from "../ResetButton";
-import { useEffect, useEffectEvent, useId, useMemo, useRef, useState } from "react";
+import { SliderControl } from "../SliderControl";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import type { SelectionHandle } from "../selection/types";
 import { focusSelection } from "../selection/focusSelection";
 import { formatDistance, Measurement } from "./Measurement";
@@ -13,10 +13,9 @@ const adjustments = [
   { key: "fontSize", label: "Font size", min: 10, max: 28 }
 ] as const;
 
-export function MeasurementControls({ handle, measurement, active, onChange }: {
-  handle: SelectionHandle; measurement: Measurement; active: boolean; onChange(): void;
+export function MeasurementControls({ handle, measurement, active, onChange, openRequest }: {
+  handle: SelectionHandle; measurement: Measurement; active: boolean; onChange(): void; openRequest: { id: number } | null;
 }) {
-  const sliderId = useId();
   const [style, setStyle] = useState(measurement.style);
   useEffect(() => { measurement.style = style; }, [measurement, style]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -60,10 +59,17 @@ export function MeasurementControls({ handle, measurement, active, onChange }: {
   useEffect(() => { gizmos.current?.select(selected?.points.length === 2 ? selectedId : null); }, [selectedId, measurement.records, active]);
   useEffect(() => {
     if (!active) { setSelectedId(null); return; }
+    const requested = measurement.records.find(record => record.id === openRequest?.id);
+    if (requested) {
+      measurement.setVisible(requested.id, true); open(requested.id); redraw();
+      const bounds = measurement.bounds(requested.id);
+      if (bounds) focusSelection(handle.space.worldBounds(bounds), handle.camera());
+      return;
+    }
     const draft = measurement.records.at(-1);
     if (draft && !draft.saved) open(draft.id);
     else setSelectedId(null);
-  }, [active]);
+  }, [active, openRequest]);
   const segments = useMemo(() => measurement.records.filter(record => record.visible).map(record =>
     record.id === preview?.id ? record.points.map((point, index) => index === preview.index ? preview.position : point) : record.points),
   [measurement.records, preview]);
@@ -109,18 +115,12 @@ export function MeasurementControls({ handle, measurement, active, onChange }: {
       {distance !== null && <output aria-label="Measured distance">{formatDistance(distance)}</output>}
       {selected && <>
         <label>Measurement name<input aria-label="Measurement name" value={name} onChange={event => setName(event.target.value)} /></label>
-        <button disabled={busy || selected.points.length !== 2 || !name.trim()} onClick={save}>{selected.saved ? "Update measurement" : "Save measurement"}</button>
+        <button disabled={busy || selected.points.length !== 2 || !name.trim()} className="tool-action-save" onClick={save}>{selected.saved ? "Update measurement" : "Save measurement"}</button>
       </>}
-      {adjustments.map(({ key, label, min, max }) => <div key={key}>
-        <label htmlFor={`${sliderId}-${key}`}>{label}</label>
-        <div className="section-adjustment-controls">
-          <input id={`${sliderId}-${key}`} type="range" min={min} max={max} step="1" value={style[key]}
-            onChange={event => setStyle(current => ({ ...current, [key]: Number(event.target.value) }))} />
-          <ResetButton label={`Reset ${label.toLowerCase()}`} disabled={style[key] === defaultMeasurementStyle[key]}
-            onClick={() => setStyle(current => ({ ...current, [key]: defaultMeasurementStyle[key] }))} />
-        </div>
-      </div>)}
-      <button disabled={busy || measurement.points.length === 0} onClick={clearMeasurements}>Clear measurements</button>
+      {adjustments.map(({ key, label, min, max }) => <SliderControl key={key} label={label} min={min} max={max} value={style[key]}
+        onChange={value => setStyle(current => ({ ...current, [key]: value }))}
+        defaultValue={defaultMeasurementStyle[key]} />)}
+      <button disabled={busy || measurement.points.length === 0} className="tool-action-reset" onClick={clearMeasurements}>Clear measurements</button>
         <small>Measurements last until you leave this asset.</small>
       </div>
     </div>}

@@ -53,8 +53,8 @@ export class Measurement {
   }
   undo() { if (this.canUndo) this.cursor--; }
   redo() { if (this.canRedo) this.cursor++; }
-  bounds(): BoundingBox | null {
-    const points = this.records.filter(record => record.visible).flatMap(record => record.points);
+  bounds(id?: number): BoundingBox | null {
+    const points = this.records.filter(record => record.visible && (id === undefined || record.id === id)).flatMap(record => record.points);
     if (!points.length) return null;
     const min = points[0]!.clone(), max = min.clone();
     for (const point of points) { min.min(point); max.max(point); }

@@ -1,6 +1,6 @@
 import { SavedItems } from "../SavedItems";
-import { ResetButton } from "../ResetButton";
-import { useEffect, useEffectEvent, useId, useMemo, useState } from "react";
+import { SliderControl } from "../SliderControl";
+import { useEffect, useEffectEvent, useMemo, useState } from "react";
 import type { BoundingBox } from "playcanvas";
 import type { SavedPresets } from "../presets/SavedPresets";
 import type { SelectionHandle } from "../selection/types";
@@ -25,12 +25,12 @@ export interface SectionSession {
   alignment?: ViewAxis | "view"; enabled?: boolean; showPlane?: boolean; options?: SectionOptions;
 }
 
-export function SectionControls({ handle, active, views, sections, session }: {
+export function SectionControls({ handle, active, views, sections, session, openRequest }: {
+  openRequest: { id: number } | null;
   handle: SelectionHandle; active: boolean; views: readonly NamedView[]; sections: SavedPresets<NamedSection>; session: SectionSession;
 }) {
   const [editing, setEditing] = useState<number | null>(session.editing ?? null);
   const [name, setName] = useState(session.name ?? "");
-  const sliderId = useId();
   const [reference, setReference] = useState<ViewFrame | null>(session.reference ?? null);
   const [source, setSource] = useState(session.source ?? "camera");
   const [alignment, setAlignment] = useState<ViewAxis | "view">(session.alignment ?? "view");
@@ -97,6 +97,10 @@ export function SectionControls({ handle, active, views, sections, session }: {
   }, [sections]);
   const savedName = sections.records.find(record => record.id === editing)?.name;
   useEffect(() => { if (savedName !== undefined) setName(savedName); }, [savedName]);
+  useEffect(() => {
+    if (active && openRequest) sections.open(openRequest.id);
+  }, [active, openRequest, sections]);
+
   function save() {
     if (!reference || !name.trim()) return;
     sections.save({ id: editing ?? undefined, name: name.trim(), reference: copyFrame(reference), source, alignment, options: { ...options },
@@ -119,27 +123,20 @@ export function SectionControls({ handle, active, views, sections, session }: {
         {(["view", "X", "Y", "Z"] as const).map(axis => <button key={axis} aria-pressed={alignment === axis}
           onClick={() => { setAlignment(axis); setOptions(initialOptions); }}>{axis === "view" ? "View" : axis}</button>)}
       </fieldset>
-      {adjustments.map(({ key, label, scale, limit, unit }) => <div className="section-adjustment" key={key}>
-        <div className="section-adjustment-heading">
-          <label htmlFor={`${sliderId}-${key}`}>{label}</label><output>{Math.round(options[key] * scale)}{unit}</output>
-        </div>
-        <div className="section-adjustment-controls">
-          <input id={`${sliderId}-${key}`} aria-label={key === "offset" ? "Section offset" : label} type="range" min={-limit} max={limit} value={options[key] * scale}
-            onChange={event => setOptions({ ...options, [key]: Number(event.target.value) / scale })} />
-          <ResetButton label={`Reset ${label.toLowerCase()}`} disabled={options[key] === initialOptions[key]}
-            onClick={() => setOptions({ ...options, [key]: initialOptions[key] })} />
-        </div>
-      </div>)}
+      {adjustments.map(({ key, label, scale, limit, unit }) => <SliderControl key={key} label={label}
+        ariaLabel={key === "offset" ? "Section offset" : label} min={-limit} max={limit} unit={unit}
+        value={Math.round(options[key] * scale)} defaultValue={initialOptions[key] * scale}
+        onChange={value => setOptions({ ...options, [key]: value / scale })} />)}
       <div className="section-buttons">
         <button aria-pressed={enabled} disabled={!frame} onClick={() => { if (enabled) sections.close(); else setEnabled(true); }}>{enabled ? "Disable section" : "Enable section"}</button>
         <button aria-pressed={options.flip} onClick={() => setOptions({ ...options, flip: !options.flip })}>Flip retained side</button>
         <button aria-pressed={showPlane} onClick={() => setShowPlane(!showPlane)}>Show cutting plane</button>
         <button onClick={fromCamera}>From current camera</button>
         <button disabled={!frame} onClick={() => frame && recallFrame(handle.camera(), cutawayView(frame, options.flip))}>Look perpendicular to cut</button>
-        <button onClick={() => setOptions(initialOptions)}>Reset section position</button>
+        <button className="tool-action-reset" onClick={() => setOptions(initialOptions)}>Reset section position</button>
       </div>
       <label>Section name<input aria-label="Section name" value={name} onChange={event => setName(event.target.value)} /></label>
-      <button disabled={!enabled || !name.trim()} onClick={save}>{editing === null ? "Save section" : "Update section"}</button>
+      <button disabled={!enabled || !name.trim()} className="tool-action-save" onClick={save}>{editing === null ? "Save section" : "Update section"}</button>
       {editing !== null && <button onClick={() => { setEditing(null); setName(""); }}>New section</button>}
       <small>Sections last until you leave this asset. Q exits this tool; the section stays enabled.</small>
       {enabled && showPlane && frame && bounds && <SectionGuide handle={handle} frame={frame} extent={bounds.halfExtents.length()} />}

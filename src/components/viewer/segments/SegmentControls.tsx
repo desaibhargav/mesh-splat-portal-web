@@ -40,7 +40,7 @@ export function SegmentControls({ handle, workspaces, active, seed, drawing, onD
       <strong>Segment</strong>
       {document.id !== 0 && step === "choose" && <>
         <label>Segment name<input aria-label="Segment name" value={name} onChange={event => setName(event.target.value)} /></label>
-        <button disabled={disabled || !name.trim()} onClick={() => workspaces.rename(document.id, name)}>Update segment</button>
+        <button disabled={disabled || !name.trim()} className="tool-action-save" onClick={() => workspaces.rename(document.id, name)}>Update segment</button>
       </>}
       {step === "choose" && <>
         <button disabled={disabled} onClick={draw}>New segment</button>
@@ -50,9 +50,9 @@ export function SegmentControls({ handle, workspaces, active, seed, drawing, onD
       {step === "details" && <>
         {drawing && children}
         <label>Segment name<input aria-label="Segment name" value={name} onChange={event => setName(event.target.value)} /></label>
-        <button disabled={disabled || !canSave} onClick={save}>Save segment</button>
+        <button disabled={disabled || !canSave} className="tool-action-save" onClick={save}>Save segment</button>
       </>}
-      {step !== "choose" && <button onClick={cancel}>Cancel</button>}
+      {step !== "choose" && <button className="tool-action-reset" onClick={cancel}>Cancel</button>}
       {error && <span role="alert">{error}</span>}
       <small>Segment edits stay in this workspace until you leave the asset.</small>
     </div>
