@@ -1,3 +1,4 @@
+import { constrainMask, type SelectionScope } from "./selectionScope";
 import {
   BoundingBox, Color, FILTER_NEAREST, Mat4, PIXELFORMAT_R8, PIXELFORMAT_RGBA8, Texture, WORKBUFFER_UPDATE_ONCE,
   type AppBase, type CameraComponent, type GSplatComponent
@@ -15,6 +16,7 @@ import { sectionTest } from "../section/sectionPlane";
 
 const modifier = {
   glsl: `
+uniform sampler2D portalScope;
 uniform sampler2D portalSelection;
 uniform sampler2D portalPaint;
 uniform sampler2D portalPreview;
@@ -32,9 +34,10 @@ void modifySplatColor(vec3 center, inout vec4 color) {
     color.rgb = mix(color.rgb, portalSelectionTint.rgb, selected * portalSelectionTint.a * portalSelectionVisible * step(paint.a, 0.0));
     float previewed = texelFetch(portalPreview, splat.uv, 0).r;
     color.rgb = mix(color.rgb, vec3(1.0), previewed * portalSelectionTint.a);
-    color.a *= mix(1.0, selected, portalIsolate);
+    color.a *= mix(1.0, selected, portalIsolate) * texelFetch(portalScope, splat.uv, 0).r;
 }`,
   wgsl: `
+var portalScope: texture_2d<f32>;
 var portalSelection: texture_2d<f32>;
 var portalPaint: texture_2d<f32>;
 var portalPreview: texture_2d<f32>;
@@ -50,13 +53,16 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
     }
     let selected = textureLoad(portalSelection, vec2i(splat.uv), 0).r;
     (*color) = vec4f(mix((*color).rgb, uniform.portalSelectionTint.rgb, selected * uniform.portalSelectionTint.a * uniform.portalSelectionVisible * step(paint.a, 0.0)),
-        (*color).a * mix(1.0, selected, uniform.portalIsolate));
+        (*color).a * mix(1.0, selected, uniform.portalIsolate) * textureLoad(portalScope, vec2i(splat.uv), 0).r);
     let previewed = textureLoad(portalPreview, vec2i(splat.uv), 0).r;
     (*color) = vec4f(mix((*color).rgb, vec3f(1.0), previewed * uniform.portalSelectionTint.a), (*color).a);
 }`
 };
 
 export class SplatSelection {
+  private readonly scopeTexture: Texture;
+  private scope: SelectionScope = null;
+  private scopeCount: number | null = null;
   private readonly texture: Texture;
   private readonly paintTexture: Texture;
   private readonly previewTexture: Texture;
@@ -96,6 +102,12 @@ export class SplatSelection {
       format: PIXELFORMAT_R8, mipmaps: false, minFilter: FILTER_NEAREST, magFilter: FILTER_NEAREST
     });
     (this.previewTexture.lock() as Uint8Array).fill(0); this.previewTexture.unlock();
+    this.scopeTexture = new Texture(resource.device, {
+      name: "Portal workspace", width: resource.textureDimensions.x, height: resource.textureDimensions.y,
+      format: PIXELFORMAT_R8, mipmaps: false, minFilter: FILTER_NEAREST, magFilter: FILTER_NEAREST
+    });
+    (this.scopeTexture.lock() as Uint8Array).fill(255); this.scopeTexture.unlock();
+    component.setParameter("portalScope", this.scopeTexture);
     component.setParameter("portalPaint", this.paintTexture);
     component.setParameter("portalPreview", this.previewTexture);
     component.setParameter("portalSelection", this.texture);
@@ -105,8 +117,16 @@ export class SplatSelection {
     component.setWorkBufferModifier(modifier);
   }
 
+  private setScope(masks: SelectionScope) {
+    this.scope = masks;
+    this.scopeCount = masks ? masks[0]!.reduce((n, value) => n + Number(!!value), 0) : null;
+    const pixels = this.scopeTexture.lock() as Uint8Array;
+    pixels.fill(masks ? 0 : 255);
+    if (masks) pixels.set(masks[0]!);
+    this.scopeTexture.unlock();
+  }
   get summary(): SelectionSummary {
-    return { selected: this.selected, total: this.centers.length / 3, isolated: this.isolated };
+    return { selected: this.selected, total: this.scopeCount ?? this.centers.length / 3, isolated: this.isolated };
   }
   updateSection() { this.picker?.invalidate(); }
 
@@ -114,13 +134,14 @@ export class SplatSelection {
     const matrix = new Mat4().mul2(camera.projectionMatrix, camera.viewMatrix).mul(this.component.entity.getWorldTransform());
     const depth = await captureDepth(app, camera, this.layers.map(id => app.scene.layers.getLayerById(id)!)), hits = new Uint8Array(this.mask.length);
     projectSelection(this.centers, hits, matrix.data, region, "set", false, depthTest(depth));
+    constrainMask(hits, this.scope?.[0]);
     return [hits];
   }
 
   async primitiveAt(app: AppBase, camera: CameraComponent, u: number, v: number) {
     this.picker ??= new SplatPicker(app, this.layers);
     const index = await this.picker.pick(camera, u, v);
-    return index !== null && index < this.mask.length ? { part: 0, index } : null;
+    return index !== null && index < this.mask.length && (!this.scope || this.scope[0]![index]) ? { part: 0, index } : null;
   }
 
   select(region: SelectionRegion, operation: SelectionOperation, camera: SelectionCamera, hits?: Uint8Array[]): SelectionSummary {
@@ -130,6 +151,7 @@ export class SplatSelection {
     this.selected = hits ? applySelection(this.mask, hits[0]!, operation, this.isolated) :
       projectSelection(this.centers, this.mask, matrix.data, region, operation, this.isolated,
         sectionTest(this.component.system.app, this.centers, this.component.entity.getWorldTransform()));
+    if (this.scope) this.selected = constrainMask(this.mask, this.scope[0]);
     if (!this.selected) this.isolated = false;
     this.selectionAreas = recordSelectionGesture(this.selectionAreas, this.state, operation, previous);
     this.currentArea = currentSelectionArea(this.state, this.selectionAreas);
@@ -168,7 +190,7 @@ export class SplatSelection {
     pixels.fill(0);
     const mask = area?.snapshot.masks[0];
     if (mask) for (let index = 0; index < mask.length; index++) {
-      if (mask.bits[index >> 3]! & (1 << (index & 7))) pixels[index] = 255;
+      if ((!this.scope || this.scope[0]![index]) && (mask.bits[index >> 3]! & (1 << (index & 7)))) pixels[index] = 255;
     }
     this.previewTexture.unlock();
     this.component.workBufferUpdate = WORKBUFFER_UPDATE_ONCE;
@@ -194,15 +216,17 @@ export class SplatSelection {
     }
     return this.summary;
   }
-  restore(state: SelectionState, colors: PaintState = this.paintState, areas: readonly SelectionArea[] = this.selectionAreas): SelectionSummary {
+  restore(state: SelectionState, colors: PaintState = this.paintState, areas: readonly SelectionArea[] = this.selectionAreas, scope: SelectionScope = this.scope): SelectionSummary {
+    if (scope !== this.scope) this.setScope(scope);
     this.paintState = colors; this.selectionAreas = areas;
     this.mask.set(state.masks[0]!);
-    this.selected = this.mask.reduce((sum, value) => sum + (value ? 1 : 0), 0);
+    this.selected = constrainMask(this.mask, this.scope?.[0]);
     this.isolated = state.isolated;
     this.currentArea = currentSelectionArea(this.state, this.selectionAreas);
     this.update(); return this.summary;
   }
   bounds(state: SelectionState | null = this.state) {
+    if ((state === null || !state.masks.some(mask => mask.some(Boolean))) && this.scope) state = { masks: [...this.scope], isolated: false };
     const bounds = new SelectionBounds(), transform = this.component.entity.getWorldTransform();
     const mask = state === null ? null : state.masks[0]!, selected = mask !== null && mask.some(Boolean);
     if (!selected) {
@@ -245,7 +269,7 @@ export class SplatSelection {
     this.disposed = true;
     this.picker?.destroy(); this.releasePicking();
     this.component.setWorkBufferModifier(null);
-    for (const name of ["portalSelection", "portalSelectionTint", "portalSelectionVisible", "portalIsolate", "portalPaint", "portalPreview"]) this.component.deleteParameter(name);
-    this.texture.destroy(); this.paintTexture.destroy(); this.previewTexture.destroy();
+    for (const name of ["portalScope", "portalSelection", "portalSelectionTint", "portalSelectionVisible", "portalIsolate", "portalPaint", "portalPreview"]) this.component.deleteParameter(name);
+    this.scopeTexture.destroy(); this.texture.destroy(); this.paintTexture.destroy(); this.previewTexture.destroy();
   }
 }

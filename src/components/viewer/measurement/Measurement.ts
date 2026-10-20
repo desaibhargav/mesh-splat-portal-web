@@ -1,3 +1,4 @@
+import { defaultMeasurementStyle } from "./measurementStyle";
 import { BoundingBox, Vec3 } from "playcanvas";
 
 export interface MeasurementRecord {
@@ -5,6 +6,7 @@ export interface MeasurementRecord {
 }
 
 export class Measurement {
+  style = defaultMeasurementStyle;
   private snapshots: MeasurementRecord[][] = [[]];
   private cursor = 0;
   private nextId = 1;

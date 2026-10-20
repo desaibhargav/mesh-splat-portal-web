@@ -17,7 +17,8 @@ export function MeasurementControls({ handle, measurement, active, onChange }: {
   handle: SelectionHandle; measurement: Measurement; active: boolean; onChange(): void;
 }) {
   const sliderId = useId();
-  const [style, setStyle] = useState(defaultMeasurementStyle);
+  const [style, setStyle] = useState(measurement.style);
+  useEffect(() => { measurement.style = style; }, [measurement, style]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [name, setName] = useState("");
   const [editing, setEditing] = useState(false);

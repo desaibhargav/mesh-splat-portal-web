@@ -1,26 +1,26 @@
+import { SegmentWorkspaces } from "../segments/SegmentWorkspaces";
+import { SegmentControls } from "../segments/SegmentControls";
+import { packSelection } from "./selectionSnapshot";
+import type { SelectionSnapshot } from "./types";
 import { AnnotationControls } from "../annotations/AnnotationControls";
-import { Annotations } from "../annotations/Annotations";
 import { MeasurementControls } from "../measurement/MeasurementControls";
-import { Measurement } from "../measurement/Measurement";
 import { ViewerTree, type ViewerTreeGroup } from "../ViewerTree";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SelectionGesture } from "./SelectionGesture";
 import type { SelectionHandle, SelectionRegion, SelectionShape, SelectionTool } from "./types";
 import type { SelectionOperation } from "./rectangle";
-import { SelectionHistory, unpackSelection } from "./SelectionHistory";
+import { unpackSelection } from "./SelectionHistory";
 import { SavedItems } from "../SavedItems";
 import { encodeColor, saveSelectionArea, savedSelectionColors } from "./selectionColors";
 import { SelectionColorPicker } from "./SelectionColorPicker";
 import { focusSelection } from "./focusSelection";
 import { ViewControls } from "../views/ViewControls";
-import type { NamedView } from "../views/viewFrame";
-import { SavedPresets } from "../presets/SavedPresets";
-import type { NamedSection } from "../section/SectionControls";
 import { SectionControls } from "../section/SectionControls";
 
 const tools: { tool: SelectionTool; label: string; path: string }[] = [
   { tool: "navigate", label: "Navigate (Q)", path: "M5 3l14 10-7 1-3 7z" },
   { tool: "select", label: "Select", path: "M4 4h16v16H4z" },
+  { tool: "segment", label: "Segment", path: "M3 5h8v6H3zM13 13h8v6h-8zM7 11v6h6M11 8h6v5" },
   { tool: "measure", label: "Measure distance", path: "M3 16L16 3l5 5L8 21zM7 12l3 3m0-6 3 3m0-6 3 3" },
   { tool: "annotate", label: "Annotate", path: "M4 4h16v12H9l-5 5zM8 8h8m-8 4h5" },
   { tool: "views", label: "Views", path: "M12 12V3m0 9 8 5m-8-5-8 5M9 6l3-3 3 3m2 5 3 6-6-1M4 11v6l6-1" },
@@ -32,15 +32,33 @@ const selectionShapes: { shape: SelectionShape; label: string }[] = [
   { shape: "brush", label: "Brush" }
 ];
 
-export function SelectionControls({ handle, tool, onToolChange, disabled }: {
+export function SelectionControls(props: {
   handle: SelectionHandle | null; tool: SelectionTool; onToolChange(tool: SelectionTool): void; disabled: boolean;
 }) {
+  const workspaces = useMemo(() => props.handle ? new SegmentWorkspaces(props.handle) : null, [props.handle]);
+  const [, refresh] = useState(0);
+  useEffect(() => {
+    if (!workspaces) return;
+    const change = () => refresh(value => value + 1);
+    const open = () => props.onToolChange("segment");
+    workspaces.on("change", change); workspaces.on("open", open);
+    return () => { workspaces.off("change", change); workspaces.off("open", open); };
+  }, [workspaces, props.onToolChange]);
+  return <WorkspaceTools key={workspaces?.current.id ?? "loading"} {...props} workspaces={workspaces} />;
+}
+
+function WorkspaceTools({ handle, tool, onToolChange, disabled, workspaces }: {
+  handle: SelectionHandle | null; tool: SelectionTool; onToolChange(tool: SelectionTool): void; disabled: boolean; workspaces: SegmentWorkspaces | null;
+}) {
+  const [drawingSegment, setDrawingSegment] = useState(false);
+  const [segmentSeed, setSegmentSeed] = useState<SelectionSnapshot | null>(null);
+  const document = workspaces?.current;
   const [summary, setSummary] = useState(handle?.selection.summary);
   const [selectionName, setSelectionName] = useState("");
   const [editingSelection, setEditingSelection] = useState<number | null>(null);
   const [xray, setXray] = useState(false);
-  const views = useMemo(() => new SavedPresets<NamedView>(), [handle]);
-  const sections = useMemo(() => new SavedPresets<NamedSection>(), [handle]);
+  const views = document?.views;
+  const sections = document?.sections;
   const [selectionShape, setSelectionShape] = useState<SelectionShape>("rectangle");
   const [brushSize, setBrushSize] = useState(32);
   const [busy, setBusy] = useState(false);
@@ -49,10 +67,11 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
   const [, refreshDocument] = useState(0);
   const generation = useRef(0);
   const toolbar = useRef<HTMLDivElement>(null);
-  const history = useMemo(() => handle ? new SelectionHistory(handle.selection) : null, [handle]);
-  const measurement = useMemo(() => handle ? new Measurement() : null, [handle]);
-  const annotations = useMemo(() => handle ? new Annotations() : null, [handle]);
+  const history = workspaces?.history;
+  const measurement = document?.measurement;
+  const annotations = document?.annotations;
   const documentChanged = useCallback(() => refreshDocument(value => value + 1), []);
+  useEffect(() => { if (tool !== "segment") { setSegmentSeed(null); setDrawingSegment(false); } }, [tool]);
   useEffect(() => {
     setSummary(handle?.selection.summary); setError(null); setBusy(false); setBusyLabel("Selecting…");
     return () => { generation.current++; };
@@ -64,11 +83,12 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
     return () => { handle.space.off("change", changed); };
   }, [handle]);
   useEffect(() => {
+    if (!views || !sections) return;
     views.on("change", documentChanged); sections.on("change", documentChanged);
     return () => { views.off("change", documentChanged); sections.off("change", documentChanged); };
   }, [views, sections, documentChanged]);
-  const unavailable = disabled || !handle || busy;
-  const selecting = tool === "select";
+  const unavailable = disabled || !handle || busy || document?.visible === false;
+  const selecting = tool === "select" || (tool === "segment" && drawingSegment);
   useEffect(() => {
     if (tool !== "navigate" || !handle || !history) return;
     generation.current++; // A pending GPU selection must not recreate a discarded draft.
@@ -111,20 +131,20 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
       const camera = handle.camera();
       const view = { projectionMatrix: camera.projectionMatrix.clone(), viewMatrix: camera.viewMatrix.clone() };
       const hits = xray ? undefined : await handle.selection.hitTest(handle.app, camera, region);
-      if (generation.current === token) {
+      if (generation.current === token && workspaces?.current === document) {
         setSummary(history.perform(() => handle.selection.select(region, operation, view, hits)));
         documentChanged();
       }
     } catch (failure) {
       if (generation.current === token) setError(failure instanceof Error ? failure.message : String(failure));
     } finally { if (generation.current === token) setBusy(false); }
-  }, [handle, history, xray, documentChanged]);
+  }, [handle, history, xray, documentChanged, workspaces, document]);
   const paint = useCallback((color: number) => {
     if (!handle || !history || busy) return;
     const token = generation.current;
     setBusy(true); setBusyLabel("Applying color…"); setError(null);
     requestAnimationFrame(() => {
-      if (generation.current !== token) return;
+      if (generation.current !== token || workspaces?.current !== document) return;
       try {
         setSummary(history.perform(() => handle.selection.paint(color)));
         documentChanged();
@@ -134,11 +154,18 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
         if (generation.current === token) setBusy(false);
       }
     });
-  }, [handle, history, busy, documentChanged]);
+  }, [handle, history, busy, documentChanged, workspaces, document]);
   const applyColor = useCallback((hex: string) => {
     try { paint(encodeColor(hex)); }
     catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)); }
   }, [paint]);
+  function drawSegment(value: boolean) {
+    if (!value && drawingSegment && handle && history) {
+      generation.current++; setBusy(false);
+      setSummary(history.perform(() => handle.selection.clear()));
+    } else setSummary(handle?.selection.summary);
+    setDrawingSegment(value);
+  }
   function activateSelection(id: number) {
     if (!handle || !history || busy) return;
     const area = handle.selection.areas.find(item => item.id === id);
@@ -170,7 +197,10 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
   const editingSavedSelection = savedSelections.some(area => area.id === editingSelection);
   const savedSelectionName = savedSelections.find(area => area.id === editingSelection)?.name;
   useEffect(() => { if (savedSelectionName !== undefined) setSelectionName(savedSelectionName); }, [savedSelectionName]);
-  const groups: ViewerTreeGroup[] = handle && history && measurement && annotations ? [
+  const groups: ViewerTreeGroup[] = handle && history && measurement && annotations && views && sections ? [
+    ...(workspaces ? [{ id: "segments", label: "Segments", items: workspaces.records,
+      onRename: (id: number, name: string) => workspaces.rename(id, name),
+      onVisible: (id: number, visible: boolean) => workspaces.setVisible(id, visible) }] : []),
     { id: "views", label: "Views", items: views.records,
       onRename: (id, name) => views.rename(id, name) },
     { id: "sections", label: "Sections", items: sections.records.map(item => ({ ...item, visible: sections.activeId === item.id })),
@@ -186,6 +216,16 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
       onRename: (id, name) => { annotations.rename(id, name); documentChanged(); },
       onVisible: (id, visible) => { annotations.setVisible(id, visible); documentChanged(); } }
   ] : [];
+  const shapeOptions = <>
+        <fieldset className="selection-shapes" disabled={unavailable}>
+          <legend>Selection type</legend>
+          {selectionShapes.map(({ shape, label }) => <button key={shape} type="button"
+            aria-pressed={selectionShape === shape} onClick={() => setSelectionShape(shape)}>{label}</button>)}
+        </fieldset>
+        {selectionShape === "brush" && <label>Brush size <input aria-label="Brush size" type="range" min="1" max="128" value={brushSize} disabled={busy} onChange={event => setBrushSize(Number(event.target.value))} /></label>}
+        <button disabled={unavailable} aria-pressed={xray} title={xray ? "Select through the object" : "Select only visible surfaces"}
+          onClick={() => setXray(!xray)}>X-ray {xray ? "on" : "off"}</button>
+  </>;
   return <>
     <div ref={toolbar} className="selection-toolbar" role="group" aria-label="Selection tools">
       {tools.map(item => <button key={item.tool} title={item.label} aria-label={item.label} disabled={unavailable}
@@ -195,20 +235,20 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
       </button>)}
       <span role="status">{busy ? busyLabel : summary ? `${summary.selected.toLocaleString()} / ${summary.total.toLocaleString()} selected` : "Preparing selection…"}</span>
     </div>
-    {selecting && <div className="annotation-panels selection-panels">
+    {workspaces && document && document.id !== 0 && <div className="workspace-banner" role="group" aria-label="Active workspace">
+      <span>Segment: {document.name}{!document.visible && " (hidden)"}</span>
+      <button onClick={() => { workspaces.open(0); onToolChange("navigate"); }}>Return to asset</button>
+    </div>}
+    {tool === "select" && <div className="annotation-panels selection-panels">
       <SavedItems label="Selections" items={savedSelections} selectedId={editingSelection} disabled={unavailable}
         className="selection-list" onOpen={activateSelection} onRemove={removeSelection} />
       <div className="selection-actions selection-options" role="group" aria-label="Selection actions">
-        <fieldset className="selection-shapes" disabled={unavailable}>
-          <legend>Selection type</legend>
-          {selectionShapes.map(({ shape, label }) => <button key={shape} type="button"
-            aria-pressed={selectionShape === shape} onClick={() => setSelectionShape(shape)}>{label}</button>)}
-        </fieldset>
-        {selectionShape === "brush" && <label>Brush size <input aria-label="Brush size" type="range" min="1" max="128" value={brushSize} disabled={busy} onChange={event => setBrushSize(Number(event.target.value))} /></label>}
-        <button disabled={unavailable} aria-pressed={xray} title={xray ? "Select through the object" : "Select only visible surfaces"}
-          onClick={() => setXray(!xray)}>X-ray {xray ? "on" : "off"}</button>
+        {shapeOptions}
         <button disabled={unavailable || !summary?.selected} aria-pressed={summary?.isolated ?? false}
           onClick={() => { setSummary(history!.perform(() => handle!.selection.toggleIsolation())); documentChanged(); }}>{summary?.isolated ? "Show all" : "Isolate"}</button>
+        <button disabled={unavailable || !summary?.selected} onClick={() => {
+          setSegmentSeed(packSelection(handle!.selection.state)); onToolChange("segment");
+        }}>Create segment</button>
         <label>Selection name<input aria-label="Selection name" value={selectionName} disabled={unavailable}
           onChange={event => setSelectionName(event.target.value)} /></label>
         <button disabled={unavailable || !summary?.selected || !selectionName.trim()} onClick={saveSelection}>
@@ -223,14 +263,16 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
         <button disabled={unavailable || !summary?.selected} onClick={() => { setSummary(history!.perform(() => handle!.selection.clear())); documentChanged(); }}>Clear Selection</button>
       </div>
     </div>}
+    {handle && workspaces && <SegmentControls handle={handle} workspaces={workspaces} active={tool === "segment" && !disabled && document?.visible !== false}
+      seed={segmentSeed} drawing={drawingSegment} onDraw={drawSegment} disabled={busy || disabled}>{shapeOptions}</SegmentControls>}
     {error && <div className="selection-error" role="alert">{error}</div>}
     {groups.length > 0 && <ViewerTree groups={groups} />}
     {selecting && !unavailable && <SelectionGesture handle={handle!} key={selectionShape} tool={selectionShape} brushSize={brushSize} onSelect={onSelect} />}
-    {handle && annotations && <AnnotationControls handle={handle} annotations={annotations} active={tool === "annotate" && !disabled} interactive={tool === "navigate" || tool === "annotate"}
+    {document?.visible && handle && annotations && <AnnotationControls handle={handle} annotations={annotations} active={tool === "annotate" && !disabled} interactive={tool === "navigate" || tool === "annotate"}
       hoverRegions={!disabled && (tool === "navigate" || tool === "annotate" || tool === "select")}
       onChange={documentChanged} />}
-    {handle && measurement && <MeasurementControls handle={handle} measurement={measurement} active={tool === "measure" && !disabled} onChange={documentChanged} />}
-    {handle && <ViewControls handle={handle} active={tool === "views" && !disabled} views={views} />}
-    {handle && <SectionControls handle={handle} active={tool === "section" && !disabled} views={views.records} sections={sections} />}
+    {document?.visible && handle && measurement && <MeasurementControls handle={handle} measurement={measurement} active={tool === "measure" && !disabled} onChange={documentChanged} />}
+    {document?.visible && handle && views && <ViewControls handle={handle} active={tool === "views" && !disabled} views={views} />}
+    {document?.visible && handle && views && sections && <SectionControls handle={handle} active={tool === "section" && !disabled} views={views.records} sections={sections} session={document.sectionSession} />}
   </>;
 }

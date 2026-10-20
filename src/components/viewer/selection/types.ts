@@ -1,10 +1,11 @@
+import type { SelectionScope } from "./selectionScope";
 import type { AppBase, BoundingBox, CameraComponent } from "playcanvas";
 import type { ViewerViewports } from "../viewports/ViewerViewports";
 import type { ViewerSpace } from "../ViewerSpace";
 import type { PaintState } from "./selectionColors";
 import type { SelectionOperation } from "./rectangle";
 
-export type SelectionTool = "navigate" | "select" | "measure" | "annotate" | "views" | "section";
+export type SelectionTool = "navigate" | "select" | "measure" | "annotate" | "views" | "section" | "segment";
 export type SelectionShape = "rectangle" | "lasso" | "brush";
 export interface SelectionRegion { pixels: Uint8ClampedArray; width: number; height: number }
 export interface SelectionSummary { selected: number; total: number; isolated: boolean }
@@ -29,7 +30,7 @@ export interface SelectionController {
   renameArea(id: number, name: string): SelectionSummary;
   setAreaVisible(id: number, visible: boolean): SelectionSummary;
   paint(color: number): SelectionSummary;
-  restore(state: SelectionState, colors?: PaintState, areas?: readonly SelectionArea[]): SelectionSummary;
+  restore(state: SelectionState, colors?: PaintState, areas?: readonly SelectionArea[], scope?: SelectionScope): SelectionSummary;
   // null measures the entire asset; omitted measures the current selection/object.
   bounds(state?: SelectionState | null): BoundingBox | null;
   readonly summary: SelectionSummary;

@@ -5,8 +5,8 @@ import {
 import type { SelectionHandle } from "../selection/types";
 import { formatDistance } from "./Measurement";
 
-export interface MeasurementStyle { lineWidth: number; fontSize: number }
-export const defaultMeasurementStyle: MeasurementStyle = { lineWidth: 3, fontSize: 16 };
+import { defaultMeasurementStyle, type MeasurementStyle } from "./measurementStyle";
+export { defaultMeasurementStyle, type MeasurementStyle } from "./measurementStyle";
 
 interface SegmentVisual {
   points: readonly Vec3[]; worldPoints: Vec3[]; root: Entity; markers: Entity[]; markerLabels: Entity[];

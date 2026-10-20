@@ -8,7 +8,7 @@ import { viewportPoint } from "../viewports/ViewerViewports";
 import type { SelectionRegion } from "./types";
 import { sectionDeclaration } from "../section/sectionShaders";
 
-interface PickPart { source: MeshInstance; positions: Float32Array; indices: number[]; mask: Uint8Array }
+interface PickPart { source: MeshInstance; positions: Float32Array; indices: number[]; mask: Uint8Array; scope: Uint8Array | null }
 interface PickImage { pixels: Uint8Array; left: number; top: number; width: number; height: number; screenWidth: number; screenHeight: number; flipY: boolean }
 
 export function facesInRegion(image: PickImage, region: SelectionRegion, counts: number[]): Uint8Array[] {
@@ -106,13 +106,13 @@ export class MeshPicker {
     this.parts.forEach((part, i) => {
       const instance = this.instances[i]!;
       this.materials[i]!.cull = this.app.graphicsDevice.scope.resolve("portalSectionEnabled").getValue() ? CULLFACE_NONE : part.source.material.cull;
-      instance.visible = !isolated || part.mask.some(Boolean);
-      if (!isolated) {
+      instance.visible = (!part.scope || part.scope.some(Boolean)) && (!isolated || part.mask.some(Boolean));
+      if (!isolated && !part.scope) {
         Object.assign(instance.mesh.primitive[0]!, { indexed: false, base: 0, count: instance.mesh.vertexBuffer.numVertices });
         return;
       }
       const indices: number[] = [];
-      for (let face = 0; face < part.mask.length; face++) if (part.mask[face]) indices.push(face * 3, face * 3 + 1, face * 3 + 2);
+      for (let face = 0; face < part.mask.length; face++) if ((!part.scope || part.scope[face]) && (!isolated || part.mask[face])) indices.push(face * 3, face * 3 + 1, face * 3 + 2);
       if (indices.length) { instance.mesh.setIndices(indices); instance.mesh.update(PRIMITIVE_TRIANGLES, false); }
     });
     const layers = camera.layers;

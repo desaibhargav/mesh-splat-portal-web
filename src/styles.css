@@ -200,3 +200,6 @@ a { color: #536d7d; }
 
 .measurement-actions label { max-width: none; gap: 4px; }
 .measurement-actions input:not([type=range]) { min-width: 0; width: 100%; padding: 6px; border: 1px solid #666; color: inherit; background: #181818; font: inherit; }
+
+.workspace-banner { position: absolute; z-index: 3; top: calc(42px + var(--selection-toolbar-height) + 2rem); left: 12px; display: flex; align-items: center; gap: .7rem; padding: .4rem .6rem; border: 1px solid #666; border-radius: 3px; background: #252525; font-size: .75rem; }
+.workspace-banner button { padding: .25rem .5rem; border: 1px solid #666; border-radius: 3px; background: #333; color: #eee; cursor: pointer; }

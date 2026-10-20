@@ -41,3 +41,7 @@ The pinned camera-controls input source does not clear held keyboard modifiers w
 Measurement slider reset buttons restore the shared default line width and font size independently. Native endpoint gizmo size compensates for camera viewport height, keeping handles readable in four-panel layouts without additional geometry or render passes.
 
 Focus is contextual: F frames the current mask in Selection, otherwise the entire asset (including after Q), with Measurement retaining its endpoint focus. Empty selections/measurements fall back to whole-asset bounds. The annotation form has no duplicate focus button. Stored selections remain available without affecting navigation focus.
+
+## Segments
+
+The Segment toolbar entry and Selection → Create segment use the same gestures, GPU area hover, saved-items presentation, and tool controllers as the asset workspace. Packed region masks scope the existing mesh subsets or native splat work-buffer modifier; geometry is shared. Each workspace owns its tool documents/history and saved section session. See [segments](segments.md) for behavior, cost, and browser verification. Seed growing and area/volume statistics are omitted.

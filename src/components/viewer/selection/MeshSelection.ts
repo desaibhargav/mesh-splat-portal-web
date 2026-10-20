@@ -1,3 +1,4 @@
+import { constrainMask, type SelectionScope } from "./selectionScope";
 import {
   BLEND_NORMAL, CULLFACE_NONE, Color, Entity, Mat4, Mesh, MeshInstance, PRIMITIVE_TRIANGLES, SEMANTIC_POSITION, StandardMaterial,
   TYPE_INT8, TYPE_INT16, TYPE_UINT8, TYPE_UINT16, type VertexBuffer,
@@ -15,7 +16,7 @@ import type { SelectionArea, SelectionCamera, SelectionRegion, SelectionSnapshot
 
 interface Part {
   source: MeshInstance; positions: Float32Array; indices: number[]; centers: Float32Array; mask: Uint8Array;
-  vertices: VertexBuffer; baseMaterial: StandardMaterial; layers: Layer[]; groups: Map<number, { instance: MeshInstance; material: StandardMaterial }>;
+  scope: Uint8Array | null; vertices: VertexBuffer; baseMaterial: StandardMaterial; layers: Layer[]; groups: Map<number, { instance: MeshInstance; material: StandardMaterial }>;
   previewMaterial?: StandardMaterial;
 }
 
@@ -45,6 +46,8 @@ class SubsetMesh extends Mesh {
 export class MeshSelection {
   private readonly originals: { component: RenderComponent; enabled: boolean }[];
   private readonly parts: Part[] = [];
+  private scope: SelectionScope = null;
+  private scopeCount: number | null = null;
   private selected = 0;
   private isolated = false;
   private disposed = false;
@@ -85,7 +88,7 @@ export class MeshSelection {
         const vertices = buffer; // Subset meshes share read-only source vertices.
         const baseMaterial = (source.material as StandardMaterial).clone();
         configureSectionMaterial(baseMaterial); baseMaterial.update();
-        this.parts.push({ source, positions: decoded, indices, centers, mask: new Uint8Array(indices.length / 3), vertices, baseMaterial, layers: components.find(component => component.meshInstances.includes(source))!.layers.map(id => app.scene.layers.getLayerById(id)!), groups: new Map() });
+        this.parts.push({ scope: null, source, positions: decoded, indices, centers, mask: new Uint8Array(indices.length / 3), vertices, baseMaterial, layers: components.find(component => component.meshInstances.includes(source))!.layers.map(id => app.scene.layers.getLayerById(id)!), groups: new Map() });
       }
       this.paintState = this.parts.map(part => new Uint32Array(part.mask.length));
       this.refresh();
@@ -93,6 +96,11 @@ export class MeshSelection {
     } catch (error) { this.destroy(); throw error; }
   }
 
+  private setScope(masks: SelectionScope) {
+    this.scope = masks;
+    this.scopeCount = masks ? masks.reduce((n, mask) => n + mask.reduce((n, value) => n + Number(!!value), 0), 0) : null;
+    this.parts.forEach((part, index) => { part.scope = masks?.[index] ?? null; });
+  }
   get layers(): readonly number[] { return [...new Set(this.parts.flatMap(part => part.layers.map(layer => layer.id)))]; }
   updateSection() {
     const enabled = !!this.app.graphicsDevice.scope.resolve("portalSectionEnabled").getValue();
@@ -112,7 +120,7 @@ export class MeshSelection {
     this.picker?.invalidate();
   }
   get summary(): SelectionSummary {
-    return { selected: this.selected, total: this.parts.reduce((sum, p) => sum + p.mask.length, 0), isolated: this.isolated };
+    return { selected: this.selected, total: this.scopeCount ?? this.parts.reduce((sum, p) => sum + p.mask.length, 0), isolated: this.isolated };
   }
   async hitTest(app: AppBase, camera: CameraComponent, region: SelectionRegion): Promise<Uint8Array[]> {
     this.picker ??= new MeshPicker(app, this.parts);
@@ -142,7 +150,7 @@ export class MeshSelection {
           if (!byte) return;
           for (let bit = 0; bit < 8; bit++) {
             const face = offset * 8 + bit;
-            if (face < mask.length && (byte & (1 << bit)) && (!this.isolated || part.mask[face])) {
+            if (face < mask.length && (byte & (1 << bit)) && (!part.scope || part.scope[face]) && (!this.isolated || part.mask[face])) {
               indices.push(part.indices[face * 3]!, part.indices[face * 3 + 1]!, part.indices[face * 3 + 2]!);
             }
           }
@@ -200,12 +208,13 @@ export class MeshSelection {
     }
     return this.summary;
   }
-  restore(state: SelectionState, colors: PaintState = this.paintState, areas: readonly SelectionArea[] = this.selectionAreas): SelectionSummary {
+  restore(state: SelectionState, colors: PaintState = this.paintState, areas: readonly SelectionArea[] = this.selectionAreas, scope: SelectionScope = this.scope): SelectionSummary {
+    if (scope !== this.scope) this.setScope(scope);
     this.paintState = colors; this.selectionAreas = areas;
     this.selected = 0;
     this.parts.forEach((part, i) => {
       part.mask.set(state.masks[i]!);
-      this.selected += part.mask.reduce((sum, value) => sum + (value ? 1 : 0), 0);
+      this.selected += constrainMask(part.mask, part.scope ?? undefined);
     });
     this.isolated = state.isolated;
     this.currentArea = currentSelectionArea(this.state, this.selectionAreas);
@@ -213,6 +222,7 @@ export class MeshSelection {
   }
   bounds(state: SelectionState | null = this.state) {
     const bounds = new SelectionBounds();
+    if ((state === null || !state.masks.some(mask => mask.some(Boolean))) && this.scope) state = { masks: [...this.scope], isolated: false };
     const selected = state !== null && state.masks.some(mask => mask.some(Boolean));
     if (!selected) {
       const whole = this.parts[0]?.source.aabb.clone();
@@ -235,9 +245,10 @@ export class MeshSelection {
     this.selected = 0;
     for (const [i, part] of this.parts.entries()) {
       const matrix = new Mat4().mul2(viewProjection, part.source.node.getWorldTransform());
-      this.selected += hits ? applySelection(part.mask, hits[i]!, operation, this.isolated) :
+      const count = hits ? applySelection(part.mask, hits[i]!, operation, this.isolated) :
         projectSelection(part.centers, part.mask, matrix.data, region, operation, this.isolated,
           sectionTest(this.app, part.centers, part.source.node.getWorldTransform()));
+      this.selected += part.scope ? constrainMask(part.mask, part.scope) : count;
     }
     if (!this.selected) this.isolated = false;
     this.selectionAreas = recordSelectionGesture(this.selectionAreas, this.state, operation, previous);
@@ -262,7 +273,7 @@ export class MeshSelection {
     for (const [partIndex, part] of this.parts.entries()) {
       const subsets = new Map<number, number[]>(), colors = displayColors[partIndex]!;
       for (let face = 0; face < part.mask.length; face++) {
-        if (this.isolated && !part.mask[face]) continue;
+        if ((part.scope && !part.scope[face]) || (this.isolated && !part.mask[face])) continue;
         const highlighted = !!displaySelections[partIndex]![face];
         const key = (colors[face]! << 1) | Number(highlighted);
         let indices = subsets.get(key);

@@ -71,3 +71,7 @@ The owner prefers autonomous completion of authorized work without repeated conf
 ## Current derivative policy
 
 Serve one derivative per asset at 30% of the validated master, retaining the existing one-million-triangle mesh cap. Automatic LOD and cross-level edit correspondence are intentionally absent from main. The complete experiment is preserved on the `lod` branch of both repositories; generated bundles are archived privately on the Mac under the backend's `data/authorization/lod-archive-20261020/`. Do not reintroduce LOD implicitly. Retain one thumbnail per asset and never publish preservation masters.
+
+## Segment workspaces
+
+Segments share published geometry but own independent editing documents. Reuse the same tools and controllers for asset and segment workspaces; isolate geometry-specific scope rendering/picking behind the existing controller boundary. Apply the same mask to visible rendering, ID/depth picking, X-ray, focus, and section/tool interactions. Preserve parent state and prevent pending asynchronous edits from applying to a different workspace. Isolation remains a temporary visibility operation in the current document. New workspace features require cross-document leakage, recall, history, visibility, four-view, and lifecycle checks on both formats; see [segments](segments.md).

@@ -20,19 +20,27 @@ export interface NamedSection {
   alignment: ViewAxis | "view"; options: SectionOptions;
 }
 
-export function SectionControls({ handle, active, views, sections }: {
-  handle: SelectionHandle; active: boolean; views: readonly NamedView[]; sections: SavedPresets<NamedSection>;
+export interface SectionSession {
+  editing?: number | null; name?: string; reference?: ViewFrame | null; source?: string;
+  alignment?: ViewAxis | "view"; enabled?: boolean; showPlane?: boolean; options?: SectionOptions;
+}
+
+export function SectionControls({ handle, active, views, sections, session }: {
+  handle: SelectionHandle; active: boolean; views: readonly NamedView[]; sections: SavedPresets<NamedSection>; session: SectionSession;
 }) {
-  const [editing, setEditing] = useState<number | null>(null);
-  const [name, setName] = useState("");
+  const [editing, setEditing] = useState<number | null>(session.editing ?? null);
+  const [name, setName] = useState(session.name ?? "");
   const sliderId = useId();
-  const [reference, setReference] = useState<ViewFrame | null>(null);
-  const [source, setSource] = useState("camera");
-  const [alignment, setAlignment] = useState<ViewAxis | "view">("view");
-  const [enabled, setEnabled] = useState(false);
-  const [showPlane, setShowPlane] = useState(true);
-  const [options, setOptions] = useState(initialOptions);
-  const [bounds, setBounds] = useState<BoundingBox | null>(null);
+  const [reference, setReference] = useState<ViewFrame | null>(session.reference ?? null);
+  const [source, setSource] = useState(session.source ?? "camera");
+  const [alignment, setAlignment] = useState<ViewAxis | "view">(session.alignment ?? "view");
+  const [enabled, setEnabled] = useState(session.enabled ?? false);
+  const [showPlane, setShowPlane] = useState(session.showPlane ?? true);
+  const [options, setOptions] = useState(session.options ?? initialOptions);
+  const [bounds, setBounds] = useState<BoundingBox | null>(() => session.reference ? handle.selection.bounds(null) : null);
+  useEffect(() => {
+    Object.assign(session, { editing, name, reference, source, alignment, enabled, showPlane, options });
+  }, [session, editing, name, reference, source, alignment, enabled, showPlane, options]);
   useEffect(() => {
     if (active && !reference) fromCamera();
   }, [active, reference, handle]);
@@ -82,6 +90,8 @@ export function SectionControls({ handle, active, views, sections }: {
   });
   const close = useEffectEvent(() => { setEnabled(false); setEditing(null); setName(""); });
   useEffect(() => {
+    const saved = sections.records.find(record => record.id === sections.activeId);
+    if (saved && !session.reference) visibility(saved);
     sections.on("open", load); sections.on("close", close); sections.on("visibility", visibility);
     return () => { sections.off("open", load); sections.off("close", close); sections.off("visibility", visibility); };
   }, [sections]);

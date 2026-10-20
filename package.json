@@ -11,7 +11,8 @@
     "build": "tsc -b && vite build",
     "test": "vitest run",
     "typecheck": "tsc -b --pretty false",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:browser:segments": "node scripts/test-segments-browser.mjs"
   },
   "dependencies": {
     "@playcanvas/react": "0.11.5",
