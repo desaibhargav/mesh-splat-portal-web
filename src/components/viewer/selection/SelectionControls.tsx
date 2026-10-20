@@ -9,7 +9,7 @@ import type { SelectionHandle, SelectionRegion, SelectionShape, SelectionTool } 
 import type { SelectionOperation } from "./rectangle";
 import { SelectionHistory, unpackSelection } from "./SelectionHistory";
 import { SavedItems } from "../SavedItems";
-import { encodeColor, saveSelectionArea } from "./selectionColors";
+import { encodeColor, saveSelectionArea, savedSelectionColors } from "./selectionColors";
 import { SelectionColorPicker } from "./SelectionColorPicker";
 import { focusSelection } from "./focusSelection";
 import { ViewControls } from "../views/ViewControls";
@@ -69,6 +69,20 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
   }, [views, sections, documentChanged]);
   const unavailable = disabled || !handle || busy;
   const selecting = tool === "select";
+  useEffect(() => {
+    if (tool !== "navigate" || !handle || !history) return;
+    generation.current++; // A pending GPU selection must not recreate a discarded draft.
+    const selection = handle.selection;
+    const areas = selection.areas.filter(area => area.saved);
+    const colors = savedSelectionColors(selection.colors, selection.areas);
+    if (selection.summary.selected || areas.length !== selection.areas.length) {
+      setSummary(history.perform(() => selection.restore({
+        masks: selection.state.masks.map(mask => new Uint8Array(mask.length)), isolated: false
+      }, colors, areas)));
+      documentChanged();
+    }
+    setBusy(false); setEditingSelection(null); setSelectionName("");
+  }, [tool, handle, history, documentChanged]);
   useEffect(() => {
     const frame = toolbar.current?.closest(".viewer-frame");
     if (!frame || !handle || !history || (tool === "measure" || tool === "annotate")) return;
@@ -206,7 +220,7 @@ export function SelectionControls({ handle, tool, onToolChange, disabled }: {
         <SelectionColorPicker disabled={unavailable || !summary?.selected}
           onApply={applyColor}
           onReset={() => paint(0)} />
-        <button disabled={unavailable || !summary?.selected} onClick={() => { setSummary(history!.perform(() => handle!.selection.clear())); documentChanged(); }}>Clear</button>
+        <button disabled={unavailable || !summary?.selected} onClick={() => { setSummary(history!.perform(() => handle!.selection.clear())); documentChanged(); }}>Clear Selection</button>
       </div>
     </div>}
     {error && <div className="selection-error" role="alert">{error}</div>}

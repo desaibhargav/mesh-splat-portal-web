@@ -138,9 +138,7 @@ export class SplatSelection {
   }
 
   clear(): SelectionSummary {
-    if (this.currentArea && !this.currentArea.color) {
-      this.selectionAreas = this.selectionAreas.map(area => area.id === this.currentArea!.id ? { ...area, visible: false } : area);
-    }
+    this.selectionAreas = this.selectionAreas.filter(area => area.saved || area.color);
     this.mask.fill(0);
     this.selected = 0;
     this.isolated = false;

@@ -1,6 +1,6 @@
 import {
   BLEND_NORMAL, CULLFACE_NONE, Color, Entity, Mat4, Mesh, MeshInstance, PRIMITIVE_TRIANGLES, SEMANTIC_POSITION, StandardMaterial,
-  TYPE_INT8, TYPE_INT16, TYPE_UINT8, TYPE_UINT16, VertexBuffer,
+  TYPE_INT8, TYPE_INT16, TYPE_UINT8, TYPE_UINT16, type VertexBuffer,
   type AppBase, type CameraComponent, type Layer, type RenderComponent
 } from "playcanvas";
 import { currentSelectionArea, paintSelection, decodeColor, recordSelectionGesture, selectionAreaAt, updateSelectionAreas, visiblePaint, visibleSelections, type PaintState } from "./selectionColors";
@@ -58,7 +58,6 @@ export class MeshSelection {
 
   constructor(entity: Entity, private readonly app: AppBase, private readonly tint: Color) {
     setSectionPlane(app, null);
-    const device = app.graphicsDevice;
     const components = entity.findComponents("render") as RenderComponent[];
     const instances = components.filter(c => c.enabled && c.entity.enabled).flatMap(c => c.meshInstances).filter(instance => instance.visible);
     // Validate before changing any scene state.
@@ -83,7 +82,7 @@ export class MeshSelection {
         const decoded = Float32Array.from(positions, value => signed ? Math.max(-1, value / scale) : value / scale);
         const centers = triangleCenters(decoded, indices);
         const buffer = mesh.vertexBuffer;
-        const vertices = new VertexBuffer(device, buffer.format, buffer.numVertices, { data: buffer.storage.slice(0) });
+        const vertices = buffer; // Subset meshes share read-only source vertices.
         const baseMaterial = (source.material as StandardMaterial).clone();
         configureSectionMaterial(baseMaterial); baseMaterial.update();
         this.parts.push({ source, positions: decoded, indices, centers, mask: new Uint8Array(indices.length / 3), vertices, baseMaterial, layers: components.find(component => component.meshInstances.includes(source))!.layers.map(id => app.scene.layers.getLayerById(id)!), groups: new Map() });
@@ -247,9 +246,7 @@ export class MeshSelection {
     return this.summary;
   }
   clear(): SelectionSummary {
-    if (this.currentArea && !this.currentArea.color) {
-      this.selectionAreas = this.selectionAreas.map(area => area.id === this.currentArea!.id ? { ...area, visible: false } : area);
-    }
+    this.selectionAreas = this.selectionAreas.filter(area => area.saved || area.color);
     for (const part of this.parts) part.mask.fill(0);
     this.selected = 0; this.isolated = false; this.currentArea = null; this.refresh(); return this.summary;
   }
@@ -311,7 +308,7 @@ export class MeshSelection {
         instance.destroy();
         if (material !== part.baseMaterial) material.destroy();
       }
-      part.previewMaterial?.destroy(); part.baseMaterial.destroy(); part.vertices.destroy();
+      part.previewMaterial?.destroy(); part.baseMaterial.destroy();
     }
     for (const { component, enabled } of this.originals) component.enabled = enabled;
   }

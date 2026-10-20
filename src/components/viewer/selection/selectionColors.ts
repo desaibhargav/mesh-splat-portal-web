@@ -134,3 +134,12 @@ export function currentSelectionArea(state: SelectionState, areas: readonly Sele
     { id: 0, name: "Current selection", visible: true, color: 0,
       snapshot: packSelection({ masks, isolated: false }) } : null;
 }
+
+// Explicitly saved regions own persistent selection/paint state. Draft paint is
+// masked out on exit without changing overlapping saved regions or their buffers.
+export function savedSelectionColors(colors: PaintState, areas: readonly SelectionArea[]): PaintState {
+  if (areas.every(area => area.saved)) return colors;
+  const saved = visibleSelections(areas.filter(area => area.saved).map(area => ({ ...area, visible: true, color: 0 })), colors.map(values => values.length));
+  return colors.map((values, part) => values.some((value, index) => value && !saved[part]![index])
+    ? values.map((value, index) => saved[part]![index] ? value : 0) : values);
+}

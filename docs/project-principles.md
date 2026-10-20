@@ -34,7 +34,7 @@ Give resources clear owners and release them before the graphics device is destr
 
 - Use explicit Save actions and a saved-items box above each tool’s options for selections, annotations, measurements, views, and sections. Open entries there to edit/update/delete them. The model tree inventories scene records and controls visibility; renaming is allowed there and must synchronize with the saved list and any open editor. Tree rows must not activate tool editors or move the camera.
 - Use icon tools and contextual actions. Selection actions belong at the bottom right.
-- Q/Escape returns to navigation; ordinary typing and text editing retain their shortcuts.
+- Q/Escape returns to navigation; ordinary typing and text editing retain their shortcuts. Returning to navigation discards unsaved selection regions and their paint; explicitly saved selections remain. Switching directly between editing tools preserves the draft so select → color → annotate remains possible. Clear Selection clears the active mask without hiding/deleting saved regions; Remove Color removes applied paint from the active selection.
 - Allow navigation during tool use: Alt/Option-left-drag or right-drag orbits, middle-drag pans, and the wheel zooms.
 - Viewer layouts belong to the shared workspace. Route tools through the active viewport rather than adding independent multi-view implementations inside each tool. Share model/document data and allocate camera-facing visuals only for visible views.
 - F frames the active selection only in the Selection tool; after exiting that tool it frames the entire asset. In Measurement it frames measurement endpoints, falling back to the asset when empty. Focus updates the orbit pivot. Keep text input shortcuts intact; avoid duplicate focus buttons.
@@ -67,3 +67,7 @@ The owner prefers autonomous completion of authorized work without repeated conf
 ## Deferred work
 
 [TODO.md](../TODO.md) tracks saved views, WebXR, small-triangle selection accuracy, thumbnail framing, turntable previews, calibration, sectioning, and further appearance tools. Saved views should store validated view data tied to the asset/derivative revision, without duplicating models; local browser storage and export/import are the planned starting point. These remain deferred unless explicitly brought into scope.
+
+## Current derivative policy
+
+Serve one derivative per asset at 30% of the validated master, retaining the existing one-million-triangle mesh cap. Automatic LOD and cross-level edit correspondence are intentionally absent from main. The complete experiment is preserved on the `lod` branch of both repositories; generated bundles are archived privately on the Mac under the backend's `data/authorization/lod-archive-20261020/`. Do not reintroduce LOD implicitly. Retain one thumbnail per asset and never publish preservation masters.

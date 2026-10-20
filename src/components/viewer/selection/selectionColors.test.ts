@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { currentSelectionArea, decodeColor, encodeColor, paintSelection, recordSelectionArea, recordSelectionGesture, saveSelectionArea, updateSelectionAreas, visiblePaint, visibleSelections } from "./selectionColors";
+import { savedSelectionColors, currentSelectionArea, decodeColor, encodeColor, paintSelection, recordSelectionArea, recordSelectionGesture, saveSelectionArea, updateSelectionAreas, visiblePaint, visibleSelections } from "./selectionColors";
 
 it("paints only selected primitives and keeps previous color buffers immutable", () => {
   const original = [new Uint32Array([0, 1, 0]), new Uint32Array([0, 0])];
@@ -78,4 +78,15 @@ it("updates one saved region while retaining independent regions and their snaps
   expect(updated.find(area => area.id === saved[0]!.id)).toMatchObject({ name: "Updated", saved: true });
   expect(updated.find(area => area.id === saved[0]!.id)!.snapshot).toBe(withDraft.at(-1)!.snapshot);
   expect(saveSelectionArea(updated, edited, "  ", null)).toBe(updated);
+});
+
+it("discards draft paint on exit while preserving overlapping saved regions and history buffers", () => {
+  const savedState = { masks: [new Uint8Array([255, 255, 0])], isolated: false };
+  const draftState = { masks: [new Uint8Array([0, 255, 255])], isolated: false };
+  const saved = saveSelectionArea([], savedState, "Saved", null);
+  const areas = recordSelectionArea(saved, draftState);
+  const colors = [new Uint32Array([2, 2, 3])];
+  expect([...savedSelectionColors(colors, areas)[0]!]).toEqual([2, 2, 0]);
+  expect([...colors[0]!]).toEqual([2, 2, 3]);
+  expect(savedSelectionColors(colors, saved)).toBe(colors);
 });

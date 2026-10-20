@@ -24,10 +24,11 @@ export function SplatViewer({ url, onStatus, onSelectionReady }: {
   useEffect(() => onStatus({ loading: result.loading, progress: result.loading ? 0 : 1, error: result.error }), [result.loading, result.error, onStatus]);
   useEffect(() => {
     if (!entity || !result.asset || !camera) return;
+    let disposed = false;
     let viewports: ViewerViewports | undefined;
     let space: ViewerSpace | undefined;
     let selection: SplatSelection | undefined;
-    const dispose = () => { cancelAnimationFrame(frame); selection?.destroy(); selection = undefined; space?.destroy(); space = undefined; viewports?.destroy(); viewports = undefined; };
+    const dispose = () => { if (disposed) return; disposed = true; cancelAnimationFrame(frame); selection?.destroy(); selection = undefined; space?.destroy(); space = undefined; viewports?.destroy(); viewports = undefined; };
     app.on("destroy", dispose);
     const frame = requestAnimationFrame(() => {
       try {
@@ -41,6 +42,7 @@ export function SplatViewer({ url, onStatus, onSelectionReady }: {
         const rig = viewports;
         onSelectionReady({ app, space, viewports: rig, selection, camera: () => rig.active.camera });
       } catch (error) {
+        dispose();
         onStatus({ loading: false, progress: 1, error: `Selection unavailable: ${error instanceof Error ? error.message : String(error)}` });
       }
     });

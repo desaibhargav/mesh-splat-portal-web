@@ -19,6 +19,6 @@ export function SelectionColorPicker({ onApply, onReset, disabled }: {
       <label>Hex color<HexColorInput color={color} onChange={setColor} prefixed /></label>
       <button type="button" disabled={!valid} onClick={() => onApply(color)} style={{ borderColor: valid ? color : undefined }}>Apply color</button>
     </div>}
-    <button type="button" title="Restore original color in selection" aria-label="Restore original color in selection" onClick={onReset}>Restore original</button>
+    <button type="button" title="Remove applied color from the current selection" aria-label="Remove Color" onClick={onReset}>Remove Color</button>
   </fieldset>;
 }
