@@ -1,7 +1,7 @@
 import {
-  BLEND_NORMAL, CULLFACE_NONE, Color, Entity, Mat4, Mesh, MeshInstance, PRIMITIVE_TRIANGLES, SEMANTIC_POSITION, StandardMaterial,
+  BLEND_NORMAL, BoundingSphere, CULLFACE_NONE, Color, Entity, Mat4, Mesh, MeshInstance, PRIMITIVE_TRIANGLES, SEMANTIC_POSITION, StandardMaterial,
   TYPE_INT8, TYPE_INT16, TYPE_UINT8, TYPE_UINT16, VertexBuffer,
-  type AppBase, type CameraComponent, type Layer, type RenderComponent
+  type AppBase, type Camera, type CameraComponent, type Layer, type RenderComponent
 } from "playcanvas";
 import { currentSelectionArea, paintSelection, decodeColor, recordSelectionGesture, selectionAreaAt, updateSelectionAreas, visiblePaint, visibleSelections, type PaintState } from "./selectionColors";
 import { applySelection, projectSelection } from "./projectSelection";
@@ -10,7 +10,7 @@ import { MeshPicker } from "./MeshPicker";
 import { SelectionBounds } from "./selectionBounds";
 import { snapshotContains } from "./selectionSnapshot";
 import { configureSectionMaterial, reverseFaceColor } from "../section/sectionShaders";
-import { sectionTest, setSectionPlane } from "../section/sectionPlane";
+import { sectionTest } from "../section/sectionPlane";
 import type { SelectionArea, SelectionCamera, SelectionRegion, SelectionSnapshot, SelectionState, SelectionSummary } from "./types";
 
 interface Part {
@@ -55,10 +55,10 @@ export class MeshSelection {
   private currentArea: SelectionArea | null = null;
   private preview: SelectionArea | null = null;
   private readonly previews = new Map<SelectionSnapshot, { part: Part; instance: MeshInstance }[]>();
+  private visibility?: (camera: Camera) => boolean;
+  private readonly visibilitySphere = new BoundingSphere();
 
   constructor(entity: Entity, private readonly app: AppBase, private readonly tint: Color) {
-    setSectionPlane(app, null);
-    const device = app.graphicsDevice;
     const components = entity.findComponents("render") as RenderComponent[];
     const instances = components.filter(c => c.enabled && c.entity.enabled).flatMap(c => c.meshInstances).filter(instance => instance.visible);
     // Validate before changing any scene state.
@@ -83,7 +83,7 @@ export class MeshSelection {
         const decoded = Float32Array.from(positions, value => signed ? Math.max(-1, value / scale) : value / scale);
         const centers = triangleCenters(decoded, indices);
         const buffer = mesh.vertexBuffer;
-        const vertices = new VertexBuffer(device, buffer.format, buffer.numVertices, { data: buffer.storage.slice(0) });
+        const vertices = buffer; // Read-only; subset meshes own only index buffers.
         const baseMaterial = (source.material as StandardMaterial).clone();
         configureSectionMaterial(baseMaterial); baseMaterial.update();
         this.parts.push({ source, positions: decoded, indices, centers, mask: new Uint8Array(indices.length / 3), vertices, baseMaterial, layers: components.find(component => component.meshInstances.includes(source))!.layers.map(id => app.scene.layers.getLayerById(id)!), groups: new Map() });
@@ -95,6 +95,28 @@ export class MeshSelection {
   }
 
   get layers(): readonly number[] { return [...new Set(this.parts.flatMap(part => part.layers.map(layer => layer.id)))]; }
+  setVisibility(visibility: (camera: Camera) => boolean) {
+    this.visibility = visibility;
+    for (const part of this.parts) for (const group of part.groups.values()) this.configureVisibility(group.instance);
+  }
+  private configureVisibility(instance: MeshInstance) {
+    if (this.visibility) instance.isVisibleFunc = (camera: Camera) => {
+      if (!this.visibility!(camera)) return false;
+      this.visibilitySphere.center.copy(instance.aabb.center);
+      this.visibilitySphere.radius = instance.aabb.halfExtents.length();
+      return camera.frustum.containsSphere(this.visibilitySphere) > 0;
+    };
+  }
+  project(region: SelectionRegion, camera: SelectionCamera): Uint8Array[] {
+    const view = new Mat4().mul2(camera.projectionMatrix, camera.viewMatrix);
+    return this.parts.map(part => {
+      const hits = new Uint8Array(part.mask.length);
+      const matrix = new Mat4().mul2(view, part.source.node.getWorldTransform());
+      projectSelection(part.centers, hits, matrix.data, region, "set", false,
+        sectionTest(this.app, part.centers, part.source.node.getWorldTransform()));
+      return hits;
+    });
+  }
   updateSection() {
     const enabled = !!this.app.graphicsDevice.scope.resolve("portalSectionEnabled").getValue();
     if (enabled !== this.sectionEnabled) {
@@ -166,6 +188,7 @@ export class MeshSelection {
         const mesh = new SubsetMesh(part.source.mesh, part.vertices);
         mesh.setIndices(indices); mesh.update(PRIMITIVE_TRIANGLES, false);
         const instance = new MeshInstance(mesh, part.previewMaterial, part.source.node);
+        this.configureVisibility(instance);
         instance.castShadow = false;
         part.layers.forEach(layer => layer.addMeshInstances([instance]));
         return [{ part, instance }];
@@ -293,6 +316,7 @@ export class MeshSelection {
             material.update();
           }
           const instance = new MeshInstance(new SubsetMesh(part.source.mesh, part.vertices), material, part.source.node);
+          this.configureVisibility(instance);
           instance.castShadow = false; group = { instance, material }; part.groups.set(key, group);
           part.layers.forEach(layer => layer.addMeshInstances([instance]));
         }
@@ -311,7 +335,7 @@ export class MeshSelection {
         instance.destroy();
         if (material !== part.baseMaterial) material.destroy();
       }
-      part.previewMaterial?.destroy(); part.baseMaterial.destroy(); part.vertices.destroy();
+      part.previewMaterial?.destroy(); part.baseMaterial.destroy();
     }
     for (const { component, enabled } of this.originals) component.enabled = enabled;
   }

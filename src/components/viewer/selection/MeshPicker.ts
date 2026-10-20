@@ -1,3 +1,4 @@
+import { regionBounds } from "./regionBounds";
 import {
   CULLFACE_NONE, Color, Layer, Mesh, MeshInstance, PIXELFORMAT_RGBA8, PRIMITIVE_TRIANGLES, RenderPassPicker, RenderTarget,
   SEMANTIC_COLOR, SEMANTIC_POSITION, ShaderMaterial, Texture, TYPE_UINT8,
@@ -30,14 +31,6 @@ export function facesInRegion(image: PickImage, region: SelectionRegion, counts:
     }
   }
   return masks;
-}
-
-function regionBounds(region: SelectionRegion) {
-  let left = region.width, top = region.height, right = 0, bottom = 0;
-  for (let y = 0; y < region.height; y++) for (let x = 0; x < region.width; x++) if (region.pixels[(y * region.width + x) * 4 + 3]) {
-    left = Math.min(left, x); top = Math.min(top, y); right = Math.max(right, x + 1); bottom = Math.max(bottom, y + 1);
-  }
-  return { left, top, right, bottom };
 }
 
 // PlayCanvas supplies depth testing, culling, render submission and asynchronous readback.

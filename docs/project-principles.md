@@ -28,7 +28,7 @@ Use engine GPU picking and rendering for dense assets. Do not reintroduce CPU ra
 
 Treat performance as a correctness requirement. Before adding per-frame work, another render pass, a full-mask traversal, or a dependency, establish that it is necessary and bound its cost to the smallest relevant data. Prefer edit-time work, GPU operations, incremental updates, and shared resources. Fix the owning-state or lifecycle problem at its source; do not accumulate timing patches, fallback chains, duplicated implementations, or asset-specific exceptions. When an engine adapter is unavoidable, keep it narrow, state why it exists, document its runtime cost, and remove it if the upstream API later supplies the required boundary.
 
-Give resources clear owners and release them before the graphics device is destroyed. Discard pending asynchronous results when their viewer or operation is gone. Test navigation away and repeated mounting as well as the happy path.
+Give resources clear owners and release them before the graphics device is destroyed. Discard pending asynchronous results when their viewer or operation is gone. Test navigation away and repeated mounting as well as the happy path. Include deliberately delayed asset responses: releasing a network response after unmount must not start decoding against a destroyed graphics device. Cleanup must be idempotent when engine destruction and React cleanup both invoke it.
 
 ## Consistent editing workflow
 
@@ -43,6 +43,8 @@ Give resources clear owners and release them before the graphics device is destr
 - Render user notes as plain text. Keep edits non-destructive to source assets.
 
 These are conventions to preserve, not a claim that every future tool already implements every operation. Current behavior and limits are described in the README and viewer-tool documentation.
+
+LOD must follow zoom while every tool remains usable. Keep canonical edit state separate from displayed topology, preserve fine saved boundaries, and allow approximate coarse display. Do not silently force the finest level during editing. Generate each published level directly from the validated master; retain one thumbnail per asset. Bound and measure correspondence transfer, cache memory, cold loading, per-frame decisions and four-view costs. See [LOD implementation](lod.md).
 
 ## Heritage accuracy and security
 

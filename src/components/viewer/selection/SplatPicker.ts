@@ -1,3 +1,4 @@
+import { regionBounds } from "./regionBounds";
 import {
   Picker, ShaderChunks, SHADERLANGUAGE_GLSL, SHADERLANGUAGE_WGSL, TYPE_UINT32,
   type AppBase, type CameraComponent, type RenderTarget, type Texture
@@ -7,6 +8,7 @@ import { splatSectionFragment, splatSectionVertex } from "../section/sectionShad
 
 import { renderPickView } from "../picking/PickView";
 import { viewportPoint } from "../viewports/ViewerViewports";
+import type { SelectionRegion } from "./types";
 
 type PickerBuffers = { colorBuffer: Texture; renderTarget: RenderTarget };
 
@@ -47,6 +49,33 @@ export class SplatPicker {
 
   invalidate() { this.signature = ""; }
 
+  async capture(camera: CameraComponent, region: SelectionRegion): Promise<Set<number>> {
+    const bounds = regionBounds(region);
+    if (!bounds.right) return new Set();
+    const device = this.app.graphicsDevice;
+    const screenWidth = Math.max(1, Math.floor(device.width * camera.rect.z));
+    const screenHeight = Math.max(1, Math.floor(device.height * camera.rect.w));
+    const left = Math.floor(bounds.left * screenWidth / region.width), top = Math.floor(bounds.top * screenHeight / region.height);
+    const width = Math.ceil(bounds.right * screenWidth / region.width) - left;
+    const height = Math.ceil(bounds.bottom * screenHeight / region.height) - top;
+    this.picker.resize(screenWidth, screenHeight);
+    renderPickView(camera, () => this.picker.prepare(camera, this.app.scene, this.layers.map(id => this.app.scene.layers.getLayerById(id)!)));
+    const buffers = this.picker as unknown as PickerBuffers;
+    const pixels = await buffers.colorBuffer.read(left, device.isWebGPU ? top : screenHeight - top - height, width, height,
+      { immediate: true, renderTarget: buffers.renderTarget }) as Uint8Array;
+    if (this.disposed) throw new Error("Viewer closed during selection.");
+    const ids = new Set<number>();
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+      const selected = (Math.floor((top + y + .5) / screenHeight * region.height) * region.width + Math.floor((left + x + .5) / screenWidth * region.width)) * 4 + 3;
+      if (!region.pixels[selected]) continue;
+      const offset = ((device.isWebGPU ? y : height - y - 1) * width + x) * 4;
+      const id = (pixels[offset + 3]! << 24 | pixels[offset]! << 16 | pixels[offset + 1]! << 8 | pixels[offset + 2]!) >>> 0;
+      if (id !== 0xffffffff) ids.add(id);
+    }
+    this.signature = "";
+    return ids;
+  }
+
   destroy() {
     if (this.disposed) return;
     this.disposed = true;
@@ -55,7 +84,7 @@ export class SplatPicker {
   }
 }
 
-export function configureSplatPicking(app: AppBase): () => void {
+export function configureSplatPicking(app: AppBase, streamed = false): () => void {
   setSectionPlane(app, null);
   const material = app.scene.gsplat.material, previousIds = app.scene.gsplat.enableIds;
   const chunks = [material.shaderChunks.glsl, material.shaderChunks.wgsl] as const;
@@ -75,10 +104,10 @@ export function configureSplatPicking(app: AppBase): () => void {
     ), languageName));
     chunks.set("gsplatPS", splatSectionFragment(ShaderChunks.get(app.graphicsDevice, language).get("gsplatPS")!, languageName));
     chunks.set("gsplatModifyVS", language === SHADERLANGUAGE_GLSL ? `
-      void modifySplatCenter(inout vec3 center) { setPortalPrimitiveId(splat.index); }
+      void modifySplatCenter(inout vec3 center) { setPortalPrimitiveId(${streamed ? "loadPortalPick().r" : "splat.index"}); }
       void modifySplatRotationScale(vec3 originalCenter, vec3 modifiedCenter, inout vec4 rotation, inout vec3 scale) {}
       void modifySplatColor(vec3 center, inout vec4 color) {}` : `
-      fn modifySplatCenter(center: ptr<function, vec3f>) { setPortalPrimitiveId(splat.index); }
+      fn modifySplatCenter(center: ptr<function, vec3f>) { setPortalPrimitiveId(${streamed ? "loadPortalPick().r" : "splat.index"}); }
       fn modifySplatRotationScale(originalCenter: vec3f, modifiedCenter: vec3f, rotation: ptr<function, vec4f>, scale: ptr<function, vec3f>) {}
       fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {}`);
   }

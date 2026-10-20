@@ -10,6 +10,7 @@ export const artifactSchema = z.object({
   type: artifactTypeSchema,
   thumbnailUrl: z.string().min(1).nullable(),
   contentUrl: z.string().min(1),
+  lodUrl: z.string().min(1).nullable().optional(),
   sizeBytes: z.number().int().nonnegative()
 });
 

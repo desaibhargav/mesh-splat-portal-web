@@ -1,3 +1,4 @@
+import type { StreamedSplatBridge } from "../lod/StreamedSplatBridge";
 import {
   BoundingBox, Color, FILTER_NEAREST, Mat4, PIXELFORMAT_R8, PIXELFORMAT_RGBA8, Texture, WORKBUFFER_UPDATE_ONCE,
   type AppBase, type CameraComponent, type GSplatComponent
@@ -73,26 +74,30 @@ export class SplatSelection {
   private currentArea: SelectionArea | null = null;
   private preview: SelectionArea | null = null;
 
-  constructor(private readonly component: GSplatComponent, private readonly tint: Color) {
+  constructor(private readonly component: GSplatComponent, private readonly tint: Color, private readonly stream?: StreamedSplatBridge) {
     const resource = component.resource;
-    if (!resource?.hasCenters) throw new Error("This splat has no selectable center data.");
-    this.releasePicking = configureSplatPicking(component.system.app);
-    this.centers = resource.centers;
+    if (!stream && !resource?.hasCenters) throw new Error("This splat has no selectable center data.");
+    this.centers = stream?.data.centers ?? resource!.centers;
+    const device = component.system.app.graphicsDevice;
+    const width = stream ? Math.min(device.maxTextureSize, Math.ceil(Math.sqrt(this.centers.length / 3))) : resource!.textureDimensions.x;
+    const height = stream ? Math.ceil(this.centers.length / 3 / width) : resource!.textureDimensions.y;
+    if (height > device.maxTextureSize) throw new Error("Selection data exceeds this device's texture capacity.");
+    this.releasePicking = configureSplatPicking(component.system.app, !!stream);
     this.mask = new Uint8Array(this.centers.length / 3);
-    this.texture = new Texture(resource.device, {
-      name: "Portal selection", width: resource.textureDimensions.x, height: resource.textureDimensions.y,
+    this.texture = new Texture(device, {
+      name: "Portal selection", width, height,
       format: PIXELFORMAT_R8, mipmaps: false, minFilter: FILTER_NEAREST, magFilter: FILTER_NEAREST
     });
     (this.texture.lock() as Uint8Array).fill(0);
     this.texture.unlock();
     this.paintState = [new Uint32Array(this.mask.length)]; this.uploadedColors = this.paintState[0]!;
-    this.paintTexture = new Texture(resource.device, {
-      name: "Portal paint", width: resource.textureDimensions.x, height: resource.textureDimensions.y,
+    this.paintTexture = new Texture(device, {
+      name: "Portal paint", width, height,
       format: PIXELFORMAT_RGBA8, mipmaps: false, minFilter: FILTER_NEAREST, magFilter: FILTER_NEAREST
     });
     (this.paintTexture.lock() as Uint8Array).fill(0); this.paintTexture.unlock();
-    this.previewTexture = new Texture(resource.device, {
-      name: "Portal selection preview", width: resource.textureDimensions.x, height: resource.textureDimensions.y,
+    this.previewTexture = new Texture(device, {
+      name: "Portal selection preview", width, height,
       format: PIXELFORMAT_R8, mipmaps: false, minFilter: FILTER_NEAREST, magFilter: FILTER_NEAREST
     });
     (this.previewTexture.lock() as Uint8Array).fill(0); this.previewTexture.unlock();
@@ -102,7 +107,8 @@ export class SplatSelection {
     component.setParameter("portalSelectionTint", new Float32Array([tint.r, tint.g, tint.b, tint.a]));
     component.setParameter("portalSelectionVisible", 1);
     component.setParameter("portalIsolate", 0);
-    component.setWorkBufferModifier(modifier);
+    if (stream) component.setParameter("portalEditWidth", width);
+    component.setWorkBufferModifier(stream ? stream.modifier(modifier) : modifier);
   }
 
   get summary(): SelectionSummary {
@@ -111,6 +117,10 @@ export class SplatSelection {
   updateSection() { this.picker?.invalidate(); }
 
   async hitTest(app: AppBase, camera: CameraComponent, region: SelectionRegion): Promise<Uint8Array[]> {
+    if (this.stream) {
+      this.picker ??= new SplatPicker(app, this.layers);
+      return [this.stream.selection(await this.picker.capture(camera, region))];
+    }
     const matrix = new Mat4().mul2(camera.projectionMatrix, camera.viewMatrix).mul(this.component.entity.getWorldTransform());
     const depth = await captureDepth(app, camera, this.layers.map(id => app.scene.layers.getLayerById(id)!)), hits = new Uint8Array(this.mask.length);
     projectSelection(this.centers, hits, matrix.data, region, "set", false, depthTest(depth));
@@ -119,7 +129,8 @@ export class SplatSelection {
 
   async primitiveAt(app: AppBase, camera: CameraComponent, u: number, v: number) {
     this.picker ??= new SplatPicker(app, this.layers);
-    const index = await this.picker.pick(camera, u, v);
+    const picked = await this.picker.pick(camera, u, v);
+    const index = picked !== null && this.stream ? this.stream.canonicalId(picked) : picked;
     return index !== null && index < this.mask.length ? { part: 0, index } : null;
   }
 
@@ -247,7 +258,8 @@ export class SplatSelection {
     this.disposed = true;
     this.picker?.destroy(); this.releasePicking();
     this.component.setWorkBufferModifier(null);
-    for (const name of ["portalSelection", "portalSelectionTint", "portalSelectionVisible", "portalIsolate", "portalPaint", "portalPreview"]) this.component.deleteParameter(name);
+    for (const name of ["portalSelection", "portalSelectionTint", "portalSelectionVisible", "portalIsolate", "portalPaint", "portalPreview", "portalEditWidth"]) this.component.deleteParameter(name);
     this.texture.destroy(); this.paintTexture.destroy(); this.previewTexture.destroy();
+    this.stream?.destroy();
   }
 }
