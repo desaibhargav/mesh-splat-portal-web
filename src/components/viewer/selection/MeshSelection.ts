@@ -8,6 +8,7 @@ import { currentSelectionArea, paintSelection, decodeColor, recordSelectionGestu
 import { applySelection, projectSelection } from "./projectSelection";
 import type { SelectionOperation } from "./rectangle";
 import { MeshPicker } from "./MeshPicker";
+import { MeshVisibility } from "./visibility/MeshVisibility";
 import { SelectionBounds } from "./selectionBounds";
 import { snapshotContains } from "./selectionSnapshot";
 import { configureSectionMaterial, reverseFaceColor } from "../section/sectionShaders";
@@ -53,6 +54,7 @@ export class MeshSelection {
   private disposed = false;
   private sectionEnabled = false;
   private picker?: MeshPicker;
+  private visibility?: MeshVisibility;
   private paintState: PaintState = [];
   private selectionAreas: readonly SelectionArea[] = [];
   private currentArea: SelectionArea | null = null;
@@ -124,7 +126,9 @@ export class MeshSelection {
   }
   async hitTest(app: AppBase, camera: CameraComponent, region: SelectionRegion): Promise<Uint8Array[]> {
     this.picker ??= new MeshPicker(app, this.parts);
-    return this.picker.capture(camera, region, this.isolated);
+    this.visibility ??= new MeshVisibility(app, this.parts);
+    const snapshot = this.visibility.snapshot(camera, region, this.isolated);
+    return this.visibility.complete(snapshot, await this.picker.captureImage(camera, region, this.isolated));
   }
   async primitiveAt(app: AppBase, camera: CameraComponent, u: number, v: number) {
     this.picker ??= new MeshPicker(app, this.parts);
@@ -312,6 +316,7 @@ export class MeshSelection {
     if (this.disposed) return;
     this.disposed = true;
     this.picker?.destroy();
+    this.visibility?.destroy();
     this.clearPreviews();
     for (const part of this.parts) {
       for (const { instance, material } of part.groups.values()) {

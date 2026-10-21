@@ -5,7 +5,7 @@ import type { ViewerSpace } from "../ViewerSpace";
 import type { PaintState } from "./selectionColors";
 import type { SelectionOperation } from "./rectangle";
 
-export type SelectionTool = "navigate" | "select" | "measure" | "annotate" | "views" | "section" | "segment";
+export type SelectionTool = "navigate" | "select" | "segment" | "measure" | "annotate" | "views" | "section" | "capture";
 export type SelectionShape = "rectangle" | "lasso" | "brush";
 export interface SelectionRegion { pixels: Uint8ClampedArray; width: number; height: number }
 export interface SelectionSummary { selected: number; total: number; isolated: boolean }

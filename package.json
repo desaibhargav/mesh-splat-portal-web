@@ -13,7 +13,9 @@
     "typecheck": "tsc -b --pretty false",
     "preview": "vite preview",
     "test:browser:segments": "node scripts/test-segments-browser.mjs",
-    "test:browser:coverage": "node scripts/test-selection-coverage-browser.mjs"
+    "test:browser:coverage": "node scripts/test-selection-coverage-browser.mjs",
+    "test:browser:visibility": "node scripts/test-mesh-visibility-browser.mjs",
+    "test:browser:capture": "node scripts/test-capture-browser.mjs"
   },
   "dependencies": {
     "@playcanvas/react": "0.11.5",
@@ -23,12 +25,15 @@
     "react-colorful": "5.8.1",
     "react-dom": "19.2.8",
     "react-router-dom": "7.18.2",
+    "three": "0.185.0",
+    "three-mesh-bvh": "0.9.15",
     "use-debounce": "10.1.1",
     "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
+    "@types/three": "0.185.0",
     "@vitejs/plugin-react": "6.0.5",
     "typescript": "7.0.2",
     "vite": "8.2.1",

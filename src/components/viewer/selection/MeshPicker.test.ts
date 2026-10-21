@@ -4,7 +4,7 @@ import { applySelection } from "./projectSelection";
 
 function image(ids: number[], width: number, height: number) {
   const pixels = new Uint8Array(ids.length * 4);
-  ids.forEach((id, i) => { for (let byte = 0; byte < 4; byte++) pixels[i * 4 + byte] = (id >>> (byte * 8)) & 255; });
+  ids.forEach((id, i) => { [16, 8, 0, 24].forEach((shift, byte) => { pixels[i * 4 + byte] = (id >>> shift) & 255; }); });
   return { pixels, left: 0, top: 0, width, height, screenWidth: width, screenHeight: height, flipY: false };
 }
 function region(alpha: number[], width: number) {
@@ -40,7 +40,7 @@ it("keeps add/remove/intersection and isolation semantics for GPU face masks", (
 });
 
 it("bounds selection supersampling by texture limits and a pixel budget without reducing native resolution", () => {
-  expect(selectionPickScale(400, 300, 4096)).toBe(4);
+  expect(400 * 300 * selectionPickScale(400, 300, 4096) ** 2).toBeCloseTo(4 * 1024 * 1024);
   const scale = selectionPickScale(1200, 800, 4096);
   expect(1200 * 800 * scale * scale).toBeCloseTo(4 * 1024 * 1024);
   expect(selectionPickScale(3840, 2160, 8192)).toBe(1);

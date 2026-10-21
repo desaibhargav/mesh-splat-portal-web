@@ -195,6 +195,9 @@ a { color: #536d7d; }
 
 .measurement-actions label { max-width: none; gap: 4px; }
 .measurement-actions input:not([type=range]) { min-width: 0; width: 100%; padding: 6px; border: 1px solid #666; color: inherit; background: #181818; font: inherit; }
+.capture-actions { width: min(270px, calc(100% - 24px)); }
+.capture-actions input { width: 100%; }
+.capture-actions [role="alert"] { color: #ffd9d9; }
 
 .workspace-banner { position: absolute; z-index: 3; top: 50%; right: calc(270px + 24px); transform: translateY(-50%); display: flex; flex-direction: column; align-items: stretch; gap: .7rem; max-width: 180px; padding: .4rem .6rem; border: 1px solid #666; border-radius: 3px; background: #252525; font-size: .75rem; }
 .workspace-banner button { padding: .25rem .5rem; border: 1px solid #666; border-radius: 3px; background: #333; color: #eee; cursor: pointer; }

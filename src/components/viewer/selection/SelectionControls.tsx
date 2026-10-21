@@ -17,6 +17,7 @@ import { SelectionColorPicker } from "./SelectionColorPicker";
 import { focusSelection } from "./focusSelection";
 import { ViewControls } from "../views/ViewControls";
 import { SectionControls } from "../section/SectionControls";
+import { CaptureControls } from "../capture/CaptureControls";
 
 const tools: { tool: SelectionTool; label: string; path: string }[] = [
   { tool: "navigate", label: "Navigate (Q)", path: "M5 3l14 10-7 1-3 7z" },
@@ -25,7 +26,8 @@ const tools: { tool: SelectionTool; label: string; path: string }[] = [
   { tool: "measure", label: "Measure distance", path: "M3 16L16 3l5 5L8 21zM7 12l3 3m0-6 3 3m0-6 3 3" },
   { tool: "annotate", label: "Annotate", path: "M4 4h16v12H9l-5 5zM8 8h8m-8 4h5" },
   { tool: "views", label: "Views", path: "M12 12V3m0 9 8 5m-8-5-8 5M9 6l3-3 3 3m2 5 3 6-6-1M4 11v6l6-1" },
-  { tool: "section", label: "Cross section", path: "M3 8l9-5 9 5-9 5zM3 8v9l9 4 9-4V8M12 13v8M2 14l20-5" }
+  { tool: "section", label: "Cross section", path: "M3 8l9-5 9 5-9 5zM3 8v9l9 4 9-4V8M12 13v8M2 14l20-5" },
+  { tool: "capture", label: "Capture view", path: "M4 7h4l2-2h4l2 2h4v12H4zM8 13a4 4 0 1 0 8 0 4 4 0 0 0-8 0z" }
 ];
 const selectionShapes: { shape: SelectionShape; label: string }[] = [
   { shape: "rectangle", label: "Box" },
@@ -36,7 +38,7 @@ const selectionShapes: { shape: SelectionShape; label: string }[] = [
 type OpenRequest = { tool: SelectionTool; id: number };
 
 export function SelectionControls(props: {
-  handle: SelectionHandle | null; tool: SelectionTool; onToolChange(tool: SelectionTool): void; disabled: boolean;
+  handle: SelectionHandle | null; tool: SelectionTool; onToolChange(tool: SelectionTool): void; disabled: boolean; captureName: string;
 }) {
   const [openRequest, setOpenRequest] = useState<OpenRequest | null>(null);
   useEffect(() => { if (openRequest && openRequest.tool !== props.tool) setOpenRequest(null); }, [props.tool, openRequest]);
@@ -52,8 +54,9 @@ export function SelectionControls(props: {
   return <WorkspaceTools key={workspaces?.current.id ?? "loading"} {...props} workspaces={workspaces} openRequest={openRequest} setOpenRequest={setOpenRequest} />;
 }
 
-function WorkspaceTools({ handle, tool, onToolChange, disabled, workspaces, openRequest, setOpenRequest }: {
+function WorkspaceTools({ handle, tool, onToolChange, disabled, captureName, workspaces, openRequest, setOpenRequest }: {
   handle: SelectionHandle | null; tool: SelectionTool; onToolChange(tool: SelectionTool): void; disabled: boolean; workspaces: SegmentWorkspaces | null;
+  captureName: string;
   openRequest: OpenRequest | null; setOpenRequest(request: OpenRequest | null): void;
 }) {
   const [drawingSegment, setDrawingSegment] = useState(false);
@@ -302,5 +305,6 @@ function WorkspaceTools({ handle, tool, onToolChange, disabled, workspaces, open
     {document?.visible && handle && measurement && <MeasurementControls openRequest={openRequest?.tool === "measure" ? openRequest : null} handle={handle} measurement={measurement} active={tool === "measure" && !disabled} onChange={documentChanged} />}
     {document?.visible && handle && views && <ViewControls openRequest={openRequest?.tool === "views" ? openRequest : null} handle={handle} active={tool === "views" && !disabled} views={views} />}
     {document?.visible && handle && views && sections && <SectionControls openRequest={openRequest?.tool === "section" ? openRequest : null} handle={handle} active={tool === "section" && !disabled} views={views.records} sections={sections} session={document.sectionSession} />}
+    {document?.visible && handle && <CaptureControls handle={handle} active={tool === "capture" && !disabled} initialName={captureName} />}
   </>;
 }

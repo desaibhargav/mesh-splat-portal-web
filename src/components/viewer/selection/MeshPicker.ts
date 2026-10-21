@@ -1,35 +1,19 @@
 import {
-  CULLFACE_NONE, Color, Layer, Mesh, MeshInstance, PIXELFORMAT_RGBA8, PRIMITIVE_TRIANGLES, RenderPassPicker, RenderTarget,
-  SEMANTIC_COLOR, SEMANTIC_POSITION, ShaderMaterial, Texture, TYPE_UINT8,
+  CULLFACE_NONE, Color, Layer, Mat4, Mesh, MeshInstance, PIXELFORMAT_RGBA8, PRIMITIVE_TRIANGLES, RenderPassPicker, RenderTarget,
+  SEMANTIC_POSITION, ShaderMaterial, Texture,
   type AppBase, type CameraComponent
 } from "playcanvas";
 import { renderPickView } from "../picking/PickView";
 import { viewportPoint } from "../viewports/ViewerViewports";
 import type { SelectionRegion } from "./types";
 import { sectionDeclaration } from "../section/sectionShaders";
+import { faceId, facesInMask, regionAlpha, type PickImage } from "./pickImage";
 
 interface PickPart { source: MeshInstance; positions: Float32Array; indices: number[]; mask: Uint8Array; scope: Uint8Array | null }
-interface PickImage { pixels: Uint8Array; left: number; top: number; width: number; height: number; screenWidth: number; screenHeight: number; flipY: boolean }
+interface PickCrop { left: number; top: number; width: number; height: number }
 
 export function facesInRegion(image: PickImage, region: SelectionRegion, counts: number[]): Uint8Array[] {
-  const masks = counts.map(count => new Uint8Array(count));
-  let total = 0;
-  const offsets = counts.map(count => { const start = total; total += count; return start; });
-  for (let y = 0; y < image.height; y++) {
-    const maskRow = Math.floor((image.top + y + .5) * region.height / image.screenHeight) * region.width;
-    const row = (image.flipY ? image.height - 1 - y : y) * image.width;
-    for (let x = 0; x < image.width; x++) {
-      const maskX = Math.floor((image.left + x + .5) * region.width / image.screenWidth);
-      if (!region.pixels[(maskRow + maskX) * 4 + 3]) continue;
-      const pixel = (row + x) * 4, data = image.pixels;
-      const id = (data[pixel]! | (data[pixel + 1]! << 8) | (data[pixel + 2]! << 16) | (data[pixel + 3]! << 24)) >>> 0;
-      if (id >= total) continue;
-      let low = 0, high = counts.length;
-      while (low + 1 < high) { const middle = (low + high) >>> 1; if (offsets[middle]! <= id) low = middle; else high = middle; }
-      masks[low]![id - offsets[low]!] = 255;
-    }
-  }
-  return masks;
+  return facesInMask(image, regionAlpha(region), region.width, region.height, counts);
 }
 
 function regionBounds(region: SelectionRegion) {
@@ -40,13 +24,12 @@ function regionBounds(region: SelectionRegion) {
   return { left, top, right, bottom };
 }
 
-// Spend additional coverage only on committed gestures, never ordinary scene
-// rendering or hover. Four samples per axis address small triangles; the 4 Mi-pixel
-// budget bounds the extra RGBA8/depth target to about 32 MiB (excluding readback).
-// Native targets already above the budget keep their existing resolution.
+// Spend the picking budget on the gesture's bounds, not the entire viewport.
+// The 4 Mi-pixel RGBA8/depth target costs about 32 MiB, excluding readback.
+// Native targets already above that budget retain their existing resolution.
 export function selectionPickScale(width: number, height: number, maxTextureSize: number): number {
   return Math.min(maxTextureSize / Math.max(width, height),
-    Math.max(1, Math.min(4, Math.sqrt(4 * 1024 * 1024 / (width * height)))));
+    Math.max(1, Math.sqrt(4 * 1024 * 1024 / (width * height))));
 }
 
 // PlayCanvas supplies depth testing, culling, render submission and asynchronous readback.
@@ -60,38 +43,39 @@ export class MeshPicker {
   private target?: RenderTarget;
   private disposed = false;
   private signature = "";
+  private geometryDirty = true;
 
   constructor(private readonly app: AppBase, private readonly parts: PickPart[]) {
     this.pass = new RenderPassPicker(app.graphicsDevice, app.renderer);
     let offset = 0;
     for (const part of parts) {
-      const positions = new Float32Array(part.indices.length * 3), colors = new Uint8Array(part.indices.length * 4);
-      part.indices.forEach((index, vertex) => {
-        positions.set(part.positions.subarray(index * 3, index * 3 + 3), vertex * 3);
-        const id = offset + Math.floor(vertex / 3);
-        for (let byte = 0; byte < 4; byte++) colors[vertex * 4 + byte] = (id >>> (byte * 8)) & 255;
-      });
+      const positions = new Float32Array(part.indices.length * 3);
+      for (let vertex = 0; vertex < part.indices.length; vertex++) {
+        const source = part.indices[vertex]! * 3, target = vertex * 3;
+        positions[target] = part.positions[source]!; positions[target + 1] = part.positions[source + 1]!; positions[target + 2] = part.positions[source + 2]!;
+      }
       const mesh = new Mesh(app.graphicsDevice);
       mesh.setPositions(positions);
-      mesh.setVertexStream(SEMANTIC_COLOR, colors, 4, undefined, TYPE_UINT8, true);
       mesh.update(PRIMITIVE_TRIANGLES);
       const material = new ShaderMaterial({
         uniqueName: "PortalTriangleIDs",
-        attributes: { vertex_position: SEMANTIC_POSITION, vertex_color: SEMANTIC_COLOR },
-        vertexGLSL: `attribute vec3 vertex_position; attribute vec4 vertex_color;
-          uniform mat4 matrix_model; uniform mat4 matrix_viewProjection; varying vec4 faceId; varying vec3 sectionWorld;
-          void main() { vec4 world = matrix_model * vec4(vertex_position, 1.0); gl_Position = matrix_viewProjection * world; sectionWorld = world.xyz; faceId = vertex_color; }`,
-        fragmentGLSL: `${sectionDeclaration.glsl}\nvarying vec3 sectionWorld; varying vec4 faceId; void main() { if (portalSectionClipped(sectionWorld)) { discard; } pcFragColor0 = faceId; }`,
-        vertexWGSL: `attribute vertex_position: vec3f; attribute vertex_color: vec4f;
-          uniform matrix_model: mat4x4f; uniform matrix_viewProjection: mat4x4f; varying faceId: vec4f; varying sectionWorld: vec3f;
+        attributes: { vertex_position: SEMANTIC_POSITION },
+        vertexGLSL: `attribute vec3 vertex_position;
+          uniform mat4 matrix_model; uniform mat4 matrix_viewProjection; uniform uint portalFaceOffset; flat varying uint triangleId; varying vec3 sectionWorld;
+          void main() { vec4 world = matrix_model * vec4(vertex_position, 1.0); gl_Position = matrix_viewProjection * world; sectionWorld = world.xyz; triangleId = uint(gl_VertexID) / 3u + portalFaceOffset; }`,
+        fragmentGLSL: `${sectionDeclaration.glsl}\n#define PICK_CUSTOM_ID\n#include "pickPS"\nvarying vec3 sectionWorld; flat varying uint triangleId;
+          void main() { if (portalSectionClipped(sectionWorld)) { discard; } pcFragColor0 = encodePickOutput(triangleId); }`,
+        vertexWGSL: `attribute vertex_position: vec3f;
+          uniform matrix_model: mat4x4f; uniform matrix_viewProjection: mat4x4f; uniform portalFaceOffset: u32; varying @interpolate(flat) triangleId: u32; varying sectionWorld: vec3f;
           @vertex fn vertexMain(input: VertexInput) -> VertexOutput { var output: VertexOutput;
             let world = uniform.matrix_model * vec4f(input.vertex_position, 1.0);
             output.position = uniform.matrix_viewProjection * world; output.sectionWorld = world.xyz;
-            output.faceId = input.vertex_color; return output; }`,
-        fragmentWGSL: `${sectionDeclaration.wgsl}\nvarying faceId: vec4f; varying sectionWorld: vec3f;
-          @fragment fn fragmentMain(input: FragmentInput) -> FragmentOutput { var output: FragmentOutput; if (portalSectionClipped(input.sectionWorld)) { discard; } output.color = input.faceId; return output; }`
+            output.triangleId = input.vertexIndex / 3u + uniform.portalFaceOffset; return output; }`,
+        fragmentWGSL: `${sectionDeclaration.wgsl}\n#define PICK_CUSTOM_ID\n#include "pickPS"\nvarying @interpolate(flat) triangleId: u32; varying sectionWorld: vec3f;
+          @fragment fn fragmentMain(input: FragmentInput) -> FragmentOutput { var output: FragmentOutput; if (portalSectionClipped(input.sectionWorld)) { discard; } output.color = encodePickOutput(input.triangleId); return output; }`
       });
       material.cull = part.source.material.cull;
+      material.setParameter("portalFaceOffset", offset);
       this.materials.push(material);
       this.instances.push(new MeshInstance(mesh, material, part.source.node));
       offset += part.mask.length;
@@ -100,10 +84,11 @@ export class MeshPicker {
     app.scene.layers.push(this.layer);
   }
 
-  private prepare(camera: CameraComponent, isolated: boolean, scale = 1) {
+  private prepare(camera: CameraComponent, isolated: boolean, scale = 1, crop?: PickCrop) {
     const device = this.app.graphicsDevice;
-    const width = Math.max(1, Math.floor(device.width * camera.rect.z * scale)), height = Math.max(1, Math.floor(device.height * camera.rect.w * scale));
-    const signature = [width, height, ...camera.projectionMatrix.data, ...camera.viewMatrix.data].join();
+    const width = Math.max(1, Math.floor(device.width * camera.rect.z * scale * (crop?.width ?? 1))), height = Math.max(1, Math.floor(device.height * camera.rect.w * scale * (crop?.height ?? 1)));
+    const signature = [width, height, crop?.left, crop?.top, crop?.width, crop?.height, ...camera.projectionMatrix.data, ...camera.viewMatrix.data,
+      ...this.parts.flatMap(part => Array.from(part.source.node.getWorldTransform().data))].join();
     if (signature === this.signature) return;
     if (this.texture?.width !== width || this.texture.height !== height) {
       this.target?.destroy(); this.texture?.destroy();
@@ -112,24 +97,32 @@ export class MeshPicker {
       this.pass.init(this.target);
       this.pass.setClearColor(Color.WHITE); this.pass.depthStencilOps.clearDepth = true;
     }
-    this.parts.forEach((part, i) => {
+    if (this.geometryDirty) this.parts.forEach((part, i) => {
       const instance = this.instances[i]!;
       this.materials[i]!.cull = this.app.graphicsDevice.scope.resolve("portalSectionEnabled").getValue() ? CULLFACE_NONE : part.source.material.cull;
       instance.visible = (!part.scope || part.scope.some(Boolean)) && (!isolated || part.mask.some(Boolean));
       if (!isolated && !part.scope) {
-        Object.assign(instance.mesh.primitive[0]!, { indexed: false, base: 0, count: instance.mesh.vertexBuffer.numVertices });
+        Object.assign(instance.mesh.primitive[0]!, { indexed: false, base: 0, count: part.indices.length });
         return;
       }
       const indices: number[] = [];
       for (let face = 0; face < part.mask.length; face++) if ((!part.scope || part.scope[face]) && (!isolated || part.mask[face])) indices.push(face * 3, face * 3 + 1, face * 3 + 2);
       if (indices.length) { instance.mesh.setIndices(indices); instance.mesh.update(PRIMITIVE_TRIANGLES, false); }
     });
-    const layers = camera.layers;
+    this.geometryDirty = false;
+    const layers = camera.layers, calculateProjection = camera.calculateProjection;
     try {
+      if (crop) {
+        const matrix = new Mat4().setScale(1 / crop.width, 1 / crop.height, 1);
+        matrix.data[12] = (1 - 2 * crop.left - crop.width) / crop.width;
+        matrix.data[13] = (2 * crop.top + crop.height - 1) / crop.height;
+        const projection = new Mat4().mul2(matrix, camera.projectionMatrix);
+        camera.calculateProjection = target => target.copy(projection);
+      }
       camera.layers = [...layers, this.layer.id];
       this.pass.update(camera, this.app.scene, [this.layer], new Map(), false);
       renderPickView(camera, () => this.pass.render());
-    } finally { camera.layers = layers; }
+    } finally { camera.layers = layers; camera.calculateProjection = calculateProjection; }
     this.signature = signature;
   }
 
@@ -141,7 +134,7 @@ export class MeshPicker {
     const bytes = await this.texture!.read(x, this.app.graphicsDevice.isWebGPU ? y : this.texture!.height - y - 1, 1, 1, { immediate: true, renderTarget: this.target });
     if (this.disposed) return null;
     const data = bytes as Uint8Array;
-    let index = (data[0]! | data[1]! << 8 | data[2]! << 16 | data[3]! << 24) >>> 0;
+    let index = faceId(data);
     for (const [part, source] of this.parts.entries()) {
       if (index < source.mask.length) return { part, index };
       index -= source.mask.length;
@@ -150,22 +143,28 @@ export class MeshPicker {
   }
 
   async capture(camera: CameraComponent, region: SelectionRegion, isolated: boolean): Promise<Uint8Array[]> {
-    const bounds = regionBounds(region);
-    if (bounds.right === 0) return this.parts.map(part => new Uint8Array(part.mask.length));
-    const device = this.app.graphicsDevice;
-    const viewWidth = device.width * camera.rect.z, viewHeight = device.height * camera.rect.w;
-    const scale = selectionPickScale(viewWidth, viewHeight, device.maxTextureSize);
-    this.prepare(camera, isolated, scale);
-    const screenWidth = this.texture!.width, screenHeight = this.texture!.height;
-    const left = Math.floor(bounds.left * screenWidth / region.width), top = Math.floor(bounds.top * screenHeight / region.height);
-    const width = Math.ceil(bounds.right * screenWidth / region.width) - left, height = Math.ceil(bounds.bottom * screenHeight / region.height) - top;
-    const flipY = !device.isWebGPU;
-    const pixels = await this.texture!.read(left, flipY ? screenHeight - top - height : top, width, height, { immediate: true, renderTarget: this.target });
-    if (this.disposed) throw new Error("Viewer closed during selection.");
-    return facesInRegion({ pixels: pixels as Uint8Array, left, top, width, height, screenWidth, screenHeight, flipY }, region, this.parts.map(part => part.mask.length));
+    const image = await this.captureImage(camera, region, isolated);
+    const counts = this.parts.map(part => part.mask.length);
+    return image ? facesInRegion(image, region, counts) : counts.map(count => new Uint8Array(count));
   }
 
-  invalidate() { this.signature = ""; }
+  async captureImage(camera: CameraComponent, region: SelectionRegion, isolated: boolean): Promise<PickImage | null> {
+    const bounds = regionBounds(region);
+    if (bounds.right === 0) return null;
+    const device = this.app.graphicsDevice;
+    const viewWidth = device.width * camera.rect.z, viewHeight = device.height * camera.rect.w;
+    const crop = { left: bounds.left / region.width, top: bounds.top / region.height, width: (bounds.right - bounds.left) / region.width, height: (bounds.bottom - bounds.top) / region.height };
+    const cropWidth = viewWidth * crop.width, cropHeight = viewHeight * crop.height;
+    const scale = selectionPickScale(cropWidth, cropHeight, device.maxTextureSize);
+    this.prepare(camera, isolated, scale, crop);
+    const width = this.texture!.width, height = this.texture!.height;
+    const pixels = await this.texture!.read(0, 0, width, height, { immediate: true, renderTarget: this.target });
+    if (this.disposed) throw new Error("Viewer closed during selection.");
+    return { pixels: pixels as Uint8Array, left: crop.left * width / crop.width, top: crop.top * height / crop.height, width, height,
+      screenWidth: width / crop.width, screenHeight: height / crop.height, flipY: !device.isWebGPU };
+  }
+
+  invalidate() { this.signature = ""; this.geometryDirty = true; }
   destroy() {
     if (this.disposed) return;
     this.disposed = true;
