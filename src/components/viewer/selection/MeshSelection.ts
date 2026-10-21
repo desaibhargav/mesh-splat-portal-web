@@ -203,9 +203,9 @@ export class MeshSelection {
     this.selectionAreas = this.selectionAreas.map(area => area.id === id ? { ...area, visible } : area);
     this.currentArea = currentSelectionArea(this.state, this.selectionAreas); this.refresh(); return this.summary;
   }
-  paint(color: number): SelectionSummary {
+  paint(color: number, replaceColor = this.currentArea?.color ?? 0): SelectionSummary {
     const areas = updateSelectionAreas(this.selectionAreas, this.paintState, this.state.masks, color);
-    const next = paintSelection(this.paintState, this.state.masks, color, this.currentArea?.color);
+    const next = paintSelection(this.paintState, this.state.masks, color, replaceColor);
     if (next !== this.paintState) {
       this.paintState = next; this.selectionAreas = areas;
       this.currentArea = currentSelectionArea(this.state, areas); this.refresh();

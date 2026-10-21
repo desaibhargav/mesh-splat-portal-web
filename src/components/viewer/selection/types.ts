@@ -29,7 +29,7 @@ export interface SelectionController {
   previewArea(area: SelectionArea | null): void;
   renameArea(id: number, name: string): SelectionSummary;
   setAreaVisible(id: number, visible: boolean): SelectionSummary;
-  paint(color: number): SelectionSummary;
+  paint(color: number, replaceColor?: number): SelectionSummary;
   restore(state: SelectionState, colors?: PaintState, areas?: readonly SelectionArea[], scope?: SelectionScope): SelectionSummary;
   // null measures the entire asset; omitted measures the current selection/object.
   bounds(state?: SelectionState | null): BoundingBox | null;

@@ -13,7 +13,7 @@ Mesh and splat viewers supply the same `SelectionController` contract to `Select
 | Place measurement/annotation endpoints | Depth-enabled `Picker.prepare` and `getWorldPointAsync`, through shared `SurfacePicker` / `useSurfacePick` |
 | Visible region selection | `RenderPassPicker` for triangle IDs / splat depth; mesh-only `three-mesh-bvh` visibility supplement in a worker |
 | Edit measurement endpoints | Native `TranslateGizmo` plus the shared GPU surface picker; one cached depth image per drag and one undoable commit |
-| Measurement visuals | Built-in cylinder/sphere render primitives, world-space text elements, `CanvasFont`, and `Layer` |
+| Measurement visuals | Batched `WideLineRenderer`, built-in sphere primitives, world-space text elements, `CanvasFont`, and `Layer` |
 | Annotation hotspots and tooltips | Bundled `Annotation` and `AnnotationManager` scripts; picker render IDs for bound-region hover |
 | PNG capture | Native canvas export after PlayCanvas `postrender`; the canvas already contains the active view or all four panels |
 | Mesh region colors | `StandardMaterial`, `Mesh`, `MeshInstance`, and `Layer` with shared vertex data and index subsets |
@@ -29,7 +29,7 @@ A spherical brush affects Gaussian centers within a 3D radius around a picked su
 
 ## Desktop and XR
 
-Measurement state and visuals use one implementation for both asset formats and camera modes. White cylinder lines, sphere endpoints, and text are ordinary scene elements; projection and stereo rendering belong to the engine. The browser tool panels and annotation tooltip still require XR presentation and controller bindings when XR sessions are implemented. Those bindings should call the existing shared operations.
+Measurement state and visuals use one implementation for both asset formats and camera modes. White wide lines, sphere endpoints, and text are ordinary scene elements; projection and stereo rendering belong to the engine. The browser tool panels and annotation tooltip still require XR presentation and controller bindings when XR sessions are implemented. Those bindings should call the existing shared operations.
 
 The runtime engine remains pinned in `package.json`. Embedded annotation layout has a small container adapter around the bundled manager; recheck it when upgrading the engine. Annotation markers use each visible viewport camera and the manager's native layers, without a dedicated annotation camera or render pass. Camera-facing visuals are replicated per visible panel; records and region masks stay shared. No editor framework or additional runtime dependency is imported.
 

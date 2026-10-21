@@ -1,16 +1,17 @@
-import { defaultMeasurementStyle } from "./measurementStyle";
+import { defaultMeasurementStyle, type MeasurementStyle } from "./measurementStyle";
 import { BoundingBox, Vec3 } from "playcanvas";
 
 export interface MeasurementRecord {
   id: number; name: string; visible: boolean; saved: boolean; points: readonly Vec3[];
 }
+interface MeasurementSnapshot { records: MeasurementRecord[]; style: MeasurementStyle }
 
 export class Measurement {
-  style = defaultMeasurementStyle;
-  private snapshots: MeasurementRecord[][] = [[]];
+  private snapshots: MeasurementSnapshot[] = [{ records: [], style: defaultMeasurementStyle }];
   private cursor = 0;
   private nextId = 1;
-  get records(): readonly MeasurementRecord[] { return this.snapshots[this.cursor]!; }
+  get records(): readonly MeasurementRecord[] { return this.snapshots[this.cursor]!.records; }
+  get style(): MeasurementStyle { return this.snapshots[this.cursor]!.style; }
   get segments(): readonly (readonly Vec3[])[] { return this.records.map(record => record.points); }
   get visibleSegments(): readonly (readonly Vec3[])[] { return this.records.filter(record => record.visible).map(record => record.points); }
   get points(): readonly Vec3[] { return this.records.at(-1)?.points ?? []; }
@@ -51,6 +52,9 @@ export class Measurement {
       this.change(this.records.map(record => record.id === id ? { ...record, visible } : record));
     }
   }
+  setStyle(style: MeasurementStyle) {
+    if (style.lineWidth !== this.style.lineWidth || style.fontSize !== this.style.fontSize) this.change([...this.records], style);
+  }
   undo() { if (this.canUndo) this.cursor--; }
   redo() { if (this.canRedo) this.cursor++; }
   bounds(id?: number): BoundingBox | null {
@@ -64,9 +68,9 @@ export class Measurement {
     const id = this.nextId++;
     return { id, name: `Measurement ${id}`, visible: true, saved: false, points };
   }
-  private change(points: MeasurementRecord[]) {
+  private change(points: MeasurementRecord[], style = this.style) {
     this.snapshots.splice(++this.cursor);
-    this.snapshots.push(points);
+    this.snapshots.push({ records: points, style });
   }
 }
 

@@ -60,5 +60,5 @@ export function recallFrame(camera: CameraComponent, frame: ViewFrame) {
 }
 
 export function restoreView(handle: SelectionHandle, view: NamedView) {
-  handle.space.setRotation(view.assetRotation); recallFrame(handle.camera(), view.frame);
+  handle.space.setRotation(view.assetRotation); handle.viewports.restore(view.frame);
 }

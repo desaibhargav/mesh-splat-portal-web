@@ -76,25 +76,45 @@ try {
       return { width: canvas.width, height: canvas.height, quadrants };
     }, data.toString("base64"));
   }
-  async function capture(name, screenshot = false) {
+  async function capture(name, screenshot = false, annotated = false) {
     await page.click('[aria-label="Capture view"]');
     await page.locator('[aria-label="Capture name"]').fill(name);
     if (screenshot) await page.screenshot({ path: path.join(output, "capture-tool-ui.png") });
-    await page.locator('button ::-p-text(Download capture)').click();
+    await page.locator(`.capture-actions button ::-p-text(${annotated ? "Download with annotations" : "Download"})`).click();
     const data = await waitForFile(`${name}.png`);
     if (!data.subarray(1, 4).equals(Buffer.from("PNG"))) throw new Error("Downloaded file is not a PNG");
-    return imageStats(data);
+    return { data, stats: await imageStats(data) };
   }
   for (const id of Object.keys(assets)) {
     await page.goto(`${base}/artifacts/${id}`);
     await page.waitForSelector('[aria-label="Capture view"]:not([disabled])', { timeout: 90000 });
     await page.$eval(".viewer-frame", node => node.scrollIntoView());
     const canvas = await page.$eval(".viewer-canvas canvas", node => ({ width: node.width, height: node.height }));
-    const single = await capture(`${id} single`, id === Object.keys(assets)[0]);
+    const singleCapture = await capture(`${id} single`, id === Object.keys(assets)[0]), single = singleCapture.stats;
     if (single.width !== canvas.width || single.height !== canvas.height) throw new Error(`Capture resolution changed: ${JSON.stringify({ canvas, single })}`);
+    const surface = await page.evaluate(async () => {
+      const node = document.querySelector(".selection-toolbar");
+      let fiber = node[Object.keys(node).find(key => key.startsWith("__reactFiber$"))];
+      while (fiber && !fiber.memoizedProps?.handle) fiber = fiber.return;
+      const handle = fiber.memoizedProps.handle, bounds = handle.app.graphicsDevice.canvas.getBoundingClientRect();
+      for (let v = .25; v <= .75; v += .05) for (let u = .25; u <= .75; u += .05) {
+        if (await handle.selection.primitiveAt(handle.app, handle.camera(), u, v)) return { x: bounds.x + u * bounds.width, y: bounds.y + v * bounds.height };
+      }
+      return null;
+    });
+    if (!surface) throw new Error("No visible surface for annotation capture");
+    await page.click('[aria-label="Annotate"]');
+    await page.locator('button ::-p-text(Annotate with a point)').click();
+    await page.mouse.click(surface.x, surface.y);
+    await page.waitForSelector('input[name="title"]');
+    await page.type('input[name="title"]', "Captured note");
+    await page.type('textarea[name="description"]', "Visible annotation description");
+    await page.locator('button ::-p-text(Save annotation)').click();
+    const annotated = await capture(`${id} annotated`, false, true);
+    if (annotated.data.equals(singleCapture.data)) throw new Error("Annotated capture did not change the PNG");
     await page.click('[aria-label="Four views"]');
     await page.waitForSelector(".viewport-layout.is-split");
-    const split = await capture(`${id} four views`);
+    const split = (await capture(`${id} four views`)).stats;
     if (split.quadrants.some(colors => colors < 3)) throw new Error(`Four-view capture has an empty panel: ${JSON.stringify(split)}`);
     console.log("CAPTURED", id, { single, split });
   }

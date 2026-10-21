@@ -15,7 +15,7 @@ export class ViewGizmo {
   private controlsEnabled: boolean | null = null;
   private disposed = false;
 
-  constructor(private readonly handle: SelectionHandle) {
+  constructor(private readonly handle: SelectionHandle, private readonly onStart?: () => void, private readonly onEnd?: () => void) {
     this.camera = handle.camera(); this.controls = cameraControls(this.camera);
     this.layer = Gizmo.createLayer(handle.app);
     handle.app.root.addChild(this.reference);
@@ -28,10 +28,11 @@ export class ViewGizmo {
     handle.app.graphicsDevice.canvas.addEventListener("pointercancel", this.cancel);
     this.gizmo.attach([this.reference]);
     this.gizmo.on(TransformGizmo.EVENT_TRANSFORMSTART, () => {
+      this.onStart?.();
       this.controlsEnabled = this.controls.enabled; this.controls.enabled = false;
     });
     this.gizmo.on(TransformGizmo.EVENT_TRANSFORMMOVE, () => handle.space.setRotation(this.reference.getRotation()));
-    this.gizmo.on(TransformGizmo.EVENT_TRANSFORMEND, () => this.releaseCamera());
+    this.gizmo.on(TransformGizmo.EVENT_TRANSFORMEND, () => { this.releaseCamera(); this.onEnd?.(); });
     handle.space.on("change", this.syncRotation, this);
     const extent = handle.selection.bounds(null)!.halfExtents.length();
     // Ten subdivisions on either side are display policy, independent of asset scale.

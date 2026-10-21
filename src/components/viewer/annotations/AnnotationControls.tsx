@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { BoundingBox, Vec3 } from "playcanvas";
 import { useSurfacePick } from "../picking/useSurfacePick";
 import { decodeColor } from "../selection/selectionColors";
-import { focusSelection } from "../selection/focusSelection";
 import { unpackSelection } from "../selection/SelectionHistory";
 import { snapshotContains } from "../selection/selectionSnapshot";
 import type { SelectionHandle } from "../selection/types";
@@ -61,7 +60,7 @@ export function AnnotationControls({ handle, annotations, active, interactive, h
     annotations.setVisible(record.id, true); editAnnotation({ ...record, visible: true }); onChange();
     const bounds = record.region ? handle.selection.bounds(unpackSelection(record.region)) :
       new BoundingBox(handle.space.toWorld(record.position), new Vec3());
-    if (bounds) focusSelection(bounds, handle.camera());
+    if (bounds) handle.viewports.focus(bounds);
   }, [handle, active, openRequest]);
 
   const { busy, message } = useSurfacePick({
@@ -99,7 +98,7 @@ export function AnnotationControls({ handle, annotations, active, interactive, h
       if (undo) { if (key.shiftKey) annotations.redo(); else annotations.undo(); cancelAnnotation(); redraw(); onChange(); }
       else {
         const bounds = handle.selection.bounds(null);
-        if (bounds) focusSelection(bounds, handle.camera());
+        if (bounds) handle.viewports.focus(bounds);
       }
     }
     frame.addEventListener("keydown", keyDown);
@@ -114,11 +113,12 @@ export function AnnotationControls({ handle, annotations, active, interactive, h
     drag: "Drag the marker to a new surface"
   } as const)[step ?? "choose"];
   const displayedAnnotations = useMemo(() => {
-    const preview = draft?.position ? { ...draft, id: draft.id ?? 0, title: draft.title.trim() || "New annotation",
-      text: draft.text.trim(), position: draft.position, visible: true } satisfies AnnotationRecord : null;
+    const saved = annotations.records.find(record => record.id === draft?.id);
+    const preview = draft?.position ? { id: draft.id ?? 0, title: saved?.title ?? "New annotation",
+      text: saved?.text ?? "", region: draft.region, color: draft.color, position: draft.position, visible: true } satisfies AnnotationRecord : null;
     const records = annotations.records.flatMap(record => record.id === preview?.id ? [preview] : record.visible ? [record] : []);
     return preview && draft?.id === undefined ? [...records, preview] : records;
-  }, [annotations.records, draft]);
+  }, [annotations.records, draft?.id, draft?.position, draft?.region, draft?.color]);
   const choosing = step === "selection" || step === "marker";
   const hasSelections = handle.selection.areas.some(area => area.visible);
 

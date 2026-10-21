@@ -4,6 +4,8 @@ import { useSelectionAreaPick } from "../annotations/useSelectionAreaPick";
 import { packSelection } from "../selection/selectionSnapshot";
 import type { SelectionHandle, SelectionSnapshot } from "../selection/types";
 import type { SegmentWorkspaces } from "./SegmentWorkspaces";
+import { SelectionColorPicker } from "../selection/SelectionColorPicker";
+import { encodeColor } from "../selection/selectionColors";
 
 export function SegmentControls({ handle, workspaces, active, seed, drawing, onDraw, disabled, children }: {
   handle: SelectionHandle; workspaces: SegmentWorkspaces; active: boolean; disabled: boolean;
@@ -46,6 +48,8 @@ export function SegmentControls({ handle, workspaces, active, seed, drawing, onD
         <button disabled={disabled} onClick={draw}>New segment</button>
         <button disabled={disabled || !handle.selection.areas.some(area => area.visible)} onClick={() => setStep("selection")}>From existing selection</button>
       </>}
+      {document.id !== 0 && step === "choose" && <SelectionColorPicker disabled={disabled}
+        onApply={hex => workspaces.setColor(encodeColor(hex))} onReset={() => workspaces.setColor(0)} />}
       {step === "selection" && <span role="status">{pick.error ?? (pick.area ? `Click ${pick.area.name} to create a segment` : "Hover over a selection, then click it")}</span>}
       {step === "details" && <>
         {drawing && children}

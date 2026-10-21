@@ -1,6 +1,6 @@
 # Segments
 
-Segments are session-local editing workspaces over a named region of the published asset. Each workspace owns selections/paint and their history, annotations, measurements and appearance, views, sections, and camera/asset orientation. The active workspace uses the existing shared tools; there are no separate mesh/splat or segment versions of them.
+Segments are session-local editing workspaces over a named region of the published asset. Each workspace owns selections/paint and their history, annotations, measurements and appearance, sections, and camera/asset orientation. Named views are shared with the asset because they describe the same asset transform and remain useful for every segment. The active workspace uses the existing shared tools; there are no separate mesh/splat or segment versions of them.
 
 ## Workflow
 

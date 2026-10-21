@@ -1,6 +1,7 @@
-import { Entity, EventHandler, PROJECTION_ORTHOGRAPHIC, PROJECTION_PERSPECTIVE, Vec3, Vec4, type AppBase, type CameraComponent } from "playcanvas";
+import { Entity, EventHandler, PROJECTION_ORTHOGRAPHIC, PROJECTION_PERSPECTIVE, Vec3, Vec4, type AppBase, type BoundingBox, type CameraComponent } from "playcanvas";
 import { CameraControls, cameraControls } from "../CameraControls";
-import { captureFrame, directionFrame, recallFrame } from "../views/viewFrame";
+import { captureFrame, directionFrame, recallFrame, type ViewFrame } from "../views/viewFrame";
+import { focusSelection } from "../selection/focusSelection";
 
 export interface Viewport { id: string; label: string; camera: CameraComponent }
 export function viewportContains(camera: CameraComponent, u: number, v: number) {
@@ -37,6 +38,7 @@ export class ViewerViewports extends EventHandler {
     app.xr?.on("start", this.enterXR, this); app.xr?.on("end", this.leaveXR, this);
   }
   get visible() { return this.split ? this.panels : [this.active]; }
+  get perspectivePanel() { return this.panels.find(panel => panel.id === "perspective") ?? this.active; }
   activate(panel: Viewport) {
     if (this.active === panel || (this.app.xr?.camera && panel.camera.entity !== this.app.xr.camera)) return;
     cameraControls(this.active.camera).enabled = false;
@@ -84,6 +86,26 @@ export class ViewerViewports extends EventHandler {
   perspective(panel: Viewport) {
     panel.camera.projection = PROJECTION_PERSPECTIVE; panel.label = "Perspective"; this.changed();
   }
+  focus(bounds: BoundingBox) {
+    for (const panel of this.visible) focusSelection(bounds, panel.camera);
+    this.changed();
+  }
+  restore(frame: ViewFrame) {
+    for (const panel of this.visible) {
+      if (!this.split || panel.id === "perspective") recallFrame(panel.camera, frame);
+      else {
+        const current = captureFrame(panel.camera);
+        current.origin.copy(frame.origin); current.distance = frame.distance;
+        current.orthoHeight = frame.orthoHeight ?? frame.distance / panel.camera.projectionMatrix.data[5]!;
+        recallFrame(panel.camera, current);
+      }
+    }
+    this.changed();
+  }
+  restorePerspective(frame: ViewFrame) {
+    recallFrame(this.split ? this.perspectivePanel.camera : this.active.camera, frame); this.changed();
+  }
+  refresh() { this.changed(); }
   private createPanels() {
     const primary = this.active.camera;
     const definitions = [{ id: "top", label: "Top", normal: Vec3.UP },

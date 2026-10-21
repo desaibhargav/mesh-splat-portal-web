@@ -209,9 +209,9 @@ export class SplatSelection {
     this.selectionAreas = this.selectionAreas.map(area => area.id === id ? { ...area, visible } : area);
     this.currentArea = currentSelectionArea(this.state, this.selectionAreas); this.update(); return this.summary;
   }
-  paint(color: number): SelectionSummary {
+  paint(color: number, replaceColor = this.currentArea?.color ?? 0): SelectionSummary {
     const areas = updateSelectionAreas(this.selectionAreas, this.paintState, [this.mask], color);
-    const next = paintSelection(this.paintState, [this.mask], color, this.currentArea?.color);
+    const next = paintSelection(this.paintState, [this.mask], color, replaceColor);
     if (next !== this.paintState) {
       this.paintState = next; this.selectionAreas = areas;
       this.currentArea = currentSelectionArea(this.state, areas); this.update();

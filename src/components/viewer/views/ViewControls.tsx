@@ -5,6 +5,7 @@ import { ViewGizmo } from "./ViewGizmo";
 import { captureFrame, copyFrame, restoreView, type NamedView, type ViewFrame } from "./viewFrame";
 import { ThreePointAlignment } from "./ThreePointAlignment";
 import type { SavedPresets } from "../presets/SavedPresets";
+import { ViewHistory } from "./ViewHistory";
 
 export function ViewControls({ handle, active, views, openRequest }: {
   openRequest: { id: number } | null;
@@ -16,6 +17,10 @@ export function ViewControls({ handle, active, views, openRequest }: {
   const [picking, setPicking] = useState(false);
   const [frame, setFrame] = useState<ViewFrame | null>(null);
   const before = useRef<NamedView | null>(null);
+  const history = useRef<ViewHistory | null>(null);
+  history.current ??= new ViewHistory(handle);
+  const wheelCommit = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pointerCommit = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedName = views.records.find(record => record.id === editing)?.name;
   useEffect(() => { if (savedName !== undefined) setName(savedName); }, [savedName]);
 
@@ -30,8 +35,39 @@ export function ViewControls({ handle, active, views, openRequest }: {
   // Restore a cancelled draft before another tool applies its camera focus.
   useLayoutEffect(() => { if (!active) cancel(); }, [active]);
   useEffect(() => {
+    if (!active) return;
+    history.current!.reset();
+    const frame = (handle.app.graphicsDevice.canvas as HTMLCanvasElement).closest(".viewer-frame")!;
+    const canvas = handle.app.graphicsDevice.canvas;
+    const editable = (event: Event) => (event.target as HTMLElement).closest("input:not([type=range]), textarea, select, [contenteditable]:not([contenteditable=false])");
+    const down = (event: Event) => { if (!editable(event)) history.current!.begin(); };
+    const up = () => { if (pointerCommit.current) clearTimeout(pointerCommit.current);
+      pointerCommit.current = setTimeout(() => history.current!.commit(), 180); };
+    const wheel = (event: Event) => {
+      if (editable(event)) return;
+      history.current!.begin();
+      if (wheelCommit.current) clearTimeout(wheelCommit.current);
+      wheelCommit.current = setTimeout(() => history.current!.commit(), 180);
+    };
+    const key = (event: Event) => {
+      const value = event as KeyboardEvent;
+      if (value.repeat || value.altKey || editable(event) || !(value.metaKey || value.ctrlKey) || value.key.toLowerCase() !== "z") return;
+      value.preventDefault(); value.stopPropagation();
+      value.shiftKey ? history.current!.redo() : history.current!.undo();
+    };
+    canvas.addEventListener("pointerdown", down, true); canvas.addEventListener("pointerup", up, true);
+    canvas.addEventListener("pointercancel", up, true); canvas.addEventListener("wheel", wheel, { capture: true, passive: true });
+    frame.addEventListener("keydown", key);
+    return () => {
+      canvas.removeEventListener("pointerdown", down, true); canvas.removeEventListener("pointerup", up, true);
+      canvas.removeEventListener("pointercancel", up, true); canvas.removeEventListener("wheel", wheel, true);
+      frame.removeEventListener("keydown", key); if (wheelCommit.current) clearTimeout(wheelCommit.current);
+      if (pointerCommit.current) clearTimeout(pointerCommit.current);
+    };
+  }, [active, handle]);
+  useEffect(() => {
     if (!active || !drafting || picking) return;
-    const gizmo = new ViewGizmo(handle);
+    const gizmo = new ViewGizmo(handle, () => history.current!.begin(), () => history.current!.commit());
     return () => gizmo.destroy();
   }, [handle, active, drafting, picking]);
 
@@ -42,7 +78,7 @@ export function ViewControls({ handle, active, views, openRequest }: {
   }
   function open(view: NamedView) {
     if (drafting) cancel();
-    before.current = snapshot(); restoreView(handle, view);
+    before.current = snapshot(); history.current!.perform(() => restoreView(handle, view));
     setEditing(view.id); setName(view.name); setFrame(copyFrame(view.frame));
     setPicking(false); setDrafting(true);
   }
@@ -66,7 +102,7 @@ export function ViewControls({ handle, active, views, openRequest }: {
     views.remove(id);
   }
   function align(aligned: ViewFrame) {
-    handle.space.setRotation(aligned.rotation.clone().invert().mul(handle.space.rotation));
+    history.current!.perform(() => handle.space.setRotation(aligned.rotation.clone().invert().mul(handle.space.rotation)));
     setPicking(false);
   }
 
@@ -87,7 +123,7 @@ export function ViewControls({ handle, active, views, openRequest }: {
           {picking && frame ? <ThreePointAlignment handle={handle} frame={frame} onAlign={align} onCancel={() => setPicking(false)} /> : <>
             <p>Rotate the asset against the world grid. The current camera is saved with the view.</p>
             <button onClick={() => { setFrame(captureFrame(handle.camera())); setPicking(true); }}>Align to three points</button>
-            <button className="tool-action-reset" onClick={() => handle.space.setRotation(Quat.IDENTITY)}>Reset orientation</button>
+            <button className="tool-action-reset" onClick={() => history.current!.perform(() => handle.space.setRotation(Quat.IDENTITY))}>Reset orientation</button>
             <button disabled={!name.trim()} className="tool-action-save" onClick={save}>{editing === null ? "Save view" : "Update view"}</button>
             <button className="tool-action-reset" onClick={cancel}>Cancel</button>
           </>}

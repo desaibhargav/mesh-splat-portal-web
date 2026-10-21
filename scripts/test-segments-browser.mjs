@@ -244,6 +244,12 @@ try {
     let alpha = await doc();
     check(alpha.id > 0 && alpha.total === parent.selected && alpha.colors === 0 && alpha.areas.length === 0, "Independent segment initialization");
     check(JSON.stringify(alpha.vertices) === JSON.stringify(parent.vertices), "Geometry was duplicated");
+    await page.click('[aria-label="Color selection blue"]');
+    await settle();
+    check((await doc()).colors === alpha.total, "Segment color did not cover its shared-geometry scope");
+    await exact("Remove Color", ".segment-options");
+    await settle();
+    check((await doc()).colors === 0, "Segment source appearance was not restored");
     const rejected = await (await appHandle()).evaluate(async (h, points) => {
       for (const p of points) if (!await h.selection.primitiveAt(h.app, h.camera(), p.u, p.v)) return p;
       return null;
@@ -343,10 +349,36 @@ try {
     await pointer("front");
     await page.click("[aria-label=\"Views\"]");
     await exact("Create view");
+    const rotated = await (await appHandle()).evaluate(h => {
+      h.space.setRotation(new h.space.rotation.constructor().setFromEulerAngles(12, 23, 4));
+      return h.space.rotation.toArray();
+    });
+    await exact("Reset orientation", ".view-options");
+    await page.keyboard.down("Control"); await page.keyboard.press("z"); await page.keyboard.up("Control");
+    check(await (await appHandle()).evaluate((h, expected) => h.space.rotation.toArray().every((value, index) => Math.abs(value - expected[index]) < 1e-6), rotated),
+      "View rotation did not undo");
+    const cameraBefore = await (await appHandle()).evaluate(h => h.camera().entity.getPosition().toArray());
+    await orbit(); await new Promise(resolve => setTimeout(resolve, 250));
+    await page.keyboard.down("Control"); await page.keyboard.press("z"); await page.keyboard.up("Control");
+    check(await (await appHandle()).evaluate((h, expected) => h.camera().entity.getPosition().toArray().every((value, index) => Math.abs(value - expected[index]) < 1e-4), cameraBefore),
+      "View camera adjustment did not undo");
     await page.locator("[aria-label=\"View name\"]").fill("Segment reference");
     await exact("Save view");
+    const viewFrames = await (await appHandle()).evaluate(h => {
+      const controls = panel => panel.camera.entity.script.get("cameraControls");
+      return Object.fromEntries(h.viewports.panels.map(panel => [panel.id, controls(panel).focusPoint.toArray()]));
+    });
+    check(Object.values(viewFrames).every(origin => origin.every(Number.isFinite)), "Saved view did not update every viewport");
     await page.click("[aria-label=\"Cross section\"]");
     await page.select("[aria-label=\"Section reference\"]", "1");
+    const camerasBeforeCut = await (await appHandle()).evaluate(h => Object.fromEntries(h.viewports.panels.map(panel => [panel.id, panel.camera.entity.getPosition().toArray()])));
+    await exact("X", ".selection-shapes");
+    const camerasAfterCut = await (await appHandle()).evaluate(h => Object.fromEntries(h.viewports.panels.map(panel => [panel.id, panel.camera.entity.getPosition().toArray()])));
+    check(camerasBeforeCut.perspective.some((value, index) => Math.abs(value - camerasAfterCut.perspective[index]) > 1e-5),
+      "Cut normal did not align the Perspective panel");
+    check(["top", "front", "right"].every(id => camerasBeforeCut[id].every((value, index) => Math.abs(value - camerasAfterCut[id][index]) < 1e-6)),
+      "Cut normal changed an orthographic inspection panel");
+    await exact("View", ".selection-shapes");
     await exact("Enable section");
     await page.locator("[aria-label=\"Section name\"]").fill("Segment cut");
     await exact("Save section");
@@ -456,6 +488,12 @@ try {
     check(rows, "Slider labels are not inline");
     await page.focus('[aria-label="Font size"]'); await page.keyboard.press("End");
     await page.focus('[aria-label="Line width"]'); await page.keyboard.press("End");
+    await page.keyboard.down("Control"); await page.keyboard.press("z"); await page.keyboard.up("Control");
+    check(await page.$eval('[aria-label="Line width"]', e => e.value !== "8"), "Measurement line adjustment did not undo independently");
+    await page.keyboard.down("Control"); await page.keyboard.press("z"); await page.keyboard.up("Control");
+    check(await page.$eval('[aria-label="Font size"]', e => e.value !== "28"), "Measurement font adjustment did not undo independently");
+    await page.focus('[aria-label="Font size"]'); await page.keyboard.press("End");
+    await page.focus('[aria-label="Line width"]'); await page.keyboard.press("End");
     await page.click('[aria-label="Reset font size"]');
     check(await page.$eval('[aria-label="Line width"]', e => e.value === "8"), "Font reset changed line width");
     await page.click('[aria-label="Reset line width"]');
@@ -470,6 +508,13 @@ try {
     check(await page.$('.annotation-kinds'), "Old tree request reopened after leaving the tool");
     await exact("Segment reference", ".viewer-tree");
     await page.waitForFunction(() => document.querySelector('[aria-label="View name"]')?.value === "Segment reference");
+    check(await (await appHandle()).evaluate(h => {
+      const node = document.querySelector(".selection-toolbar");
+      let f = node[Object.keys(node).find(k => k.startsWith("__reactFiber$"))];
+      while (f && !f.memoizedProps?.workspaces) f = f.return;
+      const view = f.memoizedProps.workspaces.current.views.records.find(record => record.name === "Segment reference");
+      return h.viewports.visible.every(panel => panel.camera.entity.script.get("cameraControls").focusPoint.distance(view.frame.origin) < 1e-6);
+    }), "Saved view recall did not update every visible viewport");
     // Leaving a recalled view cancels its draft before the next tool frames.
     await exact("Alpha span", ".viewer-tree");
     await page.waitForFunction(() => document.querySelector('[aria-label="Measurement name"]')?.value === "Alpha span");
@@ -480,16 +525,17 @@ try {
       const m = f.memoizedProps.workspaces.current.measurement;
       const record = m.records.find(item => item.name === "Alpha span");
       const bounds = h.space.worldBounds(m.bounds(record.id));
-      return h.camera().entity.script.get("cameraControls").focusPoint.distance(bounds.center) < 1e-6;
+      return h.viewports.visible.every(panel => panel.camera.entity.script.get("cameraControls").focusPoint.distance(bounds.center) < 1e-6);
     });
-    check(centered, "View cancellation overwrote measurement framing");
+    check(centered, "Measurement tree framing did not update every visible viewport");
     await exact("Segment cut", ".viewer-tree");
     await page.waitForFunction(() => document.querySelector('[aria-label="Section name"]')?.value === "Segment cut");
     await page.screenshot({ path: path.join(output, slug + "-tree-section.png") });
     await exact("Segment reference", ".viewer-tree");
     await exact("Alpha", ".viewer-tree");
-    check(await (await appHandle()).evaluate(h => h.camera().entity.script.get("cameraControls").focusPoint.distance(h.selection.bounds(null).center) < 1e-6),
-      "View cancellation overwrote segment framing");
+    check(await (await appHandle()).evaluate(h => h.viewports.visible.every(panel =>
+      panel.camera.entity.script.get("cameraControls").focusPoint.distance(h.selection.bounds(null).center) < 1e-6)),
+      "Segment tree framing did not update every visible viewport");
     await page.setViewport({ width: 600, height: 1000, deviceScaleFactor: 1 }); await settle();
     const separated = await page.evaluate(() => {
       const a = document.querySelector('.workspace-banner').getBoundingClientRect(), b = document.querySelector('.annotation-panels').getBoundingClientRect();

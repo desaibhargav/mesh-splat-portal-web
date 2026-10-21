@@ -74,6 +74,13 @@ export function SectionControls({ handle, active, views, sections, session, open
     const view = views.find(view => String(view.id) === value);
     if (view) { restoreView(handle, view); useReference(view.frame, value); }
   }
+  function chooseAlignment(value: ViewAxis | "view") {
+    const reset = { ...initialOptions };
+    setAlignment(value); setOptions(reset);
+    if (!reference || !bounds) return;
+    const aligned = sectionFrame(value === "view" ? reference : axisFrame(reference, value), bounds, reset);
+    handle.viewports.restorePerspective(cutawayView(aligned, reset.flip));
+  }
 
   function applySection(section: NamedSection) {
     setReference(copyFrame(section.reference)); setSource(section.source);
@@ -121,7 +128,7 @@ export function SectionControls({ handle, active, views, sections, session, open
       </select></label>
       <fieldset className="selection-shapes"><legend>Cutting-plane normal</legend>
         {(["view", "X", "Y", "Z"] as const).map(axis => <button key={axis} aria-pressed={alignment === axis}
-          onClick={() => { setAlignment(axis); setOptions(initialOptions); }}>{axis === "view" ? "View" : axis}</button>)}
+          onClick={() => chooseAlignment(axis)}>{axis === "view" ? "View" : axis}</button>)}
       </fieldset>
       {adjustments.map(({ key, label, scale, limit, unit }) => <SliderControl key={key} label={label}
         ariaLabel={key === "offset" ? "Section offset" : label} min={-limit} max={limit} unit={unit}
@@ -132,7 +139,7 @@ export function SectionControls({ handle, active, views, sections, session, open
         <button aria-pressed={options.flip} onClick={() => setOptions({ ...options, flip: !options.flip })}>Flip retained side</button>
         <button aria-pressed={showPlane} onClick={() => setShowPlane(!showPlane)}>Show cutting plane</button>
         <button onClick={fromCamera}>From current camera</button>
-        <button disabled={!frame} onClick={() => frame && recallFrame(handle.camera(), cutawayView(frame, options.flip))}>Look perpendicular to cut</button>
+        <button disabled={!frame} onClick={() => frame && handle.viewports.restorePerspective(cutawayView(frame, options.flip))}>Look perpendicular to cut</button>
         <button className="tool-action-reset" onClick={() => setOptions(initialOptions)}>Reset section position</button>
       </div>
       <label>Section name<input aria-label="Section name" value={name} onChange={event => setName(event.target.value)} /></label>

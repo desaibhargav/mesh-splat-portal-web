@@ -1,5 +1,6 @@
 import {
-  CanvasFont, Color, ELEMENTTYPE_TEXT, Entity, Layer, PROJECTION_ORTHOGRAPHIC, Quat, StandardMaterial, Vec2, Vec3,
+  CanvasFont, Color, ELEMENTTYPE_TEXT, Entity, Layer, LINECAP_ROUND, PROJECTION_ORTHOGRAPHIC, StandardMaterial, Vec2, Vec3,
+  WideLine, WideLineRenderer,
   type AppBase, type CameraComponent
 } from "playcanvas";
 import type { SelectionHandle } from "../selection/types";
@@ -10,7 +11,7 @@ export { defaultMeasurementStyle, type MeasurementStyle } from "./measurementSty
 
 interface SegmentVisual {
   points: readonly Vec3[]; worldPoints: Vec3[]; root: Entity; markers: Entity[]; markerLabels: Entity[];
-  line: Entity | null; label: Entity | null; midpoint: Vec3;
+  line: WideLine | null; linePositions: Float32Array | null; label: Entity | null; midpoint: Vec3;
 }
 
 interface MeasurementResources { font: CanvasFont; material: StandardMaterial; users: number }
@@ -43,16 +44,15 @@ export class MeasurementRenderer {
   private readonly layer = new Layer({ name: "Measurements", clearDepthBuffer: true });
   private readonly font: CanvasFont;
   private readonly material: StandardMaterial;
+  private readonly lines: WideLineRenderer;
   private readonly camera: CameraComponent;
   private readonly markerSize: number;
   private readonly gap: number;
   private readonly delta = new Vec3();
-  private readonly direction = new Vec3();
   private readonly screenStart = new Vec3();
   private readonly screenEnd = new Vec3();
   private readonly normal = new Vec2();
   private readonly labelOffset = new Vec3();
-  private readonly rotation = new Quat();
   private style = defaultMeasurementStyle;
   private visuals: SegmentVisual[] = [];
   private disposed = false;
@@ -67,6 +67,8 @@ export class MeasurementRenderer {
     handle.app.root.addChild(this.root);
     handle.app.scene.layers.push(this.layer);
     this.camera.layers = [...this.camera.layers, this.layer.id];
+    this.lines = new WideLineRenderer(handle.app); this.lines.layer = this.layer;
+    this.lines.depthTest = false; this.lines.depthWrite = false;
     handle.app.on("prerender", this.update, this);
     handle.app.on("destroy", this.destroy, this);
   }
@@ -82,6 +84,7 @@ export class MeasurementRenderer {
   setStyle(style: MeasurementStyle) {
     this.style = style;
     for (const visual of this.visuals) {
+      visual.line?.setWidths(style.lineWidth);
       for (const text of [...visual.markerLabels, ...(visual.label ? [visual.label] : [])]) {
         text.element!.fontSize = style.fontSize; text.element!.lineHeight = style.fontSize;
       }
@@ -91,7 +94,7 @@ export class MeasurementRenderer {
   setSegments(segments: readonly (readonly Vec3[])[]) {
     this.font.updateTextures(segments.filter(points => points.length === 2)
       .map(points => formatDistance(points[0]!.distance(points[1]!))).join(""));
-    this.visuals.slice(segments.length).forEach(visual => visual.root.destroy());
+    this.visuals.slice(segments.length).forEach(visual => { if (visual.line) this.lines.remove(visual.line); visual.root.destroy(); });
     this.visuals.length = Math.min(this.visuals.length, segments.length);
     segments.forEach((points, i) => {
       const existing = this.visuals[i];
@@ -100,6 +103,7 @@ export class MeasurementRenderer {
         if (existing.label) existing.label.element!.text = formatDistance(points[0]!.distance(points[1]!));
         return;
       }
+      if (this.visuals[i]?.line) this.lines.remove(this.visuals[i].line);
       this.visuals[i]?.root.destroy();
       const root = new Entity("Measurement segment"); this.root.addChild(root);
       const markerLabels: Entity[] = [];
@@ -113,13 +117,15 @@ export class MeasurementRenderer {
         return marker;
       });
       const midpoint = points.length === 2 ? new Vec3().lerp(points[0]!, points[1]!, 0.5) : points[0]!.clone();
-      let line: Entity | null = null, label: Entity | null = null;
+      let line: WideLine | null = null, label: Entity | null = null;
+      let linePositions: Float32Array | null = null;
       if (points.length === 2) {
-        line = new Entity("Measurement line"); root.addChild(line);
-        line.addComponent("render", { type: "cylinder", material: this.material, layers: [this.layer.id], castShadows: false, receiveShadows: false });
+        linePositions = new Float32Array(6);
+        line = new WideLine().set(linePositions, [1, 1, 1, 1, 1, 1], this.style.lineWidth);
+        line.cap = LINECAP_ROUND; this.lines.add(line);
         label = this.text(root, formatDistance(points[0]!.distance(points[1]!)));
       }
-      this.visuals[i] = { points, worldPoints: points.map(() => new Vec3()), root, markers, markerLabels, line, label, midpoint };
+      this.visuals[i] = { points, worldPoints: points.map(() => new Vec3()), root, markers, markerLabels, line, linePositions, label, midpoint };
     });
   }
 
@@ -155,13 +161,11 @@ export class MeasurementRenderer {
       this.labelOffset.copy(this.camera.entity.right).mulScalar(this.normal.x)
         .add(this.delta.copy(this.camera.entity.up).mulScalar(-this.normal.y)).mulScalar(clearance);
       this.billboard(visual.label, visual.midpoint, this.labelOffset);
-      const length = this.direction.sub2(visual.worldPoints[1]!, visual.worldPoints[0]!).length();
-      visual.line.enabled = length > 0;
-      if (!visual.line.enabled) continue;
-      visual.line.setPosition(visual.midpoint);
-      visual.line.setRotation(this.rotation.setFromDirections(Vec3.UP, this.direction.mulScalar(1 / length)));
-      const width = this.pixelScale(visual.midpoint) * this.style.lineWidth;
-      visual.line.setLocalScale(width, length, width);
+      const start = visual.worldPoints[0]!, end = visual.worldPoints[1]!, packed = visual.linePositions!;
+      if (packed[0] !== start.x || packed[1] !== start.y || packed[2] !== start.z ||
+          packed[3] !== end.x || packed[4] !== end.y || packed[5] !== end.z) {
+        packed.set([start.x, start.y, start.z, end.x, end.y, end.z]); visual.line.setPositions(packed);
+      }
     }
   }
 
@@ -169,7 +173,7 @@ export class MeasurementRenderer {
     if (this.disposed) return;
     this.disposed = true;
     this.handle.app.off("prerender", this.update, this); this.handle.app.off("destroy", this.destroy, this);
-    this.root.destroy(); releaseResources(this.handle.app); this.handle.app.scene.layers.remove(this.layer);
+    this.lines.destroy(); this.root.destroy(); releaseResources(this.handle.app); this.handle.app.scene.layers.remove(this.layer);
     this.camera.layers = this.camera.layers.filter(id => id !== this.layer.id);
   }
 }

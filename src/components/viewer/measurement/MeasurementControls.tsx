@@ -1,7 +1,6 @@
 import { SliderControl } from "../SliderControl";
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import type { SelectionHandle } from "../selection/types";
-import { focusSelection } from "../selection/focusSelection";
 import { formatDistance, Measurement } from "./Measurement";
 import { MeasurementVisuals } from "./MeasurementVisuals";
 import { defaultMeasurementStyle } from "./MeasurementRenderer";
@@ -16,8 +15,6 @@ const adjustments = [
 export function MeasurementControls({ handle, measurement, active, onChange, openRequest }: {
   handle: SelectionHandle; measurement: Measurement; active: boolean; onChange(): void; openRequest: { id: number } | null;
 }) {
-  const [style, setStyle] = useState(measurement.style);
-  useEffect(() => { measurement.style = style; }, [measurement, style]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [name, setName] = useState("");
   const [editing, setEditing] = useState(false);
@@ -63,7 +60,7 @@ export function MeasurementControls({ handle, measurement, active, onChange, ope
     if (requested) {
       measurement.setVisible(requested.id, true); open(requested.id); redraw();
       const bounds = measurement.bounds(requested.id);
-      if (bounds) focusSelection(handle.space.worldBounds(bounds), handle.camera());
+      if (bounds) handle.viewports.focus(handle.space.worldBounds(bounds));
       return;
     }
     const draft = measurement.records.at(-1);
@@ -81,7 +78,7 @@ export function MeasurementControls({ handle, measurement, active, onChange, ope
     const frame = (handle.app.graphicsDevice.canvas as HTMLCanvasElement).closest(".viewer-frame")!;
     function keyDown(event: Event) {
       const key = event as KeyboardEvent;
-      if (key.repeat || key.altKey || (key.target as HTMLElement).closest("input, textarea, select, [contenteditable]:not([contenteditable=false])")) return;
+      if (key.repeat || key.altKey || (key.target as HTMLElement).closest("input:not([type=range]), textarea, select, [contenteditable]:not([contenteditable=false])")) return;
       const undo = (key.metaKey || key.ctrlKey) && key.key.toLowerCase() === "z";
       const focus = !key.metaKey && !key.ctrlKey && key.key.toLowerCase() === "f";
       if (!undo && !focus) return;
@@ -91,7 +88,7 @@ export function MeasurementControls({ handle, measurement, active, onChange, ope
       else {
         const local = measurement.bounds();
         const bounds = local ? handle.space.worldBounds(local) : handle.selection.bounds(null);
-        if (bounds) focusSelection(bounds, handle.camera());
+        if (bounds) handle.viewports.focus(bounds);
       }
     }
     frame.addEventListener("keydown", keyDown);
@@ -101,7 +98,7 @@ export function MeasurementControls({ handle, measurement, active, onChange, ope
     ? "Click the second surface point" : "Drag endpoint handles to adjust · Shift-click adds a measurement";
   const status = editing ? "Drag the endpoint along the surface" : picking ? "Picking surface…" : editError ?? message ?? instruction;
   return <>
-    {measurement.records.length > 0 && <MeasurementVisuals handle={handle} segments={segments} style={style} />}
+    {measurement.records.length > 0 && <MeasurementVisuals handle={handle} segments={segments} style={measurement.style} />}
     {active && <div className="annotation-panels measurement-panels">
       {measurement.records.some(record => record.saved) && <div className="selection-actions annotation-list measurement-list" role="group" aria-label="Saved measurements">
         <strong>Measurements</strong>
@@ -117,8 +114,8 @@ export function MeasurementControls({ handle, measurement, active, onChange, ope
         <label>Measurement name<input aria-label="Measurement name" value={name} onChange={event => setName(event.target.value)} /></label>
         <button disabled={busy || selected.points.length !== 2 || !name.trim()} className="tool-action-save" onClick={save}>{selected.saved ? "Update measurement" : "Save measurement"}</button>
       </>}
-      {adjustments.map(({ key, label, min, max }) => <SliderControl key={key} label={label} min={min} max={max} value={style[key]}
-        onChange={value => setStyle(current => ({ ...current, [key]: value }))}
+      {adjustments.map(({ key, label, min, max }) => <SliderControl key={key} label={label} min={min} max={max} value={measurement.style[key]}
+        onChange={value => { measurement.setStyle({ ...measurement.style, [key]: value }); redraw(); }}
         defaultValue={defaultMeasurementStyle[key]} />)}
       <button disabled={busy || measurement.points.length === 0} className="tool-action-reset" onClick={clearMeasurements}>Clear measurements</button>
         <small>Measurements last until you leave this asset.</small>

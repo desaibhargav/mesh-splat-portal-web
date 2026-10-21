@@ -30,6 +30,7 @@ it("scopes geometry while keeping parent and segment tool documents and historie
   const parentHistory = workspaces.history;
   workspaces.asset.measurement.add(new Vec3()); workspaces.asset.annotations.save({ title: "Parent", text: "", position: new Vec3(), region: null });
   const segment = workspaces.create("Part", region([255, 255, 0, 0]));
+  expect(segment.views).toBe(workspaces.asset.views);
   expect([...scope()![0]!]).toEqual([255, 255, 0, 0]);
   expect(workspaces.history).not.toBe(parentHistory);
   expect(segment.measurement.records).toHaveLength(0); expect(segment.annotations.records).toHaveLength(0);
@@ -43,6 +44,15 @@ it("scopes geometry while keeping parent and segment tool documents and historie
   expect([...selection.colors[0]!]).toEqual([7, 7, 0, 0]); expect(segment.measurement.points[0]!.x).toBe(1);
   workspaces.history.undo(); expect(selection.summary.selected).toBe(0);
   expect(workspaces.asset.annotations.records[0]!.title).toBe("Parent");
+});
+
+it("colors a segment scope without copying geometry and can restore its source appearance", () => {
+  const { selection, workspaces } = setup();
+  const segment = workspaces.create("Part", region([255, 255, 0, 0]));
+  workspaces.setColor(12);
+  expect(segment.color).toBe(12); expect([...selection.colors[0]!]).toEqual([12, 12, 0, 0]);
+  workspaces.setColor(0);
+  expect(segment.color).toBe(0); expect([...selection.colors[0]!]).toEqual([0, 0, 0, 0]);
 });
 
 it("hides only the active segment without changing its saved scope or opening another tool", () => {

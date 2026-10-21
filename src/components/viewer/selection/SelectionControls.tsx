@@ -14,7 +14,6 @@ import { unpackSelection } from "./SelectionHistory";
 import { SavedItems } from "../SavedItems";
 import { encodeColor, saveSelectionArea, savedSelectionColors } from "./selectionColors";
 import { SelectionColorPicker } from "./SelectionColorPicker";
-import { focusSelection } from "./focusSelection";
 import { ViewControls } from "../views/ViewControls";
 import { SectionControls } from "../section/SectionControls";
 import { CaptureControls } from "../capture/CaptureControls";
@@ -114,7 +113,7 @@ function WorkspaceTools({ handle, tool, onToolChange, disabled, captureName, wor
   }, [tool, handle, history, documentChanged]);
   useEffect(() => {
     const frame = toolbar.current?.closest(".viewer-frame");
-    if (!frame || !handle || !history || (tool === "measure" || tool === "annotate")) return;
+    if (!frame || !handle || !history || (tool === "measure" || tool === "annotate" || tool === "views")) return;
     const onKeyDown = (event: Event) => {
       const key = event as KeyboardEvent;
       if (key.repeat || key.altKey || (key.target as HTMLElement).closest("input, textarea, select, [contenteditable]:not([contenteditable=false])")) return;
@@ -126,7 +125,7 @@ function WorkspaceTools({ handle, tool, onToolChange, disabled, captureName, wor
       if (undo) setSummary(key.shiftKey ? history.redo() : history.undo());
       else {
         const bounds = handle.selection.bounds(selecting ? undefined : null);
-        if (bounds) focusSelection(bounds, handle.camera());
+        if (bounds) handle.viewports.focus(bounds);
       }
     };
     frame.addEventListener("keydown", onKeyDown);
@@ -155,7 +154,7 @@ function WorkspaceTools({ handle, tool, onToolChange, disabled, captureName, wor
     requestAnimationFrame(() => {
       if (generation.current !== token || workspaces?.current !== document) return;
       try {
-        setSummary(history.perform(() => handle.selection.paint(color)));
+        setSummary(history.perform(() => handle.selection.paint(color, document?.color)));
         documentChanged();
       } catch (failure) {
         setError(failure instanceof Error ? failure.message : String(failure));
@@ -210,7 +209,7 @@ function WorkspaceTools({ handle, tool, onToolChange, disabled, captureName, wor
   const savedSelectionName = savedSelections.find(area => area.id === editingSelection)?.name;
   useEffect(() => { if (savedSelectionName !== undefined) setSelectionName(savedSelectionName); }, [savedSelectionName]);
   function frameBounds(bounds: ReturnType<SelectionHandle["selection"]["bounds"]>) {
-    if (bounds) focusSelection(bounds, handle!.camera());
+    if (bounds) handle!.viewports.focus(bounds);
   }
   function openItem(tool: SelectionTool, id: number) {
     if (!handle || !workspaces || busy) return;
@@ -308,6 +307,7 @@ function WorkspaceTools({ handle, tool, onToolChange, disabled, captureName, wor
     {document?.visible && handle && measurement && <MeasurementControls openRequest={openRequest?.tool === "measure" ? openRequest : null} handle={handle} measurement={measurement} active={tool === "measure" && !disabled} onChange={documentChanged} />}
     {document?.visible && handle && views && <ViewControls openRequest={openRequest?.tool === "views" ? openRequest : null} handle={handle} active={tool === "views" && !disabled} views={views} />}
     {document?.visible && handle && views && sections && <SectionControls openRequest={openRequest?.tool === "section" ? openRequest : null} handle={handle} active={tool === "section" && !disabled} views={views.records} sections={sections} session={document.sectionSession} />}
-    {document?.visible && handle && <CaptureControls handle={handle} active={tool === "capture" && !disabled} initialName={captureName} />}
+    {document?.visible && handle && annotations && <CaptureControls handle={handle} annotations={annotations.records}
+      active={tool === "capture" && !disabled} initialName={captureName} />}
   </>;
 }

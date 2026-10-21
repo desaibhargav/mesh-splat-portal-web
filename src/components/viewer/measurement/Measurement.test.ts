@@ -88,3 +88,14 @@ it("saves measurements without hiding them, and supports undoable deletion", () 
   measurement.setVisible(id, false); expect(measurement.visibleSegments).toHaveLength(0);
   expect(measurement.records[0]!.saved).toBe(true);
 });
+
+it("includes line and font adjustments in measurement undo history", () => {
+  const measurement = new Measurement();
+  const original = measurement.style;
+  measurement.setStyle({ ...original, lineWidth: original.lineWidth + 1 });
+  measurement.setStyle({ ...measurement.style, fontSize: original.fontSize + 2 });
+  expect(measurement.style).toEqual({ lineWidth: original.lineWidth + 1, fontSize: original.fontSize + 2 });
+  measurement.undo(); expect(measurement.style).toEqual({ lineWidth: original.lineWidth + 1, fontSize: original.fontSize });
+  measurement.undo(); expect(measurement.style).toEqual(original);
+  measurement.redo(); expect(measurement.style.lineWidth).toBe(original.lineWidth + 1);
+});
