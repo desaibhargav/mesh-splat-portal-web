@@ -4,7 +4,7 @@ import {
   TYPE_INT8, TYPE_INT16, TYPE_UINT8, TYPE_UINT16, type VertexBuffer,
   type AppBase, type CameraComponent, type Layer, type RenderComponent
 } from "playcanvas";
-import { currentSelectionArea, paintSelection, decodeColor, recordSelectionGesture, selectionAreaAt, updateSelectionAreas, visiblePaint, visibleSelections, type PaintState } from "./selectionColors";
+import { currentSelectionArea, paintSelection, decodeColor, discardDraftSelection, recordSelectionGesture, selectionAreaAt, updateSelectionAreas, visiblePaint, visibleSelections, type PaintState } from "./selectionColors";
 import { applySelection, projectSelection } from "./projectSelection";
 import type { SelectionOperation } from "./rectangle";
 import { MeshPicker } from "./MeshPicker";
@@ -261,7 +261,9 @@ export class MeshSelection {
     return this.summary;
   }
   clear(): SelectionSummary {
-    this.selectionAreas = this.selectionAreas.filter(area => area.saved || area.color);
+    const saved = discardDraftSelection(this.paintState, this.selectionAreas);
+    this.paintState = saved.colors;
+    this.selectionAreas = saved.areas;
     for (const part of this.parts) part.mask.fill(0);
     this.selected = 0; this.isolated = false; this.currentArea = null; this.refresh(); return this.summary;
   }

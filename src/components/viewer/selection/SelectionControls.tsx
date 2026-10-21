@@ -189,8 +189,11 @@ function WorkspaceTools({ handle, tool, onToolChange, disabled, captureName, wor
   function saveSelection() {
     if (!handle || !history || unavailable) return;
     const selection = handle.selection;
-    setSummary(history.perform(() => selection.restore(selection.state, selection.colors,
-      saveSelectionArea(selection.areas, selection.state, selectionName, editingSelection))));
+    setSummary(history.perform(() => {
+      const areas = saveSelectionArea(selection.areas, selection.state, selectionName, editingSelection);
+      const saved = areas.at(-1);
+      return selection.restore(saved ? unpackSelection(saved.snapshot) : selection.state, selection.colors, areas);
+    }));
     setEditingSelection(null); setSelectionName(""); documentChanged();
   }
   function removeSelection(id: number) {

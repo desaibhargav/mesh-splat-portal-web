@@ -160,6 +160,8 @@ try {
       let f = n[Object.keys(n).find((k) => k.startsWith("__reactFiber$"))];
       while (f && !f.memoizedProps?.workspaces) f = f.return;
       const w = f.memoizedProps.workspaces, d = w.current;
+      const count = (area) => area.snapshot.masks.reduce((sum, mask) => sum + mask.bits.reduce((n, byte) =>
+        n + byte.toString(2).replaceAll("0", "").length, 0), 0);
       return {
         id: d.id,
         name: d.name,
@@ -167,6 +169,8 @@ try {
         selected: h.selection.summary.selected,
         colors: h.selection.colors.reduce((n, c) => n + c.filter(Boolean).length, 0),
         areas: h.selection.areas.filter((a) => a.saved).map((a) => a.name),
+        drafts: h.selection.areas.filter((a) => !a.saved).length,
+        savedCounts: Object.fromEntries(h.selection.areas.filter((a) => a.saved).map((a) => [a.name, count(a)])),
         notes: d.annotations.records.map((a) => a.title),
         measures: d.measurement.records.map((m) => m.name),
         sections: d.sections.records.length,
@@ -183,13 +187,24 @@ try {
     await b.dispose();
     await settle();
   }
-  async function drawBox() {
+  async function drawBox(from = [.25, .22], to = [.52, .77]) {
     const b = await panelBox("perspective");
-    await page.mouse.move(b.x + b.width * .25, b.y + b.height * .22);
+    await page.mouse.move(b.x + b.width * from[0], b.y + b.height * from[1]);
     await page.mouse.down();
-    await page.mouse.move(b.x + b.width * .52, b.y + b.height * .77, { steps: 10 });
+    await page.mouse.move(b.x + b.width * to[0], b.y + b.height * to[1], { steps: 10 });
     await page.mouse.up();
+    await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 50)));
     await page.waitForFunction(() => !document.querySelector(".selection-toolbar [role=status]").textContent.includes("Selecting"));
+    await settle();
+  }
+  async function orbit() {
+    const b = await panelBox("perspective");
+    await page.keyboard.down("Alt");
+    await page.mouse.move(b.x + b.width * .5, b.y + b.height * .5);
+    await page.mouse.down();
+    await page.mouse.move(b.x + b.width * .65, b.y + b.height * .43, { steps: 8 });
+    await page.mouse.up();
+    await page.keyboard.up("Alt");
     await settle();
   }
   for (const slug of ["21e231-006699", "sakura-garden"]) {
@@ -490,6 +505,38 @@ try {
     await page.click("[aria-label=\"Delete Beta\"]");
     await page.click("[aria-label=\"Delete Alpha\"]");
     check((await doc()).id === 0, "Delete changed parent");
+
+    // A draft session spans camera changes. Save consolidates every gesture;
+    // Clear removes every draft while leaving both saved selections intact.
+    await page.click('[aria-label="Select"]');
+    const newSelection = await page.evaluateHandle(() => [...document.querySelectorAll(".selection-options button")]
+      .find((button) => button.textContent.trim() === "New selection"));
+    if (newSelection.asElement()) await newSelection.asElement().click();
+    await newSelection.dispose();
+    await page.$eval('[aria-label="Look from Front"]', (e) => e.focus());
+    await page.keyboard.press("Enter"); await settle();
+    await drawBox([.18, .18], [.45, .6]);
+    const firstDraft = await doc();
+    check(firstDraft.selected > 0 && firstDraft.drafts === 1, "First draft selection missing");
+    await orbit();
+    await drawBox();
+    const secondDraft = await doc();
+    check(secondDraft.selected > 0 && secondDraft.drafts >= 2, "Camera change lost earlier draft selection");
+    await page.locator('[aria-label="Selection name"]').fill("Combined views");
+    await exact("Save selection");
+    const combined = await doc();
+    check(combined.drafts === 0 && combined.savedCounts["Combined views"] >= Math.max(firstDraft.selected, secondDraft.selected),
+      "Save did not consolidate the complete draft session");
+    check(combined.selected === combined.savedCounts["Combined views"], "Saved union was not restored as active");
+    await drawBox([.2, .28], [.46, .72]);
+    await orbit();
+    await drawBox();
+    check((await doc()).drafts >= 2, "Clear regression did not create multiple drafts");
+    await exact("Clear Selection");
+    const cleared = await doc();
+    check(cleared.selected === 0 && cleared.drafts === 0 && cleared.areas.includes("Parent region") && cleared.areas.includes("Combined views"),
+      "Clear Selection did not discard every draft and preserve saved selections");
+    await page.screenshot({ path: path.join(output, slug + "-selection-draft-session.png") });
     await page.locator(".back-link").click();
     await page.waitForSelector(".catalog-page");
     console.log("PASS segment create/select/paint/annotation/measurement/quad/return/reopen/visibility/delete/cleanup", slug);

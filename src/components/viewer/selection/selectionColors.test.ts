@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { savedSelectionColors, currentSelectionArea, decodeColor, encodeColor, paintSelection, recordSelectionArea, recordSelectionGesture, saveSelectionArea, updateSelectionAreas, visiblePaint, visibleSelections } from "./selectionColors";
+import { savedSelectionColors, currentSelectionArea, decodeColor, discardDraftSelection, encodeColor, paintSelection, recordSelectionArea, recordSelectionGesture, saveSelectionArea, updateSelectionAreas, visiblePaint, visibleSelections } from "./selectionColors";
 
 it("paints only selected primitives and keeps previous color buffers immutable", () => {
   const original = [new Uint32Array([0, 1, 0]), new Uint32Array([0, 0])];
@@ -66,6 +66,16 @@ it("saves regions explicitly without duplicating masks or losing painted metadat
   expect(drafts[0]!.saved).toBeUndefined();
 });
 
+it("saves the union of every unsaved gesture as one selection", () => {
+  const first = { masks: [new Uint8Array([255, 0, 0, 0])], isolated: false };
+  const second = { masks: [new Uint8Array([0, 0, 255, 0])], isolated: false };
+  const drafts = recordSelectionGesture(recordSelectionGesture([], first, "set"), second, "set");
+  const saved = saveSelectionArea(drafts, second, "Combined", null);
+  expect(saved).toHaveLength(1);
+  expect(saved[0]).toMatchObject({ name: "Combined", saved: true });
+  expect([...saved[0]!.snapshot.masks[0]!.bits]).toEqual([5]);
+});
+
 it("updates one saved region while retaining independent regions and their snapshots", () => {
   const first = { masks: [new Uint8Array([255, 0, 0])], isolated: false };
   const second = { masks: [new Uint8Array([0, 255, 0])], isolated: false };
@@ -89,4 +99,15 @@ it("discards draft paint on exit while preserving overlapping saved regions and 
   expect([...savedSelectionColors(colors, areas)[0]!]).toEqual([2, 2, 0]);
   expect([...colors[0]!]).toEqual([2, 2, 3]);
   expect(savedSelectionColors(colors, saved)).toBe(colors);
+});
+
+it("clears every draft region and draft-only color while preserving saved work", () => {
+  const savedState = { masks: [new Uint8Array([255, 0, 0, 0])], isolated: false };
+  const saved = saveSelectionArea([], savedState, "Saved", null);
+  const drafts = recordSelectionGesture(recordSelectionGesture(saved,
+    { masks: [new Uint8Array([0, 255, 0, 0])], isolated: false }, "set"),
+    { masks: [new Uint8Array([0, 0, 255, 0])], isolated: false }, "set");
+  const cleared = discardDraftSelection([new Uint32Array([2, 3, 4, 0])], drafts);
+  expect(cleared.areas).toEqual(saved);
+  expect([...cleared.colors[0]!]).toEqual([2, 0, 0, 0]);
 });

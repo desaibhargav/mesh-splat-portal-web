@@ -3,7 +3,7 @@ import {
   BoundingBox, Color, FILTER_NEAREST, Mat4, PIXELFORMAT_R8, PIXELFORMAT_RGBA8, Texture, WORKBUFFER_UPDATE_ONCE,
   type AppBase, type CameraComponent, type GSplatComponent
 } from "playcanvas";
-import { currentSelectionArea, paintSelection, decodeColor, recordSelectionGesture, selectionAreaAt, updateSelectionAreas, visiblePaint, visibleSelections, type PaintState } from "./selectionColors";
+import { currentSelectionArea, paintSelection, decodeColor, discardDraftSelection, recordSelectionGesture, selectionAreaAt, updateSelectionAreas, visiblePaint, visibleSelections, type PaintState } from "./selectionColors";
 import type { SelectionOperation } from "./rectangle";
 import { applySelection, projectSelection } from "./projectSelection";
 import { captureDepth, depthTest } from "./SelectionDepth";
@@ -160,7 +160,9 @@ export class SplatSelection {
   }
 
   clear(): SelectionSummary {
-    this.selectionAreas = this.selectionAreas.filter(area => area.saved || area.color);
+    const saved = discardDraftSelection(this.paintState, this.selectionAreas);
+    this.paintState = saved.colors;
+    this.selectionAreas = saved.areas;
     this.mask.fill(0);
     this.selected = 0;
     this.isolated = false;
