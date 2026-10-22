@@ -153,6 +153,24 @@ try {
     while (f && !f.memoizedProps?.handle) f = f.return;
     return f.memoizedProps.handle;
   });
+  async function typeText(selector, value) {
+    await page.click(selector);
+    await page.$eval(selector, element => element.select());
+    await page.keyboard.type(value);
+    check(await page.$eval(selector, (element, expected) => element.value === expected, value), `Typing did not update ${selector}`);
+    const paused = await (await appHandle()).evaluate(async h => {
+      let frames = 0;
+      const rendered = () => frames++;
+      h.app.on("postrender", rendered);
+      await new Promise(resolve => setTimeout(resolve, 120));
+      h.app.off("postrender", rendered);
+      return { autoRender: h.app.autoRender, frames };
+    });
+    check(!paused.autoRender && paused.frames === 0, `Viewer rendered while typing in ${selector}: ${JSON.stringify(paused)}`);
+    await page.$eval(".viewer-frame", element => element.focus());
+    await settle();
+    check(await (await appHandle()).evaluate(h => h.app.autoRender), `Viewer did not resume after typing in ${selector}`);
+  }
   async function doc() {
     const h = await appHandle();
     return h.evaluate((h) => {
@@ -223,7 +241,7 @@ try {
     check((await doc()).selected > 0, "Select parent");
     await page.click("[aria-label=\"Color selection red\"]");
     await settle();
-    await page.locator("[aria-label=\"Selection name\"]").fill("Parent region");
+    await typeText('[aria-label="Selection name"]', "Parent region");
     await exact("Save selection");
     const parent = await doc();
     const outside = await (await appHandle()).evaluate(async (h) => {
@@ -238,7 +256,7 @@ try {
       return result;
     });
     await exact("Create segment");
-    await page.locator("[aria-label=\"Segment name\"]").fill("Alpha");
+    await typeText('[aria-label="Segment name"]', "Alpha");
     await exact("Save segment");
     console.log("CREATED", slug, await doc());
     let alpha = await doc();
@@ -333,14 +351,15 @@ try {
     check(ps[0], "Visible segment surface");
     await click(ps[0]);
     await page.waitForSelector("input[name=\"title\"]");
-    await page.type("input[name=\"title\"]", "Alpha note");
+    await typeText('input[name="title"]', "Alpha note");
+    await typeText('textarea[name="description"]', "Alpha description");
     await exact("Save annotation");
     await page.keyboard.press("q");
     await page.click("[aria-label=\"Measure distance\"]");
     ps = await points("perspective");
     await click(ps[0]);
     await click(ps[1]);
-    await page.locator("[aria-label=\"Measurement name\"]").fill("Alpha span");
+    await typeText('[aria-label="Measurement name"]', "Alpha span");
     await exact("Save measurement");
     await page.keyboard.press("q");
     alpha = await doc();
@@ -362,7 +381,7 @@ try {
     await page.keyboard.down("Control"); await page.keyboard.press("z"); await page.keyboard.up("Control");
     check(await (await appHandle()).evaluate((h, expected) => h.camera().entity.getPosition().toArray().every((value, index) => Math.abs(value - expected[index]) < 1e-4), cameraBefore),
       "View camera adjustment did not undo");
-    await page.locator("[aria-label=\"View name\"]").fill("Segment reference");
+    await typeText('[aria-label="View name"]', "Segment reference");
     await exact("Save view");
     const viewFrames = await (await appHandle()).evaluate(h => {
       const controls = panel => panel.camera.entity.script.get("cameraControls");
@@ -380,7 +399,7 @@ try {
       "Cut normal changed an orthographic inspection panel");
     await exact("View", ".selection-shapes");
     await exact("Enable section");
-    await page.locator("[aria-label=\"Section name\"]").fill("Segment cut");
+    await typeText('[aria-label="Section name"]', "Segment cut");
     await exact("Save section");
     await page.keyboard.press("q");
     check((await doc()).cut, "Segment section did not enable");
@@ -409,7 +428,7 @@ try {
       });
       if (n === 2) break;
     }
-    await page.locator("[aria-label=\"Measurement name\"]").fill("Cut span");
+    await typeText('[aria-label="Measurement name"]', "Cut span");
     await exact("Save measurement");
     await page.keyboard.press("q");
     check((await doc()).measures.includes("Cut span"), "Sectioned segment measurement not saved");
@@ -437,7 +456,7 @@ try {
     await exact("New segment");
     await exact("X-ray off");
     await drawBox();
-    await page.locator("[aria-label=\"Segment name\"]").fill("Beta");
+    await typeText('[aria-label="Segment name"]', "Beta");
     await exact("Save segment");
     check((await doc()).name === "Beta", "Draw new segment failed");
     await exact("Return to asset");
@@ -448,12 +467,12 @@ try {
     await page.mouse.move(regionPoints[0].x, regionPoints[0].y);
     await page.waitForFunction(() => document.querySelector(".segment-options [role=status]")?.textContent.includes("Click Parent region"));
     await click(regionPoints[0]);
-    await page.locator("[aria-label=\"Segment name\"]").fill("Gamma");
+    await typeText('[aria-label="Segment name"]', "Gamma");
     await exact("Save segment");
     check((await doc()).total === parent.selected, "Selection conversion changed region");
     await page.click(".viewer-tree-toggle");
     await page.click("[aria-label=\"Rename Gamma\"]");
-    await page.locator("[aria-label=\"Rename Gamma\"]").fill("Renamed segment");
+    await typeText('[aria-label="Rename Gamma"]', "Renamed segment");
     await page.keyboard.press("Enter");
     await page.waitForFunction(() => document.querySelector("[aria-label=\"Segment name\"]")?.value === "Renamed segment");
     await page.click(".viewer-tree-toggle");
@@ -568,7 +587,7 @@ try {
     await drawBox();
     const secondDraft = await doc();
     check(secondDraft.selected > 0 && secondDraft.drafts >= 2, "Camera change lost earlier draft selection");
-    await page.locator('[aria-label="Selection name"]').fill("Combined views");
+    await typeText('[aria-label="Selection name"]', "Combined views");
     await exact("Save selection");
     const combined = await doc();
     check(combined.drafts === 0 && combined.savedCounts["Combined views"] >= Math.max(firstDraft.selected, secondDraft.selected),

@@ -76,9 +76,33 @@ try {
       return { width: canvas.width, height: canvas.height, quadrants };
     }, data.toString("base64"));
   }
+  const appHandle = () => page.evaluateHandle(() => {
+    const node = document.querySelector(".selection-toolbar");
+    let fiber = node[Object.keys(node).find(key => key.startsWith("__reactFiber$"))];
+    while (fiber && !fiber.memoizedProps?.handle) fiber = fiber.return;
+    return fiber.memoizedProps.handle;
+  });
+  async function typeText(selector, value) {
+    await page.click(selector);
+    await page.$eval(selector, element => element.select());
+    await page.keyboard.type(value);
+    if (!await page.$eval(selector, (element, expected) => element.value === expected, value)) throw new Error(`Typing did not update ${selector}`);
+    const paused = await (await appHandle()).evaluate(async handle => {
+      let frames = 0;
+      const rendered = () => frames++;
+      handle.app.on("postrender", rendered);
+      await new Promise(resolve => setTimeout(resolve, 120));
+      handle.app.off("postrender", rendered);
+      return { autoRender: handle.app.autoRender, frames };
+    });
+    if (paused.autoRender || paused.frames) throw new Error(`Viewer rendered while typing in ${selector}: ${JSON.stringify(paused)}`);
+    await page.$eval(".viewer-frame", element => element.focus());
+    await new Promise(resolve => setTimeout(resolve, 50));
+    if (!await (await appHandle()).evaluate(handle => handle.app.autoRender)) throw new Error(`Viewer did not resume after typing in ${selector}`);
+  }
   async function capture(name, screenshot = false, annotated = false) {
     await page.click('[aria-label="Capture view"]');
-    await page.locator('[aria-label="Capture name"]').fill(name);
+    await typeText('[aria-label="Capture name"]', name);
     if (screenshot) await page.screenshot({ path: path.join(output, "capture-tool-ui.png") });
     await page.locator(`.capture-actions button ::-p-text(${annotated ? "Download with annotations" : "Download"})`).click();
     const data = await waitForFile(`${name}.png`);
@@ -107,8 +131,8 @@ try {
     await page.locator('button ::-p-text(Annotate with a point)').click();
     await page.mouse.click(surface.x, surface.y);
     await page.waitForSelector('input[name="title"]');
-    await page.type('input[name="title"]', "Captured note");
-    await page.type('textarea[name="description"]', "Visible annotation description");
+    await typeText('input[name="title"]', "Captured note");
+    await typeText('textarea[name="description"]', "Visible annotation description");
     await page.locator('button ::-p-text(Save annotation)').click();
     const annotated = await capture(`${id} annotated`, false, true);
     if (annotated.data.equals(singleCapture.data)) throw new Error("Annotated capture did not change the PNG");

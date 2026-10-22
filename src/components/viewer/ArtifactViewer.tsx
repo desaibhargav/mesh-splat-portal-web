@@ -6,6 +6,7 @@ import { MeshViewer } from "./MeshViewer";
 import { SplatViewer } from "./SplatViewer";
 import { SelectionControls } from "./selection/SelectionControls";
 import type { SelectionHandle, SelectionTool } from "./selection/types";
+import { TypingRenderPolicy } from "./TypingRenderPolicy";
 
 export type ViewerStatus = { loading: boolean; progress: number; error: string | null };
 
@@ -51,6 +52,7 @@ export function ArtifactViewer({ artifact }: { artifact: Artifact }) {
       <SelectionControls handle={selection} tool={tool} onToolChange={changeTool} disabled={status.loading || Boolean(status.error)} captureName={artifact.title} />
       <div className="viewer-canvas">
         <Application graphicsDeviceOptions={{ antialias: artifact.type === "mesh" }}>
+          <TypingRenderPolicy scope={frame} />
           {artifact.type === "mesh" ? <MeshViewer url={artifact.contentUrl} onStatus={setStatus} onSelectionReady={setSelection} /> :
             <SplatViewer url={artifact.contentUrl} onStatus={setStatus} onSelectionReady={setSelection} />}
         </Application>
