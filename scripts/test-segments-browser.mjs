@@ -364,7 +364,7 @@ try {
     await page.keyboard.press("q");
     alpha = await doc();
     check(alpha.notes[0] === "Alpha note" && alpha.measures[0] === "Alpha span", "Local tool records missing");
-    await page.click("[aria-label=\"Four views\"]");
+    await page.hover(".viewer-canvas canvas"); await page.focus(".viewer-frame"); await page.keyboard.press("Space");
     await pointer("front");
     await page.click("[aria-label=\"Views\"]");
     await exact("Create view");

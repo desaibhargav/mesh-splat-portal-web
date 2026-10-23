@@ -54,7 +54,7 @@ export class ImmersiveGestures {
     const root = this.scene.root;
     if (this.orbiting !== source) {
       this.orbiting = source; this.startHand.copy(hand);
-      this.startPosition.copy(root.getPosition()); this.startRotation.copy(root.getRotation());
+      this.startRotation.copy(root.getRotation());
       this.scene.center(this.startCenter);
       this.head.copy(this.camera.getRotation()); this.inverseHead.copy(this.head).invert();
       return;
@@ -66,7 +66,7 @@ export class ImmersiveGestures {
     this.worldTurn.mul2(this.head, this.localTurn).mul(this.inverseHead);
     root.setRotation(this.rotation.mul2(this.worldTurn, this.startRotation));
     this.scene.center(this.currentCenter);
-    root.setPosition(this.nextPosition.copy(this.startPosition).add(this.startCenter).sub(this.currentCenter));
+    root.setPosition(this.nextPosition.copy(root.getPosition()).add(this.startCenter).sub(this.currentCenter));
   }
 
   private pan(source: XrInputSource) {

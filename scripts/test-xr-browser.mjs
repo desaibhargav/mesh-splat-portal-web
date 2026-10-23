@@ -135,10 +135,15 @@ try {
       window.xrDevice.controllers.right.connected=true;
     }); await settle(h);
     const orbitBefore=await targetPose(h);
+    const orbitImageBefore=await canvas.asElement().screenshot();
     await page.evaluate(() => window.xrDevice.controllers.left.updateButtonValue("trigger",1)); await settle(h);
     await page.evaluate(() => { window.xrDevice.controllers.left.position.x+=.12; }); await settle(h);
     const orbited=await targetPose(h);
     check(orbited.rotation.some((value,i)=>Math.abs(value-orbitBefore.rotation[i])>.01),"Left trigger gesture did not orbit");
+    check(!orbitImageBefore.equals(await canvas.asElement().screenshot()), "Orbit did not visibly turn the artifact");
+    await settle(h);
+    const heldOrbit=await targetPose(h);
+    check(heldOrbit.position.every((value,i)=>Math.abs(value-orbited.position[i])<1e-4), "Orbit pivot oscillated while the controller was held still");
     await page.evaluate(() => window.xrDevice.controllers.left.updateButtonValue("trigger",0)); await settle(h);
     const panBefore=await targetPose(h);
     await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("trigger",1)); await settle(h);
@@ -160,20 +165,46 @@ try {
     await page.goto(`${base}/artifacts/${id}`);
     await page.evaluate(environment => window.xrDevice.sem.loadEnvironment(environment), room);
     await page.waitForSelector('[aria-label="Select"]:not([disabled])', { timeout: 90000 });
-    await page.waitForSelector('button ::-p-text(Enter VR)');
+    await page.waitForSelector('[aria-label="View in VR"]');
+    check(await page.evaluate(() => {
+      const footer = document.querySelector(".viewer-footer"), vr = footer?.querySelector('[aria-label="View in VR"]');
+      const ar = footer?.querySelector('[aria-label="View in your room"]');
+      const bounds = footer?.getBoundingClientRect(), vrBounds = vr?.getBoundingClientRect();
+      return !!(vr && ar && bounds && vrBounds && vrBounds.width <= 35 && vrBounds.bottom <= bounds.bottom &&
+        !document.querySelector(".viewer-help") && !document.querySelector('[aria-label="Four views"]'));
+    }), "Compact bottom VR/AR controls did not replace the instructions and four-view button");
     await page.$eval(".viewer-frame", element => element.scrollIntoView());
     const h = await handle();
+    const desktopCamera = () => h.evaluate(h => ({
+      position: h.camera().entity.getPosition().toArray(),
+      rotation: h.camera().entity.getRotation().toArray(),
+      focus: h.camera().entity.script.get("cameraControls").focusPoint.toArray()
+    }));
+    const canvasBounds = await (await page.$(".viewer-canvas canvas")).boundingBox();
+    const x = canvasBounds.x + canvasBounds.width * .5, y = canvasBounds.y + canvasBounds.height * .5;
+    const desktopBefore = await desktopCamera();
+    await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x + 90, y - 35, { steps: 8 }); await page.mouse.up(); await settle(h);
+    const desktopOrbit = await desktopCamera();
+    check(desktopOrbit.rotation.some((value, index) => Math.abs(value - desktopBefore.rotation[index]) > .001), "Desktop orbit stopped working");
+    await page.keyboard.down("Shift"); await page.mouse.move(x, y); await page.mouse.down();
+    await page.mouse.move(x + 70, y + 30, { steps: 8 }); await page.mouse.up(); await page.keyboard.up("Shift"); await settle(h);
+    const desktopPan = await desktopCamera();
+    check(desktopPan.focus.some((value, index) => Math.abs(value - desktopOrbit.focus[index]) > .001), "Desktop pan stopped working");
+    await page.mouse.wheel({ deltaY: -250 }); await settle(h);
+    const desktopZoom = await desktopCamera();
+    check(desktopZoom.position.some((value, index) => Math.abs(value - desktopPan.position[index]) > .001), "Desktop zoom stopped working");
+    console.log("PASS", id, "desktop orbit, pan, zoom before XR entry");
     // Denied permission must leave the desktop viewer ready to retry.
     await page.evaluate(() => {
       const request = navigator.xr.requestSession.bind(navigator.xr);
       navigator.xr.requestSession = () => { navigator.xr.requestSession = request; return Promise.reject(new Error("XR permission denied for regression")); };
     });
-    await page.locator('button ::-p-text(Enter VR)').click();
+    await page.click('[aria-label="View in VR"]');
     await page.waitForFunction(() => document.querySelector('.immersive-controls [role=alert]')?.textContent.includes("permission denied"));
     check(await h.evaluate(h => !h.app.xr.active && h.viewports.perspectivePanel.camera.entity.parent === h.app.root), "Failed entry did not restore desktop");
     for (const split of [false, true]) {
       if (split) {
-        await page.click('[aria-label="Four views"]');
+        await page.hover(".viewer-canvas canvas"); await page.focus(".viewer-frame"); await page.keyboard.press("Space");
         await page.click('[aria-label="Look from Top"]');
       }
       const initialBounds = await h.evaluate(h => { const b = h.selection.bounds(null); return { center: b.center.toArray(), halfExtents: b.halfExtents.toArray() }; });
@@ -185,8 +216,8 @@ try {
           near:p.camera.nearClip, far:p.camera.farClip, projection:p.camera.projection,
           background:p.camera.clearColor.toArray(), controls:p.camera.entity.script.get("cameraControls").enabled }))
       }));
-      for (const [label, type] of [["Enter VR", "immersive-vr"], ["View in your room", "immersive-ar"]]) {
-        await page.locator(`button ::-p-text(${label})`).click();
+      for (const [label, type] of [["View in VR", "immersive-vr"], ["View in your room", "immersive-ar"]]) {
+        await page.click(`[aria-label="${label}"]`);
         await page.waitForFunction(() => document.querySelector('.viewer-frame')?.dataset.immersive === "true");
         await h.evaluate(async h => {
           while (h.app.xr.views.list.length !== 2) await new Promise(requestAnimationFrame);
@@ -227,6 +258,11 @@ try {
         check(type === "immersive-ar" || Math.abs(state.relative[0]-state.eye[0])<1e-4 && Math.abs(state.relative[1]-state.eye[1])<1e-4 && Math.abs(state.relative[2]-state.eye[2]+1.5)<1e-4,
           "Artifact was not placed in front of the first tracked pose: "+JSON.stringify(state));
         if (!split && type === "immersive-vr") {
+          await page.evaluate(() => { window.xrDevice.position.z -= .9; });
+          await h.evaluate(async h => { for (let i=0;i<3;i++) await new Promise(resolve => h.app.once("postrender",resolve)); });
+          await page.screenshot({path:path.join(output,`${id}-close-view.png`)});
+          await page.evaluate(() => { window.xrDevice.position.z += .9; });
+          await h.evaluate(async h => { for (let i=0;i<3;i++) await new Promise(resolve => h.app.once("postrender",resolve)); });
           await page.evaluate(() => { window.xrDevice.position.z -= 3; window.xrDevice.quaternion.set(0, 1, 0, 0); });
           await h.evaluate(async h => { for (let i=0;i<3;i++) await new Promise(resolve => h.app.once("postrender",resolve)); });
           await page.screenshot({path:path.join(output,`${id}-rear-before.png`)});
@@ -259,7 +295,15 @@ try {
             near:p.camera.nearClip, far:p.camera.farClip, projection:p.camera.projection,
             background:p.camera.clearColor.toArray(), controls:p.camera.entity.script.get("cameraControls").enabled}))
         }));
-        check(JSON.stringify(after)===JSON.stringify(before), "XR exit did not restore desktop: "+JSON.stringify({before,after}));
+        const near = (a, b) => a.every((value, index) => Math.abs(value - b[index]) < 1e-5);
+        check(after.split === before.split && after.active === before.active && near(after.root, before.root) &&
+          after.cameras.every((camera, index) => {
+            const previous = before.cameras[index];
+            return camera.id === previous.id && camera.enabled === previous.enabled && camera.near === previous.near &&
+              camera.far === previous.far && camera.projection === previous.projection && camera.controls === previous.controls &&
+              near(camera.rect, previous.rect) && near(camera.position, previous.position) &&
+              near(camera.rotation, previous.rotation) && near(camera.background, previous.background);
+          }), "XR exit did not restore desktop: "+JSON.stringify({before,after}));
         console.log("PASS",id,type,split?"four views restored":"single view restored", "stereo draw calls",state.drawCalls);
       }
     }
@@ -268,7 +312,7 @@ try {
     await page.locator('.section-buttons button ::-p-text(Enable section)').click();
     const cut = await h.evaluate(h => Array.from(h.app.graphicsDevice.scope.resolve("portalSectionPlane").getValue()));
     await page.keyboard.press("q");
-    await page.locator('button ::-p-text(View in your room)').click();
+    await page.click('[aria-label="View in your room"]');
     await page.waitForFunction(() => document.querySelector('.viewer-frame')?.dataset.immersive === "true");
     await h.evaluate(async h => { await new Promise(resolve => h.app.once("postrender", resolve)); });
     check(await h.evaluate((h, expected) => {
@@ -289,7 +333,7 @@ try {
     await page.click('[aria-label="Capture view"]');
     await page.click('[aria-label="Capture name"]');
     check(await h.evaluate(h => !h.app.autoRender), "Typing did not pause desktop rendering");
-    await page.locator('button ::-p-text(Enter VR)').click();
+    await page.click('[aria-label="View in VR"]');
     await page.waitForFunction(() => document.querySelector('.viewer-frame')?.dataset.immersive === "true");
     check(await h.evaluate(h => h.app.autoRender), "Typing policy blocked immersive rendering");
     await h.evaluate(async h => { await new Promise(resolve => h.app.xr.end(resolve)); });
@@ -297,7 +341,7 @@ try {
     check(await h.evaluate(h => h.app.autoRender), "Desktop stayed paused after entering XR from a text field");
     console.log("PASS", id, "text entry to XR to desktop rendering");
     // Leave the route while presenting to exercise scene teardown and session end.
-    await page.locator('button ::-p-text(Enter VR)').click();
+    await page.click('[aria-label="View in VR"]');
     await page.waitForFunction(() => document.querySelector('.viewer-frame')?.dataset.immersive === "true");
     await page.$eval(".back-link", link => link.click());
     await page.waitForSelector(".catalog-page");

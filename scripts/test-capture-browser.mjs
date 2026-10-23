@@ -136,7 +136,7 @@ try {
     await page.locator('button ::-p-text(Save annotation)').click();
     const annotated = await capture(`${id} annotated`, false, true);
     if (annotated.data.equals(singleCapture.data)) throw new Error("Annotated capture did not change the PNG");
-    await page.click('[aria-label="Four views"]');
+    await page.hover(".viewer-canvas canvas"); await page.focus(".viewer-frame"); await page.keyboard.press("Space");
     await page.waitForSelector(".viewport-layout.is-split");
     const split = (await capture(`${id} four views`)).stats;
     if (split.quadrants.some(colors => colors < 3)) throw new Error(`Four-view capture has an empty panel: ${JSON.stringify(split)}`);

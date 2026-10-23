@@ -3,11 +3,6 @@ import type { SelectionHandle } from "../selection/types";
 import { ViewNavigation } from "../views/ViewNavigation";
 import { useViewports } from "./useViewports";
 
-export function ViewportToggle({ handle }: { handle: SelectionHandle }) {
-  const rig = useViewports(handle);
-  return <button aria-label="Four views" aria-pressed={rig.split} title="Toggle four views (Space)" onClick={() => rig.toggle()}>Four views</button>;
-}
-
 export function ViewportLayout({ handle }: { handle: SelectionHandle }) {
   const rig = useViewports(handle), hovering = useRef(false);
   useEffect(() => {

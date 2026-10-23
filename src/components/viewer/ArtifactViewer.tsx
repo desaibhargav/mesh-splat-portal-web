@@ -1,4 +1,4 @@
-import { ViewportLayout, ViewportToggle } from "./viewports/ViewportLayout";
+import { ViewportLayout } from "./viewports/ViewportLayout";
 import { Application } from "@playcanvas/react";
 import { useEffect, useRef, useState } from "react";
 import type { Artifact } from "../../api/artifacts";
@@ -18,7 +18,6 @@ export function ArtifactViewer({ artifact }: { artifact: Artifact }) {
   const [selection, setSelection] = useState<SelectionHandle | null>(null);
   const [tool, setTool] = useState<SelectionTool>("navigate");
   const [immersive, setImmersive] = useState(false);
-  const selecting = tool !== "navigate";
   function changeTool(next: SelectionTool) { setTool(next); }
 
   useEffect(() => {
@@ -48,8 +47,6 @@ export function ArtifactViewer({ artifact }: { artifact: Artifact }) {
       }}>
       <div className="viewer-toolbar">
         <span>{artifact.type === "mesh" ? "Mesh" : "Gaussian splat"}</span>
-        {selection && <ViewportToggle handle={selection} />}
-        {selection && <ImmersiveControls handle={selection} onActive={setImmersive} />}
         <button onClick={() => void toggleFullscreen()}>{fullscreen ? "Exit fullscreen" : "Fullscreen"}</button>
       </div>
       <SelectionControls handle={selection} tool={tool} onToolChange={changeTool} disabled={status.loading || Boolean(status.error)} captureName={artifact.title} />
@@ -63,8 +60,7 @@ export function ArtifactViewer({ artifact }: { artifact: Artifact }) {
       {selection && <ViewportLayout handle={selection} />}
       {status.loading && <div className="viewer-loading" role="status"><span>Loading 3D asset</span><progress value={status.progress} max={1} /></div>}
       {status.error && <div className="viewer-error" role="alert">{status.error}</div>}
-      <p className="viewer-help">{tool === "capture" ? "Name and download the current view · Q: exit" : tool === "section" ? "Slide or tilt the cutting plane · Alt/Option or right-drag: orbit · Middle-drag: pan · Scroll: zoom · Q: exit" : tool === "views" ? "Rotate asset against world grid · Drag outside handles: orbit · Middle-drag: pan · Scroll: zoom · Q: exit" : tool === "annotate" ? "Choose optional area binding, then click a surface to place the marker · Alt/Option or right-drag: orbit · Middle-drag: pan · Scroll: zoom · Q: exit" : tool === "measure" ? "Click two points · Shift-click: new measurement · Alt/Option or right-drag: orbit · Middle-drag: pan · Scroll: zoom · F: focus · Q: exit" : selecting ? "Drag to select · Shift: add · Ctrl/Cmd: remove · Shift + Ctrl/Cmd: intersect · Alt/Option or right-drag: orbit · Middle-drag: pan · Scroll: zoom · Q: exit" :
-        "Drag to orbit · Shift-drag or middle-drag to pan · Scroll to zoom · F: focus"}</p>
+      <div className="viewer-footer">{selection && <ImmersiveControls handle={selection} onActive={setImmersive} />}</div>
     </section>
   );
 }
