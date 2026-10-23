@@ -15,6 +15,7 @@ export class ImmersiveViewer extends EventHandler {
   active = false;
   error: string | null = null;
   private disposed = false;
+  private exitPressed = false;
   private restore: (() => void) | null = null;
   private readonly camera;
   private readonly xr;
@@ -78,12 +79,24 @@ export class ImmersiveViewer extends EventHandler {
   }
 
   end() { if (this.active) this.xr?.end(); }
+  private controllerExit() {
+    const right = this.xr?.input.inputSources.find(source => source.handedness === "right" && !source.hand);
+    const gamepad = right?.gamepad;
+    const pressed = gamepad?.mapping === "xr-standard" && !!gamepad.buttons[5]?.pressed;
+    const newlyPressed = pressed && !this.exitPressed;
+    this.exitPressed = pressed;
+    if (newlyPressed) this.end();
+  }
   private entered() {
     if (this.disposed) { this.xr?.end(); return; }
     cameraControls(this.camera).enabled = false;
+    this.exitPressed = false;
+    this.handle.app.on("update", this.controllerExit, this);
     this.active = true; this.pending = false; this.changed();
   }
   private ended() {
+    this.handle.app.off("update", this.controllerExit, this);
+    this.exitPressed = false;
     this.restore?.(); this.restore = null;
     this.active = false; this.pending = false; this.changed();
   }

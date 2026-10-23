@@ -241,8 +241,15 @@ try {
         await h.evaluate(async h => { await new Promise(resolve => h.app.once("postrender", resolve)); await new Promise(resolve => h.app.once("postrender", resolve)); });
         const moved = await canvas.asElement().screenshot();
         check(!first.equals(moved), "Tracked head movement did not change rendered image");
-        await h.evaluate(async h => { await new Promise(resolve => h.app.xr.end(resolve)); });
+        if (!split) {
+          await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("b-button", 1));
+        } else {
+          await h.evaluate(async h => { await new Promise(resolve => h.app.xr.end(resolve)); });
+        }
         await page.waitForFunction(() => document.querySelector('.viewer-frame')?.dataset.immersive === "false");
+        if (!split) {
+          await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("b-button", 0));
+        }
         check(await h.evaluate(h => !h.app.root.findByName("Immersive artifact") && !h.app.root.findByName("XR controller left") && !h.app.root.findByName("XR controller right")), "XR resources leaked after exit");
         const after = await h.evaluate(h => ({
           split:h.viewports.split, active:h.viewports.active.id,
