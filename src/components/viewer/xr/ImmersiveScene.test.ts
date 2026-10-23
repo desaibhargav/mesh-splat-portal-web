@@ -20,6 +20,14 @@ it("normalizes presentation without changing saved coordinates and carries the r
   expect(centre.equalsApprox(ahead, 1e-5)).toBe(true);
   expect(scene.root.getLocalScale().x * bounds.halfExtents.y * 2).toBeCloseTo(1);
   expect(root.getLocalTransform().equals(original)).toBe(true);
+  const floor = new Vec3(.4, .05, -.7);
+  scene.placeOnFloor(floor, camera);
+  const bottom = bounds.center.clone(); bottom.y -= bounds.halfExtents.y;
+  expect(scene.root.getWorldTransform().transformPoint(bottom).equalsApprox(floor, 1e-5)).toBe(true);
+  const size = scene.root.getLocalScale().x;
+  scene.zoom(2);
+  expect(scene.root.getLocalScale().x).toBeCloseTo(size * 2);
+  expect(scene.root.getWorldTransform().transformPoint(bottom).equalsApprox(floor, 1e-5)).toBe(true);
   for (const angles of [[0, 0, 0], [10, 35, 25], [75, -20, 5]]) {
     scene.root.setPosition(1, 3, -2); scene.root.setEulerAngles(...angles as [number, number, number]); scene.root.setLocalScale(.5, .5, .5);
     app.fire("prerender");

@@ -26,7 +26,7 @@ export class ImmersiveInput {
     app.xr!.input.on("remove", this.remove, this);
     rig.addComponent("script");
     rig.script!.create(XrControllers, { properties: { basePath: profiles } });
-    rig.script!.create(XrManipulation, { properties: { target, scalePivot: "hands" } });
+    rig.script!.create(XrManipulation, { properties: { target, scalePivot: "hands", enableScale: false } });
     app.on("update", this.update, this);
   }
 

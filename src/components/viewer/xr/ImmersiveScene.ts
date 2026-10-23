@@ -15,13 +15,19 @@ export class ImmersiveScene {
   private readonly previous = new Mat4();
   private readonly coefficients = new Vec4();
   private readonly transformed = new Float32Array(4);
+  private readonly pivot = new Vec3();
+  private readonly before = new Vec3();
+  private readonly after = new Vec3();
+  private readonly offset = new Vec3();
+  private readonly baseScale: number;
+  private grounded = false;
 
   constructor(private readonly handle: SelectionHandle, private readonly bounds: BoundingBox) {
     this.parent = handle.space.root.parent!;
     this.section = new Float32Array(handle.app.graphicsDevice.scope.resolve("portalSectionPlane").getValue());
     handle.app.root.addChild(this.root); this.root.addChild(handle.space.root);
-    const scale = displaySize / (2 * Math.max(bounds.halfExtents.x, bounds.halfExtents.y, bounds.halfExtents.z));
-    this.root.setLocalScale(scale, scale, scale);
+    this.baseScale = displaySize / (2 * Math.max(bounds.halfExtents.x, bounds.halfExtents.y, bounds.halfExtents.z));
+    this.root.setLocalScale(this.baseScale, this.baseScale, this.baseScale);
     handle.app.on("prerender", this.updateSection, this);
   }
 
@@ -36,6 +42,36 @@ export class ImmersiveScene {
     const position = camera.getLocalPosition().clone().add(forward.mulScalar(viewingDistance));
     this.root.setPosition(position.sub(rotation.transformVector(this.bounds.center).mulScalar(this.root.getLocalScale().x)));
     this.updateSection();
+  }
+
+  placeOnFloor(point: Vec3, camera: Entity) {
+    this.grounded = true;
+    const forward = camera.forward.clone(); forward.y = 0;
+    if (!forward.lengthSq()) forward.copy(Vec3.FORWARD);
+    forward.normalize();
+    const yaw = Math.atan2(-forward.x, -forward.z) * 180 / Math.PI;
+    const rotation = new Quat().setFromEulerAngles(0, yaw, 0);
+    this.root.setRotation(rotation);
+    const scale = this.root.getLocalScale().x;
+    const center = rotation.transformVector(this.bounds.center.clone().mulScalar(scale));
+    this.root.setPosition(point.x - center.x, point.y - (this.bounds.center.y - this.bounds.halfExtents.y) * scale, point.z - center.z);
+    this.root.enabled = true;
+    this.updateSection();
+  }
+
+  center(out: Vec3) { return this.root.getWorldTransform().transformPoint(this.bounds.center, out); }
+
+  zoom(factor: number) {
+    const current = this.root.getLocalScale().x;
+    const next = Math.min(this.baseScale * 4, Math.max(this.baseScale * .25, current * factor));
+    if (next === current) return;
+    this.pivot.copy(this.bounds.center);
+    if (this.grounded) this.pivot.y -= this.bounds.halfExtents.y;
+    this.root.getWorldTransform().transformPoint(this.pivot, this.before);
+    this.root.setLocalScale(next, next, next);
+    this.root.getWorldTransform().transformPoint(this.pivot, this.after);
+    this.offset.sub2(this.before, this.after);
+    this.root.setPosition(this.root.getPosition().add(this.offset));
   }
 
   private updateSection() {

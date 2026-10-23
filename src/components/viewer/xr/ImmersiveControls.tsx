@@ -25,7 +25,7 @@ function SessionControls({ viewer, onActive }: { viewer: ImmersiveViewer; onActi
       {ar && <button disabled={viewer.pending} onClick={() => viewer.start(XRTYPE_AR)}>View in your room</button>}
     </>}
     {viewer.pending && <span role="status">Starting immersive view…</span>}
-    {!viewer.pending && <small>Grip: move and tilt · Both grips: turn and resize</small>}
+    {!viewer.pending && <small>Left trigger: orbit · Right trigger: pan · Left stick: zoom · Grip: move{ar ? " · In AR, point at a floor and press trigger to place" : ""}</small>}
     {viewer.error && <span role="alert">{viewer.error}</span>}
   </div>;
 }

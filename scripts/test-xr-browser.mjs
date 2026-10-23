@@ -30,6 +30,11 @@ await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
 const emulatorPath = process.env.XR_EMULATOR_PATH;
 if (!emulatorPath) throw new Error("Set XR_EMULATOR_PATH to Meta IWER's build/iwer.js (see docs/xr.md).");
 const emulator = await readFile(emulatorPath, "utf8");
+const semPath = process.env.XR_SEM_PATH;
+if (!semPath) throw new Error("Set XR_SEM_PATH to Meta SEM's build/iwer-sem.js for AR placement tests (see docs/xr.md).");
+const sem = await readFile(semPath, "utf8");
+const room = JSON.parse(await readFile(path.resolve(path.dirname(semPath), "../captures/office_small.json"), "utf8"));
+room.spatialEntities = room.spatialEntities.filter(entity => entity.semanticLabel_META === "FLOOR");
 const browser = await puppeteer.launch({ headless: true });
 try {
   const page = await browser.newPage(), errors = [];
@@ -37,8 +42,9 @@ try {
   page.setDefaultTimeout(30000);
   page.on("pageerror", error => errors.push(String(error)));
   page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
-  await page.evaluateOnNewDocument(emulator + `
+  await page.evaluateOnNewDocument(emulator + sem + `
     window.xrDevice = new IWER.XRDevice(IWER.metaQuest3, { stereoEnabled: true });
+    window.xrDevice.installSEM(IWER_SEM.SyntheticEnvironmentModule);
     window.xrDevice.installRuntime({ forceInstall: true });
   `);
   await page.setRequestInterception(true);
@@ -107,7 +113,7 @@ try {
       window.xrDevice.controllers.right.position.x+=.2;
     }); await settle(h);
     const larger=await targetPose(h);
-    check(larger.scale>twoStart.scale*1.1,"Native two-controller resize did not enlarge artifact");
+    check(Math.abs(larger.scale-twoStart.scale)<1e-5,"Two-grip movement unexpectedly changed joystick-controlled zoom");
     await page.evaluate(() => {
       window.xrDevice.controllers.left.position.z+=.2;
       window.xrDevice.controllers.right.position.z-=.2;
@@ -135,10 +141,31 @@ try {
       window.xrDevice.controllers.left.updateButtonValue("squeeze",0);
       window.xrDevice.controllers.right.connected=true;
     }); await settle(h);
-    console.log("PASS",id,type,"native controller models, one-grip move/tilt, native two-grip resize/turn/drag, release, transition, disconnect");
+    const orbitBefore=await targetPose(h);
+    await page.evaluate(() => window.xrDevice.controllers.left.updateButtonValue("trigger",1)); await settle(h);
+    await page.evaluate(() => { window.xrDevice.controllers.left.position.x+=.12; }); await settle(h);
+    const orbited=await targetPose(h);
+    check(orbited.rotation.some((value,i)=>Math.abs(value-orbitBefore.rotation[i])>.01),"Left trigger gesture did not orbit");
+    await page.evaluate(() => window.xrDevice.controllers.left.updateButtonValue("trigger",0)); await settle(h);
+    const panBefore=await targetPose(h);
+    await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("trigger",1)); await settle(h);
+    await page.evaluate(() => { window.xrDevice.controllers.right.position.x+=.12; }); await settle(h);
+    const panned=await targetPose(h);
+    check(Math.abs(panned.position[0]-panBefore.position[0])>.05,"Right trigger gesture did not pan");
+    await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("trigger",0)); await settle(h);
+    const zoomBefore=await targetPose(h);
+    await page.evaluate(() => window.xrDevice.controllers.left.updateAxes("thumbstick",0,-1)); await settle(h);
+    const zoomed=await targetPose(h);
+    check(zoomed.scale>zoomBefore.scale,"Left thumbstick forward did not zoom in");
+    await page.evaluate(() => window.xrDevice.controllers.left.updateAxes("thumbstick",0,1)); await settle(h);
+    const zoomedOut=await targetPose(h);
+    check(zoomedOut.scale<zoomed.scale,"Left thumbstick backward did not zoom out");
+    await page.evaluate(() => window.xrDevice.controllers.left.updateAxes("thumbstick",0,0)); await settle(h);
+    console.log("PASS",id,type,"controller models, grip movement, orbit, pan, zoom, release, transition, disconnect");
   }
   for (const id of Object.keys(assets)) {
     await page.goto(`${base}/artifacts/${id}`);
+    await page.evaluate(environment => window.xrDevice.sem.loadEnvironment(environment), room);
     await page.waitForSelector('[aria-label="Select"]:not([disabled])', { timeout: 90000 });
     await page.waitForSelector('button ::-p-text(Enter VR)');
     await page.$eval(".viewer-frame", element => element.scrollIntoView());
@@ -156,6 +183,7 @@ try {
         await page.click('[aria-label="Four views"]');
         await page.click('[aria-label="Look from Top"]');
       }
+      const initialBounds = await h.evaluate(h => { const b = h.selection.bounds(null); return { center: b.center.toArray(), halfExtents: b.halfExtents.toArray() }; });
       const before = await h.evaluate(h => ({
         split: h.viewports.split, active: h.viewports.active.id,
         root: Array.from(h.space.root.getWorldTransform().data),
@@ -171,6 +199,25 @@ try {
           while (h.app.xr.views.list.length !== 2) await new Promise(requestAnimationFrame);
           await new Promise(resolve => h.app.once("postrender", resolve));
         });
+        if (type === "immersive-ar") {
+          check(await h.evaluate(h => !h.app.root.findByName("Immersive artifact").enabled), "AR artifact appeared before surface placement");
+          await page.evaluate(() => {
+            const c=window.xrDevice.controllers.right;
+            c.position.set(.3,1.3,-.5);
+            c.quaternion.set(-Math.sin(7*Math.PI/36),0,0,Math.cos(7*Math.PI/36));
+          });
+          await page.waitForFunction(h => h.app.root.findByName("AR placement target")?.enabled, {timeout:15000}, h);
+          await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("trigger",1));
+          await page.waitForFunction(h => h.app.root.findByName("Immersive artifact")?.enabled, {timeout:15000}, h);
+          await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("trigger",0));
+          const bottom = await h.evaluate((h, bounds) => {
+            const root = h.app.root.findByName("Immersive artifact");
+            const point = { x: bounds.center[0], y: bounds.center[1] - bounds.halfExtents[1], z: bounds.center[2] };
+            return root.getWorldTransform().transformPoint(point).toArray();
+          }, initialBounds);
+          check(Math.abs(bottom[1] - .048785) < .01, "AR artifact did not rest on the detected floor: " + JSON.stringify(bottom));
+          if (!split) await page.screenshot({path:path.join(output, `${id}-ar-placed.png`)});
+        }
         const state = await h.evaluate(h => {
           const c=h.camera(), bounds=h.selection.bounds(null), parent=c.entity.parent;
           const relative = parent.getWorldTransform().clone().invert().transformPoint(bounds.center);
@@ -184,8 +231,15 @@ try {
         check(state.drawCalls>0, "XR rendered no draw calls");
         check(type!=="immersive-ar" || state.alpha===0, "Passthrough background is opaque");
         check(JSON.stringify(state.root)===JSON.stringify(before.root), "XR changed asset geometry space");
-        check(Math.abs(state.relative[0]-state.eye[0])<1e-4 && Math.abs(state.relative[1]-state.eye[1])<1e-4 && Math.abs(state.relative[2]-state.eye[2]+1.5)<1e-4,
+        check(type === "immersive-ar" || Math.abs(state.relative[0]-state.eye[0])<1e-4 && Math.abs(state.relative[1]-state.eye[1])<1e-4 && Math.abs(state.relative[2]-state.eye[2]+1.5)<1e-4,
           "Artifact was not placed in front of the first tracked pose: "+JSON.stringify(state));
+        if (!split && type === "immersive-vr") {
+          await page.evaluate(() => { window.xrDevice.position.z -= 3; window.xrDevice.quaternion.set(0, 1, 0, 0); });
+          await h.evaluate(async h => { for (let i=0;i<3;i++) await new Promise(resolve => h.app.once("postrender",resolve)); });
+          await page.screenshot({path:path.join(output,`${id}-rear-before.png`)});
+          await page.evaluate(() => { window.xrDevice.position.z += 3; window.xrDevice.quaternion.set(0, 0, 0, 1); });
+          await h.evaluate(async h => { for (let i=0;i<3;i++) await new Promise(resolve => h.app.once("postrender",resolve)); });
+        }
         if (!split) await manipulate(h, id, type);
         const canvas = await h.evaluateHandle(h => h.app.graphicsDevice.canvas);
         const first = await canvas.asElement().screenshot();

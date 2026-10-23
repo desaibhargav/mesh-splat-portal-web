@@ -5,6 +5,8 @@ import type { SelectionHandle } from "../selection/types";
 
 import { ImmersiveScene } from "./ImmersiveScene";
 import { ImmersiveInput } from "./ImmersiveInput";
+import { ImmersivePlacement } from "./ImmersivePlacement";
+import { ImmersiveGestures } from "./ImmersiveGestures";
 type ImmersiveType = typeof XRTYPE_AR | typeof XRTYPE_VR;
 
 export class ImmersiveViewer extends EventHandler {
@@ -44,7 +46,9 @@ export class ImmersiveViewer extends EventHandler {
     app.root.addChild(rig);
     const scene = new ImmersiveScene(this.handle, bounds);
     const input = new ImmersiveInput(app, rig, scene.root);
-    const place = () => scene.place(camera.entity);
+    const placement = type === XRTYPE_AR ? new ImmersivePlacement(app, scene, camera.entity) : null;
+    const gestures = new ImmersiveGestures(app, camera.entity, scene, () => !placement || placement.placed);
+    const place = () => { if (type === XRTYPE_VR) scene.place(camera.entity); };
     this.restore = () => {
       xr.off("update", place);
       parent.addChild(camera.entity); camera.entity.setLocalScale(scale);
@@ -52,7 +56,7 @@ export class ImmersiveViewer extends EventHandler {
       recallFrame(camera, frame); cameraControls(camera).enabled = enabled;
       app.renderNextFrame = true;
       app.graphicsDevice.setResolution(width, height);
-      input.destroy(); scene.destroy(); rig.destroy();
+      gestures.destroy(); placement?.destroy(); input.destroy(); scene.destroy(); rig.destroy();
     };
     // Keep tracked poses and controller models in metres; only the artifact
     // presentation is normalized. Source geometry and records stay untouched.
