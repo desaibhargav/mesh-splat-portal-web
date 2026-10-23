@@ -1,11 +1,10 @@
-import { Entity, EventHandler, PROJECTION_PERSPECTIVE, Quat, Vec3, XRTYPE_AR, XRTYPE_VR, XRSPACE_LOCALFLOOR } from "playcanvas";
+import { Entity, EventHandler, PROJECTION_PERSPECTIVE, Quat, XRTYPE_AR, XRTYPE_VR, XRSPACE_LOCALFLOOR } from "playcanvas";
 import { cameraControls } from "../CameraControls";
 import { captureFrame, recallFrame } from "../views/viewFrame";
 import type { SelectionHandle } from "../selection/types";
 
-// Presentation policy in metres, independent of uncalibrated source units.
-const displaySize = 1;
-const viewingDistance = 1.5;
+import { ImmersiveScene } from "./ImmersiveScene";
+import { ImmersiveInput } from "./ImmersiveInput";
 type ImmersiveType = typeof XRTYPE_AR | typeof XRTYPE_VR;
 
 export class ImmersiveViewer extends EventHandler {
@@ -42,21 +41,10 @@ export class ImmersiveViewer extends EventHandler {
     const clearColor = camera.clearColor.clone(), near = camera.nearClip, far = camera.farClip;
     const width = app.graphicsDevice.width, height = app.graphicsDevice.height;
     const rig = new Entity("Immersive viewing space");
-    const unitsPerMetre = Math.max(bounds.halfExtents.x, bounds.halfExtents.y, bounds.halfExtents.z) * 2 / displaySize;
-    app.root.addChild(rig); rig.setLocalScale(unitsPerMetre, unitsPerMetre, unitsPerMetre);
-    const place = () => {
-      // The first tracked pose defines the placement once. Later head movement
-      // moves through the scene naturally; the artifact never follows the head.
-      const forward = camera.entity.getLocalRotation().transformVector(Vec3.FORWARD);
-      forward.y = 0;
-      if (!forward.lengthSq()) forward.copy(Vec3.FORWARD);
-      forward.normalize();
-      const yaw = Math.atan2(-forward.x, -forward.z) * 180 / Math.PI;
-      const rotation = new Quat().setFromEulerAngles(0, -yaw, 0);
-      rig.setRotation(rotation);
-      const placement = camera.entity.getLocalPosition().clone().add(forward.mulScalar(viewingDistance));
-      rig.setPosition(bounds.center.clone().sub(rotation.transformVector(placement).mulScalar(unitsPerMetre)));
-    };
+    app.root.addChild(rig);
+    const scene = new ImmersiveScene(this.handle, bounds);
+    const input = new ImmersiveInput(app, rig, scene.root);
+    const place = () => scene.place(camera.entity);
     this.restore = () => {
       xr.off("update", place);
       parent.addChild(camera.entity); camera.entity.setLocalScale(scale);
@@ -64,10 +52,10 @@ export class ImmersiveViewer extends EventHandler {
       recallFrame(camera, frame); cameraControls(camera).enabled = enabled;
       app.renderNextFrame = true;
       app.graphicsDevice.setResolution(width, height);
-      rig.destroy();
+      input.destroy(); scene.destroy(); rig.destroy();
     };
-    // WebXR owns the camera's local pose; PlayCanvas composes this parent into
-    // both eye views. Geometry, clipping planes and saved coordinates stay intact.
+    // Keep tracked poses and controller models in metres; only the artifact
+    // presentation is normalized. Source geometry and records stay untouched.
     rig.addChild(camera.entity); camera.entity.setLocalScale(1, 1, 1);
     camera.entity.setLocalPosition(0, 0, 0); camera.entity.setLocalRotation(Quat.IDENTITY);
     camera.projection = PROJECTION_PERSPECTIVE;

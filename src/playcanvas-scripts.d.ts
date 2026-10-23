@@ -43,3 +43,13 @@ declare module "playcanvas/scripts/esm/annotations.mjs" {
     initialize(): void;
   }
 }
+
+declare module "playcanvas/scripts/esm/xr/xr-controllers.mjs" {
+  import { Script } from "playcanvas";
+  export class XrControllers extends Script { basePath: string }
+}
+
+declare module "playcanvas/scripts/esm/xr/xr-manipulation.mjs" {
+  import { Script, Entity } from "playcanvas";
+  export class XrManipulation extends Script { target: Entity; scalePivot: string }
+}

@@ -62,6 +62,81 @@ try {
     while (fiber && !fiber.memoizedProps?.handle) fiber = fiber.return;
     return fiber.memoizedProps.handle;
   });
+  async function settle(h) {
+    await h.evaluate(async h => {
+      for (let i=0;i<3;i++) await new Promise(resolve => h.app.once("postrender", resolve));
+    });
+  }
+  const targetPose = h => h.evaluate(h => {
+    const root=h.app.root.findByName("Immersive artifact");
+    return {position:root.getPosition().toArray(),rotation:root.getRotation().toArray(),scale:root.getLocalScale().x};
+  });
+  async function manipulate(h, id, type) {
+    await page.waitForFunction(h => h.app.root.findByName("XR controller left")?.findComponents("render").length &&
+      h.app.root.findByName("XR controller right")?.findComponents("render").length, {timeout:45000}, h);
+    await page.evaluate(() => {
+      const d=window.xrDevice;
+      d.controllers.left.position.set(-.18,1.6,-.8); d.controllers.right.position.set(.18,1.6,-.8);
+      d.controllers.left.quaternion.set(0,0,0,1); d.controllers.right.quaternion.set(0,0,0,1);
+      d.controllers.left.updateButtonValue("squeeze",0); d.controllers.right.updateButtonValue("squeeze",0);
+    });
+    await settle(h);
+    const before=await targetPose(h);
+    const canvas=await h.evaluateHandle(h => h.app.graphicsDevice.canvas);
+    const imageBefore=await canvas.asElement().screenshot();
+    await page.screenshot({path:path.join(output,`${id}-${type}-controllers-ready.png`)});
+    await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("squeeze",1)); await settle(h);
+    await page.evaluate(() => { window.xrDevice.controllers.right.position.x+=.2; }); await settle(h);
+    const moved=await targetPose(h);
+    check(Math.abs(moved.position[0]-before.position[0]-.2)<1e-4,"One-controller drag did not follow its tracked grip");
+    await page.evaluate(() => window.xrDevice.controllers.right.quaternion.set(Math.sin(Math.PI/12),0,0,Math.cos(Math.PI/12))); await settle(h);
+    const tilted=await targetPose(h);
+    check(tilted.rotation.some((value,i)=>Math.abs(value-moved.rotation[i])>.01),"One-controller tilt did not rotate artifact");
+    await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("squeeze",0)); await settle(h);
+    const released=await targetPose(h); await settle(h);
+    check(JSON.stringify(released)===JSON.stringify(await targetPose(h)),"Released artifact kept moving");
+    const imageAfter=await canvas.asElement().screenshot();
+    check(!imageBefore.equals(imageAfter),"Grip movement did not change rendered artifact");
+    await page.evaluate(() => {
+      window.xrDevice.controllers.left.updateButtonValue("squeeze",1);
+      window.xrDevice.controllers.right.updateButtonValue("squeeze",1);
+    }); await settle(h);
+    const twoStart=await targetPose(h);
+    await page.evaluate(() => {
+      window.xrDevice.controllers.left.position.x-=.2;
+      window.xrDevice.controllers.right.position.x+=.2;
+    }); await settle(h);
+    const larger=await targetPose(h);
+    check(larger.scale>twoStart.scale*1.1,"Native two-controller resize did not enlarge artifact");
+    await page.evaluate(() => {
+      window.xrDevice.controllers.left.position.z+=.2;
+      window.xrDevice.controllers.right.position.z-=.2;
+    }); await settle(h);
+    const turned=await targetPose(h);
+    check(turned.rotation.some((value,i)=>Math.abs(value-larger.rotation[i])>.01),"Native two-controller turn did not rotate artifact");
+    await page.evaluate(() => {
+      window.xrDevice.controllers.left.position.y+=.15;
+      window.xrDevice.controllers.right.position.y+=.15;
+    }); await settle(h);
+    const shifted=await targetPose(h);
+    check(Math.abs(shifted.position[1]-turned.position[1]-.15)<1e-4,"Native two-controller translation did not follow hands");
+    await page.evaluate(() => window.xrDevice.controllers.left.updateButtonValue("squeeze",0)); await settle(h);
+    const oneAgain=await targetPose(h);
+    check(oneAgain.position.every((value,i)=>Math.abs(value-shifted.position[i])<1e-4),"Two-to-one transition jumped");
+    await page.evaluate(() => { window.xrDevice.controllers.right.position.x+=.1; }); await settle(h);
+    const resumed=await targetPose(h);
+    check(Math.abs(resumed.position[0]-oneAgain.position[0]-.1)<1e-4,"One-controller grab did not resume after two-hand resize");
+    await page.evaluate(() => { window.xrDevice.controllers.right.connected=false; }); await settle(h);
+    const disconnected=await targetPose(h); await settle(h);
+    check(JSON.stringify(disconnected)===JSON.stringify(await targetPose(h)),"Tracking-source removal left grab active");
+    await page.screenshot({path:path.join(output,`${id}-${type}-controllers-manipulated.png`)});
+    await page.evaluate(() => {
+      window.xrDevice.controllers.right.updateButtonValue("squeeze",0);
+      window.xrDevice.controllers.left.updateButtonValue("squeeze",0);
+      window.xrDevice.controllers.right.connected=true;
+    }); await settle(h);
+    console.log("PASS",id,type,"native controller models, one-grip move/tilt, native two-grip resize/turn/drag, release, transition, disconnect");
+  }
   for (const id of Object.keys(assets)) {
     await page.goto(`${base}/artifacts/${id}`);
     await page.waitForSelector('[aria-label="Select"]:not([disabled])', { timeout: 90000 });
@@ -102,7 +177,7 @@ try {
           return { type:h.app.xr.type, split:h.viewports.split, active:h.viewports.active.id, views:h.app.xr.views.list.length,
             controls:c.entity.script.get("cameraControls").enabled, alpha:c.clearColor.a,
             relative:relative.toArray(), eye:c.entity.getLocalPosition().toArray(),
-            root:Array.from(h.space.root.getWorldTransform().data),
+            root:Array.from(h.space.root.getLocalTransform().data),
             drawCalls:h.app.stats.drawCalls.total };
         });
         check(state.type===type && state.views===2 && !state.split && state.active==="perspective" && !state.controls, "XR camera lifecycle: "+JSON.stringify(state));
@@ -111,6 +186,7 @@ try {
         check(JSON.stringify(state.root)===JSON.stringify(before.root), "XR changed asset geometry space");
         check(Math.abs(state.relative[0]-state.eye[0])<1e-4 && Math.abs(state.relative[1]-state.eye[1])<1e-4 && Math.abs(state.relative[2]-state.eye[2]+1.5)<1e-4,
           "Artifact was not placed in front of the first tracked pose: "+JSON.stringify(state));
+        if (!split) await manipulate(h, id, type);
         const canvas = await h.evaluateHandle(h => h.app.graphicsDevice.canvas);
         const first = await canvas.asElement().screenshot();
         await page.screenshot({ path:path.join(output, `${id}-${type}-${split?"split":"single"}.png`) });
@@ -120,6 +196,7 @@ try {
         check(!first.equals(moved), "Tracked head movement did not change rendered image");
         await h.evaluate(async h => { await new Promise(resolve => h.app.xr.end(resolve)); });
         await page.waitForFunction(() => document.querySelector('.viewer-frame')?.dataset.immersive === "false");
+        check(await h.evaluate(h => !h.app.root.findByName("Immersive artifact") && !h.app.root.findByName("XR controller left") && !h.app.root.findByName("XR controller right")), "XR resources leaked after exit");
         const after = await h.evaluate(h => ({
           split:h.viewports.split, active:h.viewports.active.id,
           root:Array.from(h.space.root.getWorldTransform().data),
@@ -132,15 +209,23 @@ try {
         console.log("PASS",id,type,split?"four views restored":"single view restored", "stereo draw calls",state.drawCalls);
       }
     }
-    // An existing cut remains the same world plane throughout immersive viewing.
+    // Existing cuts follow the artifact presentation and restore their source plane on exit.
     await page.click('[aria-label="Cross section"]');
     await page.locator('.section-buttons button ::-p-text(Enable section)').click();
     const cut = await h.evaluate(h => Array.from(h.app.graphicsDevice.scope.resolve("portalSectionPlane").getValue()));
     await page.keyboard.press("q");
     await page.locator('button ::-p-text(View in your room)').click();
     await page.waitForFunction(() => document.querySelector('.viewer-frame')?.dataset.immersive === "true");
-    check(await h.evaluate((h, expected) => h.app.graphicsDevice.scope.resolve("portalSectionEnabled").getValue() === 1 &&
-      Array.from(h.app.graphicsDevice.scope.resolve("portalSectionPlane").getValue()).every((value, i) => value === expected[i]), cut), "XR moved or disabled the existing section");
+    await h.evaluate(async h => { await new Promise(resolve => h.app.once("postrender", resolve)); });
+    check(await h.evaluate((h, expected) => {
+      const root=h.app.root.findByName("Immersive artifact"), matrix=root.getWorldTransform().clone().transpose();
+      const actual=h.app.graphicsDevice.scope.resolve("portalSectionPlane").getValue();
+      // M^T * presented plane recovers the source equation without assuming a
+      // source format, object size, or XR presentation transform.
+      const equation=h.camera().rect.clone().set(...actual);
+      const recovered=matrix.transformVec4(equation).toArray();
+      return h.app.graphicsDevice.scope.resolve("portalSectionEnabled").getValue()===1 && recovered.every((value,i)=>Math.abs(value-expected[i])<1e-4);
+    }, cut), "XR changed the retained section half-space");
     await h.evaluate(async h => { await new Promise(resolve => h.app.xr.end(resolve)); });
     await page.waitForFunction(() => document.querySelector('.viewer-frame')?.dataset.immersive === "false");
     check(await h.evaluate(h => h.app.graphicsDevice.scope.resolve("portalSectionEnabled").getValue() === 1), "XR exit lost the existing section");

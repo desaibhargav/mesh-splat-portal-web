@@ -81,7 +81,7 @@ The camera icon opens a name field and green **Download** actions. It requests o
 
 ## Immersive AR / VR
 
-On a supported headset browser over HTTPS, the viewer's top bar offers **Enter VR** and **View in your room**. Both use native PlayCanvas WebXR sessions and show the same mesh/splat asset spatially with stereo rendering and head tracking. Initial presentation fits the asset to approximately one metre across, 1.5 metres in front of the initial headset pose; this is a viewing scale, not calibrated real-world size. Exit through the headset's session controls to restore the desktop view, including its four-view arrangement. This first stage covers viewing; controller manipulation, placement on real surfaces, and immersive tool options follow separately. See [XR behavior and validation](docs/xr.md). Real Quest 3 validation remains pending.
+On a supported headset browser over HTTPS, the viewer's top bar offers **Enter VR** and **View in your room**. Both use native PlayCanvas WebXR sessions and show the same mesh/splat asset spatially with stereo rendering and head tracking. Initial presentation fits the asset to approximately one metre across, 1.5 metres in front of the initial headset pose; this is a viewing scale, not calibrated real-world size. Controller models and pointing rays appear when tracked. Hold one grip to move and tilt the artifact; hold both grips to move, turn, and resize it. Exit through the headset's session controls to restore the desktop view, including its four-view arrangement. Surface placement and immersive tool options follow separately. See [XR behavior and validation](docs/xr.md). Real Quest 3 validation remains pending.
 
 ## Model tree
 
