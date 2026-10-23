@@ -7,6 +7,16 @@ SITE_NAME="${SITE_NAME:-mesh-splat-portal}"
 SITE_AVAILABLE="/etc/nginx/sites-available/$SITE_NAME"
 SITE_ENABLED="/etc/nginx/sites-enabled/$SITE_NAME"
 BACKEND_ORIGIN="${BACKEND_ORIGIN:-}"
+CERT_DIR="${CERT_DIR:-/etc/letsencrypt/live/$SITE_NAME}"
+TLS_CONFIG=""
+
+# Certbot owns the certificate files and renewal. Reuse them on every deployment.
+if sudo test -f "$CERT_DIR/fullchain.pem" && sudo test -f "$CERT_DIR/privkey.pem"; then
+  TLS_CONFIG="listen 443 ssl;
+    ssl_certificate $CERT_DIR/fullchain.pem;
+    ssl_certificate_key $CERT_DIR/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;"
+fi
 
 cd "$APP_ROOT"
 
@@ -22,6 +32,7 @@ if [[ -n "$BACKEND_ORIGIN" ]]; then
   sudo tee "$SITE_AVAILABLE" >/dev/null <<EOF
 server {
     listen 80;
+    $TLS_CONFIG
     server_name _;
 
     root $WEB_ROOT;
@@ -63,6 +74,7 @@ else
   sudo tee "$SITE_AVAILABLE" >/dev/null <<EOF
 server {
     listen 80;
+    $TLS_CONFIG
     server_name _;
 
     root $WEB_ROOT;

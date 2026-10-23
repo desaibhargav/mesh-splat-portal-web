@@ -89,6 +89,8 @@ The remaining work is tracked in [TODO.md](TODO.md), including saved views, WebX
 
 ## AWS demo deployment notes
 
+`scripts/deploy-server.sh` enables HTTPS when both `fullchain.pem` and `privkey.pem` exist in `/etc/letsencrypt/live/$SITE_NAME` (default site name: `mesh-splat-portal`). Set `CERT_DIR` for a different certificate location. Certbot owns issuance and automated renewal; its deploy hook must validate and reload Nginx after renewal (`nginx -t && systemctl reload nginx`). HTTP remains available for webroot certificate validation. The script retains the same API and streaming-file proxy routes on both ports. If no certificate exists, initial deployment remains HTTP-only.
+
 On the frontend gateway instance, build the static portal:
 
 ```bash
