@@ -15,7 +15,8 @@
     "test:browser:segments": "node scripts/test-segments-browser.mjs",
     "test:browser:coverage": "node scripts/test-selection-coverage-browser.mjs",
     "test:browser:visibility": "node scripts/test-mesh-visibility-browser.mjs",
-    "test:browser:capture": "node scripts/test-capture-browser.mjs"
+    "test:browser:capture": "node scripts/test-capture-browser.mjs",
+    "test:browser:xr": "node scripts/test-xr-browser.mjs"
   },
   "dependencies": {
     "@playcanvas/react": "0.11.5",

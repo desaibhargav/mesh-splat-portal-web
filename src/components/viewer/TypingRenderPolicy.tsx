@@ -13,22 +13,26 @@ export function TypingRenderPolicy({ scope }: { scope: RefObject<HTMLElement | n
     let paused = false;
 
     const setPaused = (value: boolean) => {
-      if (value === paused || app.xr?.active) return;
-      paused = value;
-      app.autoRender = !value;
-      if (!value) app.renderNextFrame = true;
+      const next = value && !app.xr?.active;
+      if (next === paused) return;
+      paused = next;
+      app.autoRender = !next;
+      if (!next) app.renderNextFrame = true;
     };
     const onFocusIn = (event: FocusEvent) => setPaused((event.target as Element).matches(textEntry));
-    const onFocusOut = () => requestAnimationFrame(() => {
+    const syncFocus = () => {
       const focused = document.activeElement;
       setPaused(Boolean(focused && root.contains(focused) && focused.matches(textEntry)));
-    });
+    };
+    const onFocusOut = () => requestAnimationFrame(syncFocus);
 
     root.addEventListener("focusin", onFocusIn);
     root.addEventListener("focusout", onFocusOut);
+    app.xr?.on("start", syncFocus); app.xr?.on("end", syncFocus);
     return () => {
       root.removeEventListener("focusin", onFocusIn);
       root.removeEventListener("focusout", onFocusOut);
+      app.xr?.off("start", syncFocus); app.xr?.off("end", syncFocus);
       if (paused) { app.autoRender = true; app.renderNextFrame = true; }
     };
   }, [app, scope]);

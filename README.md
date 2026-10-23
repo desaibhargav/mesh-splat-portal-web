@@ -73,11 +73,15 @@ The annotation icon is the single entry point for notes. Opening it first asks t
 
 Numbered hotspots display notes when clicked in navigation or annotation mode. Hovering geometry in a bound selection also displays its note. A bound marker uses the selection's dominant painted shade, or the standard selection highlight when unpainted. Saved annotations have a separate list with edit, move-marker, and red delete controls; visible numbers remain consecutive after deletion. **Select annotated area** restores its independent region snapshot and focuses it, even after the current selection has changed. Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z undo/redo saved annotation edits while this tool is active; text fields retain ordinary text editing and Q input. Q/Escape exits the tool after leaving a text field. Alt/Option orbit, pan, and zoom remain available.
 
-Hotspots use PlayCanvas's bundled `Annotation` and `AnnotationManager` scripts, with a small container adapter for our embedded/fullscreen viewer. Point placement shares measurement's GPU picker; annotation layers are excluded from surface/depth picking. Text renders as plain text. Region masks reuse selection history's bit packing. Notes remain in memory until leaving the asset; persistent saved views and WebXR are deferred in [TODO.md](TODO.md).
+Hotspots use PlayCanvas's bundled `Annotation` and `AnnotationManager` scripts, with a small container adapter for our embedded/fullscreen viewer. Point placement shares measurement's GPU picker; annotation layers are excluded from surface/depth picking. Text renders as plain text. Region masks reuse selection history's bit packing. Notes remain in memory until leaving the asset; persistent saved views and immersive annotation controls are deferred in [TODO.md](TODO.md).
 
 ## Capture
 
 The camera icon opens a name field and green **Download** actions. It requests one completed PlayCanvas frame and downloads the scene canvas as a PNG at its current render resolution. An optional annotated download composites every visible annotation marker, title, and description after that frame; the normal download remains a clean scene image. In four-view mode, the same canvas contains all four panels, so one PNG captures the complete split. Portal controls, viewport labels, and navigation widgets are excluded. Capture adds no idle rendering or server upload; browser-download behavior is shared by meshes and splats. Immersive-XR capture remains unverified.
+
+## Immersive AR / VR
+
+On a supported headset browser over HTTPS, the viewer's top bar offers **Enter VR** and **View in your room**. Both use native PlayCanvas WebXR sessions and show the same mesh/splat asset spatially with stereo rendering and head tracking. Initial presentation fits the asset to approximately one metre across, 1.5 metres in front of the initial headset pose; this is a viewing scale, not calibrated real-world size. Exit through the headset's session controls to restore the desktop view, including its four-view arrangement. This first stage covers viewing; controller manipulation, placement on real surfaces, and immersive tool options follow separately. See [XR behavior and validation](docs/xr.md). Real Quest 3 validation remains pending.
 
 ## Model tree
 

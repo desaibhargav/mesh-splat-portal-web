@@ -7,6 +7,7 @@ import { SplatViewer } from "./SplatViewer";
 import { SelectionControls } from "./selection/SelectionControls";
 import type { SelectionHandle, SelectionTool } from "./selection/types";
 import { TypingRenderPolicy } from "./TypingRenderPolicy";
+import { ImmersiveControls } from "./xr/ImmersiveControls";
 
 export type ViewerStatus = { loading: boolean; progress: number; error: string | null };
 
@@ -16,6 +17,7 @@ export function ArtifactViewer({ artifact }: { artifact: Artifact }) {
   const [fullscreen, setFullscreen] = useState(false);
   const [selection, setSelection] = useState<SelectionHandle | null>(null);
   const [tool, setTool] = useState<SelectionTool>("navigate");
+  const [immersive, setImmersive] = useState(false);
   const selecting = tool !== "navigate";
   function changeTool(next: SelectionTool) { setTool(next); }
 
@@ -31,7 +33,7 @@ export function ArtifactViewer({ artifact }: { artifact: Artifact }) {
   }
 
   return (
-    <section ref={frame} className="viewer-frame has-selection-tools" tabIndex={0} aria-label={`${artifact.title} 3D viewer`}
+    <section ref={frame} className="viewer-frame has-selection-tools" data-immersive={immersive} tabIndex={0} aria-label={`${artifact.title} 3D viewer`}
       onClickCapture={event => {
         if ((event.target as HTMLElement).closest(".selection-toolbar button, .selection-actions button, .viewer-tree button, .viewer-toolbar button, .viewport-label")) frame.current?.focus({ preventScroll: true });
       }}
@@ -47,11 +49,12 @@ export function ArtifactViewer({ artifact }: { artifact: Artifact }) {
       <div className="viewer-toolbar">
         <span>{artifact.type === "mesh" ? "Mesh" : "Gaussian splat"}</span>
         {selection && <ViewportToggle handle={selection} />}
+        {selection && <ImmersiveControls handle={selection} onActive={setImmersive} />}
         <button onClick={() => void toggleFullscreen()}>{fullscreen ? "Exit fullscreen" : "Fullscreen"}</button>
       </div>
       <SelectionControls handle={selection} tool={tool} onToolChange={changeTool} disabled={status.loading || Boolean(status.error)} captureName={artifact.title} />
       <div className="viewer-canvas">
-        <Application graphicsDeviceOptions={{ antialias: artifact.type === "mesh" }}>
+        <Application graphicsDeviceOptions={{ antialias: artifact.type === "mesh", xrCompatible: true }}>
           <TypingRenderPolicy scope={frame} />
           {artifact.type === "mesh" ? <MeshViewer url={artifact.contentUrl} onStatus={setStatus} onSelectionReady={setSelection} /> :
             <SplatViewer url={artifact.contentUrl} onStatus={setStatus} onSelectionReady={setSelection} />}
