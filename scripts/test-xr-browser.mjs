@@ -1,5 +1,4 @@
 // Real engine AR/VR sessions with Meta IWER; emulator is test-only and never bundled.
-import { createServer } from "node:http";
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
@@ -15,18 +14,6 @@ const assets = {
   "21e231-006699": { type: "mesh", file: "content.glb" },
   "sakura-garden": { type: "splat", file: "meta.json" }
 };
-const server = createServer(async (request, response) => {
-  const parts = new URL(request.url, "http://localhost").pathname.split("/").filter(Boolean);
-  const asset = assets[parts[0]];
-  if (!asset || parts.length !== 2 || !/^[-a-zA-Z0-9._]+$/.test(parts[1])) { response.writeHead(404).end(); return; }
-  try {
-    response.setHeader("Access-Control-Allow-Origin", "*");
-    response.setHeader("Content-Type", parts[1].endsWith(".glb") ? "model/gltf-binary" : parts[1].endsWith(".json") ? "application/json" : "application/octet-stream");
-    response.end(await readFile(path.join(derivatives, parts[0], parts[1])));
-  } catch (error) { response.writeHead(404).end(String(error)); }
-});
-await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
-
 const emulatorPath = process.env.XR_EMULATOR_PATH;
 if (!emulatorPath) throw new Error("Set XR_EMULATOR_PATH to Meta IWER's build/iwer.js (see docs/xr.md).");
 const emulator = await readFile(emulatorPath, "utf8");
@@ -48,16 +35,22 @@ try {
     window.xrDevice.installRuntime({ forceInstall: true });
   `);
   await page.setRequestInterception(true);
-  page.on("request", request => {
+  page.on("request", async request => {
     const url = new URL(request.url());
+    const parts = url.pathname.split("/").filter(Boolean);
     if (url.pathname === "/favicon.ico") request.respond({ status: 204 });
     else if (url.pathname === "/api/v1/artifacts") request.respond({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], nextCursor: null }) });
     else if (url.pathname.startsWith("/api/v1/artifacts/")) {
       const id = url.pathname.split("/").at(-1), asset = assets[id];
       request.respond({ status: 200, contentType: "application/json", body: JSON.stringify({
         id, title: id, description: "XR regression", type: asset.type, thumbnailUrl: null,
-        contentUrl: `http://127.0.0.1:${server.address().port}/${id}/${asset.file}`, sizeBytes: 0
+        contentUrl: `${url.origin}/${id}/${asset.file}`, sizeBytes: 0
       }) });
+    } else if (assets[parts[0]] && parts.length === 2 && /^[-a-zA-Z0-9._]+$/.test(parts[1])) {
+      try {
+        const body = await readFile(path.join(derivatives, parts[0], parts[1]));
+        request.respond({ status: 200, contentType: parts[1].endsWith(".glb") ? "model/gltf-binary" : parts[1].endsWith(".json") ? "application/json" : "application/octet-stream", body });
+      } catch { request.respond({ status: 404 }); }
     } else request.continue();
   });
   const base = process.env.VIEWER_BASE ?? "http://127.0.0.1:5175";
@@ -308,4 +301,4 @@ try {
 } catch (error) {
   for (const page of await browser.pages()) console.log("XR FAILURE", page.url(), await page.evaluate(() => document.body.innerText));
   throw error;
-} finally { await browser.close(); server.close(); }
+} finally { await browser.close(); }
