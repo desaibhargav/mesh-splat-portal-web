@@ -307,6 +307,155 @@ try {
         console.log("PASS",id,type,split?"four views restored":"single view restored", "stereo draw calls",state.drawCalls);
       }
     }
+    // The same document must receive stereo XR picks and remain editable on desktop.
+    await page.click('[aria-label="Measure distance"]');
+    check(await page.$eval('.measurement-panels', node => !!node && getComputedStyle(node).display !== "none"),
+      "Desktop Measurement options did not open on tool entry");
+    await page.click('[aria-label="View in VR"]');
+    await page.waitForFunction(() => document.querySelector('.viewer-frame')?.dataset.immersive === "true");
+    const menuReady = await h.evaluate(h => {
+      const menu = h.viewports.perspectivePanel.camera.entity.script?.get("xrMenu");
+      return !!menu?._menuVisible && menu.menuItems[3].label === "Place points";
+    });
+    check(menuReady, "Measurement menu did not open automatically on XR entry");
+    await page.waitForFunction(h => h.viewports.perspectivePanel.camera.entity.script.get("xrMenu")._currentOpacity > .99,
+      { timeout: 10000 }, h);
+    await page.screenshot({ path:path.join(output, `${id}-measurement-menu.png`) });
+    const positionRightRay = async point => {
+      await page.evaluate(() => {
+        const c = window.xrDevice.controllers.right;
+        c.position.set(0, 0, 0); c.quaternion.set(0, 0, 0, 1);
+      });
+      await settle(h);
+      const origin = await h.evaluate(h => h.app.xr.input.inputSources.find(source => source.handedness === "right").getOrigin().toArray());
+      await page.evaluate(position => window.xrDevice.controllers.right.position.set(...position),
+        point.map((value, index) => value - origin[index]));
+      await settle(h);
+    };
+    const menuTarget = index => h.evaluate((h, index) => {
+      const menu = h.viewports.perspectivePanel.camera.entity.script.get("xrMenu");
+      const corners = menu._buttons[index].element.worldCorners;
+      return [(corners[0].x + corners[2].x) / 2, (corners[0].y + corners[2].y) / 2, (corners[0].z + corners[2].z) / 2 + .25];
+    }, index);
+    await positionRightRay(await menuTarget(3));
+    check(await h.evaluate(h => h.viewports.perspectivePanel.camera.entity.script.get("xrMenu")._hoveredButton?.menuData?.index === 3),
+      "Controller ray did not hover Place points");
+    await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("trigger", 1)); await settle(h);
+    await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("trigger", 0)); await settle(h);
+    check(await h.evaluate(h => !h.viewports.perspectivePanel.camera.entity.script?.get("xrMenu")?._menuVisible),
+      "Controller ray did not activate Place points and close the menu");
+    const whileMeasuring = await targetPose(h);
+    await page.evaluate(() => window.xrDevice.controllers.left.updateAxes("thumbstick", 0, -1)); await settle(h);
+    check((await targetPose(h)).scale > whileMeasuring.scale, "Thumbstick zoom stopped in Measure mode");
+    await page.evaluate(() => window.xrDevice.controllers.left.updateAxes("thumbstick", 0, 0)); await settle(h);
+    await page.evaluate(() => window.xrDevice.controllers.left.updateButtonValue("trigger", 1)); await settle(h);
+    await page.evaluate(() => { window.xrDevice.controllers.left.position.x += .08; }); await settle(h);
+    check((await targetPose(h)).rotation.some((v,i) => Math.abs(v - whileMeasuring.rotation[i]) > .01),
+      "Orbit stopped in Measure mode");
+    await page.evaluate(() => { window.xrDevice.controllers.left.position.x -= .08; }); await settle(h);
+    await page.evaluate(() => window.xrDevice.controllers.left.updateButtonValue("trigger", 0)); await settle(h);
+    await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("trigger", 1)); await settle(h);
+    await page.evaluate(() => { window.xrDevice.controllers.right.position.x += .08; }); await settle(h);
+    check(Math.abs((await targetPose(h)).position[0] - whileMeasuring.position[0]) > .02,
+      "Pan stopped in Measure mode");
+    await page.evaluate(() => { window.xrDevice.controllers.right.position.x -= .08; }); await settle(h);
+    await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("trigger", 0)); await settle(h);
+    await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("squeeze", 1)); await settle(h);
+    await page.evaluate(() => { window.xrDevice.controllers.right.position.x += .08; }); await settle(h);
+    check(Math.abs((await targetPose(h)).position[0] - whileMeasuring.position[0]) > .02,
+      "Grip movement stopped in Measure mode");
+    await page.evaluate(() => { window.xrDevice.controllers.right.position.x -= .08; }); await settle(h);
+    await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("squeeze", 0)); await settle(h);
+    const measurementRecords = () => page.evaluate(() => {
+      const node = document.querySelector(".selection-toolbar");
+      let fiber = node[Object.keys(node).find(key => key.startsWith("__reactFiber$"))];
+      while (fiber && !fiber.memoizedProps?.workspaces) fiber = fiber.return;
+      return fiber.memoizedProps.workspaces.current.measurement.records.map(record => ({
+        id: record.id, saved: record.saved, points: record.points.map(point => point.toArray())
+      }));
+    });
+    const aim = async (dx, dy) => {
+      const target = await h.evaluate((h, offset) => {
+        const bounds = h.selection.bounds(null);
+        const center = bounds.center;
+        const radius = bounds.halfExtents.length();
+        return [center.x + offset[0], center.y + offset[1], center.z + radius * 2 + .5];
+      }, [dx, dy]);
+      await positionRightRay(target);
+      await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("trigger", 1)); await settle(h);
+      await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("trigger", 0)); await settle(h);
+    };
+    const candidates = [[0,0],[-.12,0],[.12,0],[0,.12],[0,-.12],[-.12,.12],[.12,-.12],
+      [-.25,0],[.25,0],[0,.25],[0,-.25],[-.25,.2],[.25,.2],[-.25,-.2],[.25,-.2]];
+    for (const [dx, dy] of candidates) {
+      await aim(dx,dy);
+      if ((await measurementRecords()).at(-1)?.points.length === 1) break;
+    }
+    check((await measurementRecords()).at(-1)?.points.length === 1,
+      "XR controller ray missed the first surface point: " + JSON.stringify(await h.evaluate(h => ({
+        status: h.viewports.perspectivePanel.camera.entity.script.get("xrMenu").menuItems[2].label,
+        bounds: h.selection.bounds(null)?.center.toArray(),
+        scale: h.app.root.findByName("Immersive artifact")?.getLocalScale().toArray()
+      }))));
+    for (const [dx, dy] of candidates.slice(1)) {
+      await aim(dx,dy);
+      if ((await measurementRecords()).at(-1)?.points.length === 2) break;
+    }
+    check((await measurementRecords()).at(-1)?.points.length === 2, "XR controller ray missed the second surface point");
+    check(await h.evaluate(h => !!h.app.root.findByName("Measurement segment")), "XR points did not produce a scene measurement");
+    await page.evaluate(() => { window.xrDevice.controllers.left.connected=false; window.xrDevice.controllers.right.connected=false; });
+    await settle(h);
+    await page.screenshot({ path:path.join(output, `${id}-measurement-line.png`) });
+    await page.evaluate(() => { window.xrDevice.controllers.left.connected=true; window.xrDevice.controllers.right.connected=true; });
+    await settle(h);
+    await page.waitForFunction(h => h.viewports.perspectivePanel.camera.entity.script.get("xrMenu")._currentOpacity > .99,
+      { timeout: 10000 }, h);
+    await positionRightRay(await menuTarget(4));
+    check(await h.evaluate(h => h.viewports.perspectivePanel.camera.entity.script.get("xrMenu")._hoveredButton?.menuData?.index === 4),
+      "Controller ray did not hover Save measurement");
+    await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("trigger", 1)); await settle(h);
+    await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("trigger", 0)); await settle(h);
+    check((await measurementRecords()).at(-1)?.saved, "XR Save did not update the shared measurement document");
+    const priorB = (await measurementRecords()).at(-1).points[1];
+    await positionRightRay(await menuTarget(8));
+    await new Promise(resolve => setTimeout(resolve, 350));
+    await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("trigger", 1)); await settle(h);
+    await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("trigger", 0)); await settle(h);
+    check(await h.evaluate(h => !h.viewports.perspectivePanel.camera.entity.script.get("xrMenu")._menuVisible),
+      "Move point B did not arm surface picking");
+    for (const [dx, dy] of [[-.12,0],[0,.12],[0,-.12],[.12,.12],[-.12,-.12],[0,0]]) {
+      await aim(dx, dy);
+      const now = (await measurementRecords()).at(-1).points[1];
+      if (now.some((value, index) => Math.abs(value - priorB[index]) > 1e-6)) break;
+    }
+    check((await measurementRecords()).at(-1).points[1].some((value, index) => Math.abs(value - priorB[index]) > 1e-6),
+      "XR Move point B did not edit the shared saved measurement");
+    await page.waitForFunction(h => h.viewports.perspectivePanel.camera.entity.script.get("xrMenu")._currentOpacity > .99,
+      { timeout: 10000 }, h);
+    await positionRightRay(await menuTarget(0));
+    check(await h.evaluate(h => h.viewports.perspectivePanel.camera.entity.script.get("xrMenu")._hoveredButton?.menuData?.index === 0),
+      "Controller ray did not hover Navigate");
+    await new Promise(resolve => setTimeout(resolve, 350));
+    await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("trigger", 1)); await settle(h);
+    await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("trigger", 0)); await settle(h);
+    check(await h.evaluate(h => !h.viewports.perspectivePanel.camera.entity.script.get("xrMenu")._menuVisible),
+      "Navigate did not close the XR tool menu");
+    await page.evaluate(() => window.xrDevice.controllers.left.updateButtonValue("y-button", 1)); await settle(h);
+    await page.evaluate(() => window.xrDevice.controllers.left.updateButtonValue("y-button", 0)); await settle(h);
+    check(await h.evaluate(h => h.viewports.perspectivePanel.camera.entity.script.get("xrMenu")._menuVisible),
+      "Left Y did not reopen the XR tool menu from Navigate");
+    await positionRightRay(await menuTarget(1));
+    await new Promise(resolve => setTimeout(resolve, 350));
+    await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("trigger", 1)); await settle(h);
+    await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("trigger", 0)); await settle(h);
+    check(await page.$eval('[aria-label="Measure distance"]', node => node.getAttribute("aria-pressed") === "true"),
+      "XR Measure command did not switch the shared desktop tool");
+    await h.evaluate(async h => { await new Promise(resolve => h.app.xr.end(resolve)); });
+    await page.waitForFunction(() => document.querySelector('.viewer-frame')?.dataset.immersive === "false");
+    check(await page.$eval('[aria-label="Saved measurements"]', node => node.textContent.includes("Measurement")),
+      "Saved XR measurement was absent from the desktop tool");
+    await page.keyboard.press("q");
+    console.log("PASS", id, "XR measurement menu, stereo scene line, controller points, save, desktop record");
     // Existing cuts follow the artifact presentation and restore their source plane on exit.
     await page.click('[aria-label="Cross section"]');
     await page.locator('.section-buttons button ::-p-text(Enable section)').click();

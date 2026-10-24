@@ -37,11 +37,12 @@ const selectionShapes: { shape: SelectionShape; label: string }[] = [
 type OpenRequest = { tool: SelectionTool; id: number };
 
 export function SelectionControls(props: {
-  handle: SelectionHandle | null; tool: SelectionTool; onToolChange(tool: SelectionTool): void; disabled: boolean; captureName: string;
+  handle: SelectionHandle | null; workspaces: SegmentWorkspaces | null; tool: SelectionTool;
+  onToolChange(tool: SelectionTool): void; disabled: boolean; captureName: string;
 }) {
   const [openRequest, setOpenRequest] = useState<OpenRequest | null>(null);
   useEffect(() => { if (openRequest && openRequest.tool !== props.tool) setOpenRequest(null); }, [props.tool, openRequest]);
-  const workspaces = useMemo(() => props.handle ? new SegmentWorkspaces(props.handle) : null, [props.handle]);
+  const workspaces = props.workspaces;
   const [, refresh] = useState(0);
   useEffect(() => {
     if (!workspaces) return;

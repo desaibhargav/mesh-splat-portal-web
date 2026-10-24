@@ -53,3 +53,26 @@ declare module "playcanvas/scripts/esm/xr/xr-manipulation.mjs" {
   import { Script, Entity } from "playcanvas";
   export class XrManipulation extends Script { target: Entity; scalePivot: string }
 }
+
+declare module "playcanvas/scripts/esm/xr/xr-menu.mjs" {
+  import { Asset, Entity, Script, Vec2, Vec3 } from "playcanvas";
+  export class XrMenu extends Script {
+    menuItems: { label: string; eventName?: string }[];
+    fontAsset: Asset;
+    preferredHand: string;
+    toggleButtonIndex: number;
+    buttonWidth: number;
+    buttonHeight: number;
+    fontSize: number;
+    menuOffset: Vec3;
+    alwaysVisible: boolean;
+    followDistance: number;
+    followOffset: Vec2;
+    readonly isPointerOverMenu: boolean;
+    setItemLabel(index: number, text: string): boolean;
+    // PlayCanvas 2.21 exposes no public programmatic open/close method.
+    _setMenuVisible(visible: boolean): void;
+    _menuContainer: Entity | null;
+    _menuVisible: boolean;
+  }
+}

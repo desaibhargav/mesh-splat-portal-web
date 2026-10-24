@@ -1,5 +1,5 @@
 import {
-  CanvasFont, Color, ELEMENTTYPE_TEXT, Entity, Layer, LINECAP_ROUND, PROJECTION_ORTHOGRAPHIC, StandardMaterial, Vec2, Vec3,
+  CanvasFont, Color, ELEMENTTYPE_TEXT, Entity, Layer, LINECAP_ROUND, PROJECTION_ORTHOGRAPHIC, Quat, StandardMaterial, Vec2, Vec3,
   WideLine, WideLineRenderer,
   type AppBase, type CameraComponent
 } from "playcanvas";
@@ -11,7 +11,7 @@ export { defaultMeasurementStyle, type MeasurementStyle } from "./measurementSty
 
 interface SegmentVisual {
   points: readonly Vec3[]; worldPoints: Vec3[]; root: Entity; markers: Entity[]; markerLabels: Entity[];
-  line: WideLine | null; linePositions: Float32Array | null; label: Entity | null; midpoint: Vec3;
+  line: WideLine | null; xrLine: Entity | null; linePositions: Float32Array | null; label: Entity | null; midpoint: Vec3;
 }
 
 interface MeasurementResources { font: CanvasFont; material: StandardMaterial; users: number }
@@ -53,6 +53,8 @@ export class MeasurementRenderer {
   private readonly screenEnd = new Vec3();
   private readonly normal = new Vec2();
   private readonly labelOffset = new Vec3();
+  private readonly segmentDirection = new Vec3();
+  private readonly segmentRotation = new Quat();
   private style = defaultMeasurementStyle;
   private visuals: SegmentVisual[] = [];
   private disposed = false;
@@ -117,15 +119,19 @@ export class MeasurementRenderer {
         return marker;
       });
       const midpoint = points.length === 2 ? new Vec3().lerp(points[0]!, points[1]!, 0.5) : points[0]!.clone();
-      let line: WideLine | null = null, label: Entity | null = null;
+      let line: WideLine | null = null, xrLine: Entity | null = null, label: Entity | null = null;
       let linePositions: Float32Array | null = null;
       if (points.length === 2) {
         linePositions = new Float32Array(6);
         line = new WideLine().set(linePositions, [1, 1, 1, 1, 1, 1], this.style.lineWidth);
         line.cap = LINECAP_ROUND; this.lines.add(line);
+        xrLine = new Entity("XR measurement line"); root.addChild(xrLine);
+        xrLine.addComponent("render", { type: "cylinder", material: this.material, layers: [this.layer.id],
+          castShadows: false, receiveShadows: false });
+        xrLine.enabled = false;
         label = this.text(root, formatDistance(points[0]!.distance(points[1]!)));
       }
-      this.visuals[i] = { points, worldPoints: points.map(() => new Vec3()), root, markers, markerLabels, line, linePositions, label, midpoint };
+      this.visuals[i] = { points, worldPoints: points.map(() => new Vec3()), root, markers, markerLabels, line, xrLine, linePositions, label, midpoint };
     });
   }
 
@@ -145,11 +151,23 @@ export class MeasurementRenderer {
   }
 
   private update() {
+    const immersive = !!this.handle.app.xr?.active;
+    this.lines.enabled = !immersive;
     for (const visual of this.visuals) {
       visual.points.forEach((point, i) => this.handle.space.toWorld(point, visual.worldPoints[i]!));
       visual.markers.forEach((marker, i) => this.billboard(marker, visual.worldPoints[i]!));
       if (!visual.line || !visual.label) continue;
       visual.midpoint.lerp(visual.worldPoints[0]!, visual.worldPoints[1]!, 0.5);
+      if (visual.xrLine) {
+        const length = this.segmentDirection.sub2(visual.worldPoints[1]!, visual.worldPoints[0]!).length();
+        visual.xrLine.enabled = immersive && length > 0;
+        if (visual.xrLine.enabled) {
+          visual.xrLine.setPosition(visual.midpoint);
+          visual.xrLine.setRotation(this.segmentRotation.setFromDirections(Vec3.UP, this.segmentDirection.mulScalar(1 / length)));
+          const width = Math.max(.0001, this.style.lineWidth * this.pixelScale(visual.midpoint));
+          visual.xrLine.setLocalScale(width, length, width);
+        }
+      }
       this.camera.worldToScreen(visual.worldPoints[0]!, this.screenStart);
       this.camera.worldToScreen(visual.worldPoints[1]!, this.screenEnd);
       this.normal.set(this.screenEnd.y - this.screenStart.y, this.screenStart.x - this.screenEnd.x);

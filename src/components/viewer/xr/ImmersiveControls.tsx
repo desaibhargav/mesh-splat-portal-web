@@ -1,14 +1,21 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useEffectEvent, useState, useSyncExternalStore } from "react";
 import { XRTYPE_AR, XRTYPE_VR } from "playcanvas";
 import type { SelectionHandle } from "../selection/types";
+import type { SelectionTool } from "../selection/types";
+import type { SegmentWorkspaces } from "../segments/SegmentWorkspaces";
 import { ImmersiveViewer } from "./ImmersiveViewer";
 
-export function ImmersiveControls({ handle, onActive }: { handle: SelectionHandle; onActive(active: boolean): void }) {
+export function ImmersiveControls({ handle, workspaces, tool, onToolChange, onActive }: {
+  handle: SelectionHandle; workspaces: SegmentWorkspaces; tool: SelectionTool;
+  onToolChange(tool: SelectionTool): void; onActive(active: boolean): void;
+}) {
   const [viewer, setViewer] = useState<ImmersiveViewer | null>(null);
+  const changeTool = useEffectEvent(onToolChange);
   useEffect(() => {
-    const session = new ImmersiveViewer(handle); setViewer(session);
+    const session = new ImmersiveViewer(handle, workspaces, tool, next => changeTool(next)); setViewer(session);
     return () => session.destroy();
-  }, [handle]);
+  }, [handle, workspaces]);
+  useEffect(() => { viewer?.setTool(tool); }, [viewer, tool]);
   return viewer && <SessionControls viewer={viewer} onActive={onActive} />;
 }
 

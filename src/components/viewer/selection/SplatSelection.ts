@@ -1,6 +1,6 @@
 import { constrainMask, type SelectionScope } from "./selectionScope";
 import {
-  BoundingBox, Color, FILTER_NEAREST, Mat4, PIXELFORMAT_R8, PIXELFORMAT_RGBA8, Texture, WORKBUFFER_UPDATE_ONCE,
+  BoundingBox, Color, FILTER_NEAREST, Mat4, PIXELFORMAT_R8, PIXELFORMAT_RGBA8, Texture, Vec3, WORKBUFFER_UPDATE_ONCE,
   type AppBase, type CameraComponent, type GSplatComponent
 } from "playcanvas";
 import { currentSelectionArea, paintSelection, decodeColor, discardDraftSelection, recordSelectionGesture, selectionAreaAt, updateSelectionAreas, visiblePaint, visibleSelections, type PaintState } from "./selectionColors";
@@ -142,6 +142,32 @@ export class SplatSelection {
     this.picker ??= new SplatPicker(app, this.layers);
     const index = await this.picker.pick(camera, u, v);
     return index !== null && index < this.mask.length && (!this.scope || this.scope[0]![index]) ? { part: 0, index } : null;
+  }
+
+  // On CPU-sorted splats the engine's Picker cannot supply a depth pixel.
+  // Use the resource's already-resident centers for an on-demand ray query;
+  // this allocates no index, GPU buffer, or work during ordinary rendering.
+  pickRay(origin: Vec3, direction: Vec3): Vec3 | null {
+    const transform = this.component.entity.getWorldTransform();
+    const inverse = new Mat4().invert(transform);
+    const start = inverse.transformPoint(origin, new Vec3());
+    const forward = inverse.transformVector(direction, new Vec3()).normalize();
+    const retained = sectionTest(this.component.system.app, this.centers, transform);
+    const size = this.component.resource!.aabb.halfExtents.length() * 2;
+    const margin = Math.max(1e-5, size / Math.sqrt(this.mask.length));
+    let best = Infinity, candidate = -1;
+    for (let index = 0; index < this.mask.length; index++) {
+      if ((this.scope && !this.scope[0]![index]) || (this.isolated && !this.mask[index]) || (retained && !retained(index))) continue;
+      const offset = index * 3;
+      const x = this.centers[offset]! - start.x, y = this.centers[offset + 1]! - start.y, z = this.centers[offset + 2]! - start.z;
+      const depth = x * forward.x + y * forward.y + z * forward.z;
+      if (depth <= 0 || depth >= best) continue;
+      const radialSq = x * x + y * y + z * z - depth * depth;
+      const radius = margin + depth * .035; // 2° controller-pointing cone
+      if (radialSq <= radius * radius) { best = depth; candidate = offset; }
+    }
+    return candidate < 0 ? null : transform.transformPoint(new Vec3(
+      this.centers[candidate]!, this.centers[candidate + 1]!, this.centers[candidate + 2]!), new Vec3());
   }
 
   select(region: SelectionRegion, operation: SelectionOperation, camera: SelectionCamera, hits?: Uint8Array[]): SelectionSummary {

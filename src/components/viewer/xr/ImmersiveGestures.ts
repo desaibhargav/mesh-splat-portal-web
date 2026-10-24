@@ -22,11 +22,13 @@ export class ImmersiveGestures {
   private readonly panStart = new Vec3();
   private readonly panNow = new Vec3();
   private readonly nextPosition = new Vec3();
+  private readonly panGestureOrigin = new Vec3();
   private readonly rightAxis = new Vec3();
   private readonly upAxis = new Vec3();
 
   constructor(private readonly app: AppBase, private readonly camera: Entity,
-    private readonly scene: ImmersiveScene, private readonly ready: () => boolean) {
+    private readonly scene: ImmersiveScene, private readonly ready: () => boolean,
+    private readonly menuTargeted: () => boolean, private readonly measuring: () => boolean) {
     app.on("update", this.update, this);
   }
 
@@ -36,9 +38,9 @@ export class ImmersiveGestures {
     const left = sources.find(source => source.handedness === "left" && source.grip && !source.hand);
     const right = sources.find(source => source.handedness === "right" && source.grip && !source.hand);
     if (left && !left.squeezing && !left.selecting) this.zoom(left, dt);
-    if (left?.selecting && !left.squeezing) this.orbit(left);
+    if (left?.selecting && !left.squeezing && !this.menuTargeted()) this.orbit(left);
     else this.orbiting = null;
-    if (right?.selecting && !right.squeezing) this.pan(right);
+    if (right?.selecting && !right.squeezing && !this.menuTargeted()) this.pan(right);
     else this.panning = null;
   }
 
@@ -73,12 +75,16 @@ export class ImmersiveGestures {
     const root = this.scene.root;
     if (this.panning !== source) {
       this.panning = source; this.startPosition.copy(root.getPosition());
+      this.panGestureOrigin.copy(source.getPosition() ?? source.getOrigin());
       this.scene.center(this.startCenter);
       this.plane.setFromPointNormal(this.startCenter, this.camera.forward);
       this.ray.set(source.getOrigin(), source.getDirection());
       if (!this.plane.intersectsRay(this.ray, this.panStart)) this.panStart.copy(source.getPosition() ?? source.getOrigin());
       return;
     }
+    // A short right-trigger tap picks a measurement point. Dragging past this
+    // spatial threshold retains the usual pan gesture in the same tool.
+    if (this.measuring() && this.panGestureOrigin.distance(source.getPosition() ?? source.getOrigin()) < .02) return;
     this.ray.set(source.getOrigin(), source.getDirection());
     if (!this.plane.intersectsRay(this.ray, this.panNow)) return;
     this.delta.sub2(this.panNow, this.panStart);

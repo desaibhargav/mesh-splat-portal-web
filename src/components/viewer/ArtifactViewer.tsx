@@ -1,6 +1,6 @@
 import { ViewportLayout } from "./viewports/ViewportLayout";
 import { Application } from "@playcanvas/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Artifact } from "../../api/artifacts";
 import { MeshViewer } from "./MeshViewer";
 import { SplatViewer } from "./SplatViewer";
@@ -8,6 +8,7 @@ import { SelectionControls } from "./selection/SelectionControls";
 import type { SelectionHandle, SelectionTool } from "./selection/types";
 import { TypingRenderPolicy } from "./TypingRenderPolicy";
 import { ImmersiveControls } from "./xr/ImmersiveControls";
+import { SegmentWorkspaces } from "./segments/SegmentWorkspaces";
 
 export type ViewerStatus = { loading: boolean; progress: number; error: string | null };
 
@@ -16,6 +17,7 @@ export function ArtifactViewer({ artifact }: { artifact: Artifact }) {
   const [status, setStatus] = useState<ViewerStatus>({ loading: true, progress: 0, error: null });
   const [fullscreen, setFullscreen] = useState(false);
   const [selection, setSelection] = useState<SelectionHandle | null>(null);
+  const workspaces = useMemo(() => selection ? new SegmentWorkspaces(selection) : null, [selection]);
   const [tool, setTool] = useState<SelectionTool>("navigate");
   const [immersive, setImmersive] = useState(false);
   function changeTool(next: SelectionTool) { setTool(next); }
@@ -49,7 +51,7 @@ export function ArtifactViewer({ artifact }: { artifact: Artifact }) {
         <span>{artifact.type === "mesh" ? "Mesh" : "Gaussian splat"}</span>
         <button onClick={() => void toggleFullscreen()}>{fullscreen ? "Exit fullscreen" : "Fullscreen"}</button>
       </div>
-      <SelectionControls handle={selection} tool={tool} onToolChange={changeTool} disabled={status.loading || Boolean(status.error)} captureName={artifact.title} />
+      <SelectionControls handle={selection} workspaces={workspaces} tool={tool} onToolChange={changeTool} disabled={status.loading || Boolean(status.error)} captureName={artifact.title} />
       <div className="viewer-canvas">
         <Application graphicsDeviceOptions={{ antialias: artifact.type === "mesh", xrCompatible: true }}>
           <TypingRenderPolicy scope={frame} />
@@ -60,7 +62,8 @@ export function ArtifactViewer({ artifact }: { artifact: Artifact }) {
       {selection && <ViewportLayout handle={selection} />}
       {status.loading && <div className="viewer-loading" role="status"><span>Loading 3D asset</span><progress value={status.progress} max={1} /></div>}
       {status.error && <div className="viewer-error" role="alert">{status.error}</div>}
-      <div className="viewer-footer">{selection && <ImmersiveControls handle={selection} onActive={setImmersive} />}</div>
+      <div className="viewer-footer">{selection && workspaces && <ImmersiveControls handle={selection} workspaces={workspaces}
+        tool={tool} onToolChange={changeTool} onActive={setImmersive} />}</div>
     </section>
   );
 }

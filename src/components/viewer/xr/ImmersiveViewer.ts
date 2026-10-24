@@ -1,12 +1,14 @@
 import { Entity, EventHandler, PROJECTION_PERSPECTIVE, Quat, XRTYPE_AR, XRTYPE_VR, XRSPACE_LOCALFLOOR } from "playcanvas";
 import { cameraControls } from "../CameraControls";
 import { captureFrame, recallFrame } from "../views/viewFrame";
-import type { SelectionHandle } from "../selection/types";
+import type { SelectionHandle, SelectionTool } from "../selection/types";
+import type { SegmentWorkspaces } from "../segments/SegmentWorkspaces";
 
 import { ImmersiveScene } from "./ImmersiveScene";
 import { ImmersiveInput } from "./ImmersiveInput";
 import { ImmersivePlacement } from "./ImmersivePlacement";
 import { ImmersiveGestures } from "./ImmersiveGestures";
+import { ImmersiveMeasurement } from "./ImmersiveMeasurement";
 type ImmersiveType = typeof XRTYPE_AR | typeof XRTYPE_VR;
 
 export class ImmersiveViewer extends EventHandler {
@@ -19,8 +21,10 @@ export class ImmersiveViewer extends EventHandler {
   private restore: (() => void) | null = null;
   private readonly camera;
   private readonly xr;
+  private measurementMenu: ImmersiveMeasurement | null = null;
 
-  constructor(private readonly handle: SelectionHandle) {
+  constructor(private readonly handle: SelectionHandle, private readonly workspaces: SegmentWorkspaces,
+    private tool: SelectionTool, private readonly changeTool: (tool: SelectionTool) => void) {
     super();
     this.camera = handle.viewports.perspectivePanel.camera;
     this.xr = handle.app.xr;
@@ -32,6 +36,11 @@ export class ImmersiveViewer extends EventHandler {
 
   available(type: ImmersiveType) { return this.xr?.isAvailable(type) ?? false; }
 
+  setTool(tool: SelectionTool) {
+    this.tool = tool;
+    this.measurementMenu?.setTool(tool);
+  }
+
   start(type: ImmersiveType) {
     if (!this.xr || this.disposed || this.pending || this.active || !this.available(type)) return;
     const { app, selection } = this.handle, camera = this.camera, xr = this.xr;
@@ -42,28 +51,36 @@ export class ImmersiveViewer extends EventHandler {
     const parent = camera.entity.parent!, frame = captureFrame(camera);
     const scale = camera.entity.getLocalScale().clone(), enabled = cameraControls(camera).enabled;
     const clearColor = camera.clearColor.clone(), near = camera.nearClip, far = camera.farClip;
+    const cameraLayers = [...camera.layers];
     const width = app.graphicsDevice.width, height = app.graphicsDevice.height;
     const rig = new Entity("Immersive viewing space");
     app.root.addChild(rig);
     const scene = new ImmersiveScene(this.handle, bounds);
     const input = new ImmersiveInput(app, rig, scene.root);
     const placement = type === XRTYPE_AR ? new ImmersivePlacement(app, scene, camera.entity) : null;
-    const gestures = new ImmersiveGestures(app, camera.entity, scene, () => !placement || placement.placed);
+    const menu = new ImmersiveMeasurement(this.handle, () => this.workspaces.current.measurement,
+      this.tool, () => this.workspaces.fire("change"), () => !placement || placement.placed);
+    this.measurementMenu = menu;
+    const gestures = new ImmersiveGestures(app, camera.entity, scene, () => !placement || placement.placed,
+      () => menu.isMenuTargeted, () => menu.isArmed);
     const place = () => { if (type === XRTYPE_VR) scene.place(camera.entity); };
     this.restore = () => {
       xr.off("update", place);
       parent.addChild(camera.entity); camera.entity.setLocalScale(scale);
-      camera.nearClip = near; camera.farClip = far; camera.clearColor = clearColor;
+      camera.nearClip = near; camera.farClip = far; camera.clearColor = clearColor; camera.layers = cameraLayers;
       recallFrame(camera, frame); cameraControls(camera).enabled = enabled;
       app.renderNextFrame = true;
       app.graphicsDevice.setResolution(width, height);
-      gestures.destroy(); placement?.destroy(); input.destroy(); scene.destroy(); rig.destroy();
+      gestures.destroy(); menu.destroy(); this.measurementMenu = null;
+      placement?.destroy(); input.destroy(); scene.destroy(); rig.destroy();
     };
     // Keep tracked poses and controller models in metres; only the artifact
     // presentation is normalized. Source geometry and records stay untouched.
     rig.addChild(camera.entity); camera.entity.setLocalScale(1, 1, 1);
     camera.entity.setLocalPosition(0, 0, 0); camera.entity.setLocalRotation(Quat.IDENTITY);
     camera.projection = PROJECTION_PERSPECTIVE;
+    const uiLayer = app.scene.layers.getLayerByName("UI")?.id;
+    if (uiLayer !== undefined) camera.layers = [...new Set([...camera.layers, uiLayer])];
     camera.nearClip = .01; camera.farClip = 100;
     if (type === XRTYPE_AR) camera.clearColor = clearColor.clone().set(0, 0, 0, 0);
     xr.once("update", place);
@@ -93,12 +110,19 @@ export class ImmersiveViewer extends EventHandler {
     this.exitPressed = false;
     this.handle.app.on("update", this.controllerExit, this);
     this.active = true; this.pending = false; this.changed();
+    if (this.tool === "measure") this.measurementMenu?.open();
   }
   private ended() {
     this.handle.app.off("update", this.controllerExit, this);
     this.exitPressed = false;
+    const tool = this.measurementMenu?.currentTool;
     this.restore?.(); this.restore = null;
     this.active = false; this.pending = false; this.changed();
+    // Sync the menu choice after leaving PlayCanvas's XR update. React panel
+    // transitions during the headset session can interrupt that update.
+    if (tool && tool !== this.tool && !this.disposed) setTimeout(() => {
+      if (!this.disposed && !this.active) this.changeTool(tool);
+    }, 0);
   }
   private changed() { this.revision++; this.fire("change"); }
   destroy() {
