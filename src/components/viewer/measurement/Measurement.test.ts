@@ -66,12 +66,24 @@ it("moves one endpoint as a single undoable edit without changing other measurem
   expect(measurement.records[0]!.points[1]!.toArray()).toEqual([0, 4, 0]);
   expect(measurement.records[1]).toBe(second);
   expect(first.points[1]!.toArray()).toEqual([3, 0, 0]);
-  measurement.undo(); expect(measurement.records[0]).toEqual({ ...first, saved: true });
+  measurement.undo(); expect(measurement.records[0]).toEqual(first);
   measurement.redo(); expect(measurement.records[0]!.points[1]!.y).toBe(4);
   const state = measurement.records;
   measurement.moveEndpoint(first.id, 1, new Vec3(0, 4, 0));
   measurement.moveEndpoint(first.id, 5, Vec3.ZERO);
   expect(measurement.records).toBe(state);
+});
+
+it("discards every unsaved measurement on tool exit and retains explicitly saved ones", () => {
+  const measurement = new Measurement();
+  measurement.add(Vec3.ZERO); measurement.add(Vec3.ONE);
+  measurement.save(measurement.records[0]!.id, "Saved span");
+  measurement.add(new Vec3(2, 0, 0), true); measurement.add(new Vec3(3, 0, 0));
+  measurement.add(new Vec3(4, 0, 0), true);
+  expect(measurement.records.map(record => record.saved)).toEqual([true, false, false]);
+  expect(measurement.discardUnsaved()).toBe(true);
+  expect(measurement.records.map(record => record.name)).toEqual(["Saved span"]);
+  expect(measurement.discardUnsaved()).toBe(false);
 });
 
 it("saves measurements without hiding them, and supports undoable deletion", () => {

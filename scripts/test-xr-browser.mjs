@@ -310,6 +310,8 @@ try {
     // Existing cuts follow the artifact presentation and restore their source plane on exit.
     await page.click('[aria-label="Cross section"]');
     await page.locator('.section-buttons button ::-p-text(Enable section)').click();
+    await page.locator('[aria-label="Section name"]').fill("XR cut");
+    await page.locator('.section-options button ::-p-text(Save section)').click();
     const cut = await h.evaluate(h => Array.from(h.app.graphicsDevice.scope.resolve("portalSectionPlane").getValue()));
     await page.keyboard.press("q");
     await page.click('[aria-label="View in your room"]');

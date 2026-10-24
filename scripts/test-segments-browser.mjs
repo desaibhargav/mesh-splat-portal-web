@@ -364,6 +364,13 @@ try {
     await page.keyboard.press("q");
     alpha = await doc();
     check(alpha.notes[0] === "Alpha note" && alpha.measures[0] === "Alpha span", "Local tool records missing");
+    await page.click('[aria-label="Measure distance"]');
+    ps = await points("perspective");
+    await click(ps[0]);
+    check((await doc()).measures.length === 2, "Measurement draft was not created");
+    await page.keyboard.press("q");
+    check((await doc()).measures.join() === "Alpha span", "Q did not discard only the unsaved measurement");
+    check(await page.$(".measurement-panels") === null, "Q left the measurement options open");
     await page.hover(".viewer-canvas canvas"); await page.focus(".viewer-frame"); await page.keyboard.press("Space");
     await pointer("front");
     await page.click("[aria-label=\"Views\"]");
@@ -389,6 +396,11 @@ try {
     });
     check(Object.values(viewFrames).every(origin => origin.every(Number.isFinite)), "Saved view did not update every viewport");
     await page.click("[aria-label=\"Cross section\"]");
+    await page.click('[aria-label="Collapse tool options"]');
+    check(await page.$eval(".section-panels", element => getComputedStyle(element).display === "none"), "Section options did not collapse in four-view");
+    await page.screenshot({ path: path.join(output, slug + "-section-collapsed.png") });
+    await page.click('[aria-label="Expand tool options"]');
+    check(await page.$eval(".section-panels", element => getComputedStyle(element).display !== "none"), "Section options did not expand");
     await page.select("[aria-label=\"Section reference\"]", "1");
     const camerasBeforeCut = await (await appHandle()).evaluate(h => Object.fromEntries(h.viewports.panels.map(panel => [panel.id, panel.camera.entity.getPosition().toArray()])));
     await exact("X", ".selection-shapes");
@@ -399,10 +411,23 @@ try {
       "Cut normal changed an orthographic inspection panel");
     await exact("View", ".selection-shapes");
     await exact("Enable section");
+    await page.screenshot({ path: path.join(output, slug + "-section-guide.png") });
+    check(await (await appHandle()).evaluate(h => {
+      const plane = h.app.root.findByName("Plane guide");
+      return !!plane && plane.render.meshInstances[0].material.emissive.r > .7 && plane.render.meshInstances[0].material.emissive.b < .5;
+    }), "Cutting-plane guide is not warm yellow");
     await typeText('[aria-label="Section name"]', "Segment cut");
     await exact("Save section");
     await page.keyboard.press("q");
     check((await doc()).cut, "Segment section did not enable");
+    const savedPlane = await (await appHandle()).evaluate(h => Array.from(h.app.graphicsDevice.scope.resolve("portalSectionPlane").getValue()));
+    await page.click('[aria-label="Cross section"]');
+    await page.$eval('[aria-label="Section offset"]', input => {
+      input.value = "33"; input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await page.keyboard.press("q");
+    const restoredPlane = await (await appHandle()).evaluate(h => Array.from(h.app.graphicsDevice.scope.resolve("portalSectionPlane").getValue()));
+    check(restoredPlane.every((value, index) => Math.abs(value - savedPlane[index]) < 1e-4), "Q did not restore saved section after an unsaved edit");
     await page.click("[aria-label=\"Measure distance\"]");
     let cutPoints = await points("front");
     check(cutPoints.every(Boolean), "Sectioned segment has no surface");

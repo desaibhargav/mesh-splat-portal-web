@@ -23,6 +23,9 @@ export function MeasurementControls({ handle, measurement, active, onChange, ope
   const gizmos = useRef<MeasurementGizmos | null>(null);
   const [, refresh] = useState(0);
   const redraw = () => { refresh(value => value + 1); onChange(); };
+  useEffect(() => {
+    if (!active && measurement.discardUnsaved()) { setSelectedId(null); redraw(); }
+  }, [active, measurement]);
   const selected = measurement.records.find(record => record.id === selectedId);
   useEffect(() => { if (selected) setName(selected.name); }, [selected?.name]);
   function open(id: number) {

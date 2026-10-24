@@ -20,7 +20,7 @@ export class Measurement {
   get canRedo() { return this.cursor + 1 < this.snapshots.length; }
   add(point: Vec3, additional = false) {
     if (this.points.length === 2) {
-      if (additional) this.change([...this.records.map(record => record.id === this.records.at(-1)!.id ? { ...record, saved: true } : record), this.create([point.clone()])]);
+      if (additional) this.change([...this.records, this.create([point.clone()])]);
     } else if (!this.records.length) this.change([this.create([point.clone()])]);
     else this.change([...this.records.slice(0, -1), { ...this.records.at(-1)!, points: [...this.points, point.clone()] }]);
   }
@@ -41,6 +41,11 @@ export class Measurement {
     if (this.records.some(record => record.id === id)) this.change(this.records.filter(record => record.id !== id));
   }
   clear() { if (this.records.length) this.change([]); }
+  discardUnsaved() {
+    if (!this.records.some(record => !record.saved)) return false;
+    this.change(this.records.filter(record => record.saved));
+    return true;
+  }
   rename(id: number, name: string) {
     const value = name.trim();
     if (value && this.records.find(record => record.id === id)?.name !== value) {

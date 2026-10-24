@@ -8,8 +8,9 @@ export function SectionGuide({ handle, frame, extent }: { handle: SelectionHandl
   useEffect(() => {
     const layer = new Layer({ name: "Section guide" });
     const material = new StandardMaterial();
-    material.useLighting = false; material.emissive.copy(Color.WHITE);
-    material.opacity = 0.15; material.blendType = BLEND_NORMAL; material.cull = CULLFACE_NONE;
+    const gold = new Color(215 / 255, 188 / 255, 119 / 255);
+    material.useLighting = false; material.diffuse.copy(gold); material.emissive.copy(gold);
+    material.opacity = 0.35; material.blendType = BLEND_NORMAL; material.cull = CULLFACE_NONE;
     material.depthWrite = false; material.update();
     const root = new Entity("Section plane"), plane = new Entity("Plane guide");
     handle.app.root.addChild(root); root.addChild(plane);

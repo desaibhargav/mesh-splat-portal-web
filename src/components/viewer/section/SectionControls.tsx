@@ -1,6 +1,6 @@
 import { SavedItems } from "../SavedItems";
 import { SliderControl } from "../SliderControl";
-import { useEffect, useEffectEvent, useMemo, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import type { BoundingBox } from "playcanvas";
 import type { SavedPresets } from "../presets/SavedPresets";
 import type { SelectionHandle } from "../selection/types";
@@ -38,6 +38,20 @@ export function SectionControls({ handle, active, views, sections, session, open
   const [showPlane, setShowPlane] = useState(session.showPlane ?? true);
   const [options, setOptions] = useState(session.options ?? initialOptions);
   const [bounds, setBounds] = useState<BoundingBox | null>(() => session.reference ? handle.selection.bounds(null) : null);
+  const wasActive = useRef(false);
+  const discardDraft = useEffectEvent(() => {
+    const saved = sections.records.find(record => record.id === sections.activeId);
+    if (saved) {
+      applySection(saved); setName(saved.name); setEditing(saved.id);
+    } else {
+      setEnabled(false); setReference(null); setName(""); setEditing(null);
+      setSource("camera"); setAlignment("view"); setOptions(initialOptions);
+    }
+  });
+  useEffect(() => {
+    if (wasActive.current && !active) discardDraft();
+    wasActive.current = active;
+  }, [active]);
   useEffect(() => {
     Object.assign(session, { editing, name, reference, source, alignment, enabled, showPlane, options });
   }, [session, editing, name, reference, source, alignment, enabled, showPlane, options]);
@@ -145,7 +159,7 @@ export function SectionControls({ handle, active, views, sections, session, open
       <label>Section name<input aria-label="Section name" value={name} onChange={event => setName(event.target.value)} /></label>
       <button disabled={!enabled || !name.trim()} className="tool-action-save" onClick={save}>{editing === null ? "Save section" : "Update section"}</button>
       {editing !== null && <button onClick={() => { setEditing(null); setName(""); }}>New section</button>}
-      <small>Sections last until you leave this asset. Q exits this tool; the section stays enabled.</small>
+      <small>Saved sections last until you leave this asset. Q discards unsaved section changes.</small>
       {enabled && showPlane && frame && bounds && <SectionGuide handle={handle} frame={frame} extent={bounds.halfExtents.length()} />}
     </div>
   </div>;

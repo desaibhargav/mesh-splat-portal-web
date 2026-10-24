@@ -59,6 +59,7 @@ function WorkspaceTools({ handle, tool, onToolChange, disabled, captureName, wor
   openRequest: OpenRequest | null; setOpenRequest(request: OpenRequest | null): void;
 }) {
   const [drawingSegment, setDrawingSegment] = useState(false);
+  const [optionsCollapsed, setOptionsCollapsed] = useState(false);
   const [segmentSeed, setSegmentSeed] = useState<SelectionSnapshot | null>(null);
   const document = workspaces?.current;
   const [summary, setSummary] = useState(handle?.selection.summary);
@@ -80,6 +81,7 @@ function WorkspaceTools({ handle, tool, onToolChange, disabled, captureName, wor
   const annotations = document?.annotations;
   const documentChanged = useCallback(() => refreshDocument(value => value + 1), []);
   useEffect(() => { if (tool !== "segment") { setSegmentSeed(null); setDrawingSegment(false); } }, [tool]);
+  useEffect(() => { setOptionsCollapsed(false); }, [tool]);
   useEffect(() => {
     setSummary(handle?.selection.summary); setError(null); setBusy(false); setBusyLabel("Selecting…");
     return () => { generation.current++; };
@@ -272,6 +274,9 @@ function WorkspaceTools({ handle, tool, onToolChange, disabled, captureName, wor
       <span>Segment: {document.name}{!document.visible && " (hidden)"}</span>
       <button className="tool-action-reset" onClick={() => { workspaces.open(0); onToolChange("navigate"); }}>Return to asset</button>
     </div>}
+    {tool !== "navigate" && <button type="button" className="tool-options-toggle" aria-label={optionsCollapsed ? "Expand tool options" : "Collapse tool options"}
+      aria-expanded={!optionsCollapsed} title={optionsCollapsed ? "Expand options" : "Collapse options"}
+      onClick={() => setOptionsCollapsed(value => !value)}>{optionsCollapsed ? "‹" : "›"}</button>}
     {tool === "select" && <div className="annotation-panels selection-panels">
       <SavedItems label="Selections" items={savedSelections} selectedId={editingSelection} disabled={unavailable}
         className="selection-list" onOpen={activateSelection} onRemove={removeSelection} />

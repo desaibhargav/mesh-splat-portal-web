@@ -39,7 +39,7 @@ Selection binding snapshots the hovered area during pointer capture before the h
 
 The pinned camera-controls input source does not clear held keyboard modifiers when the browser loses focus. `ViewerCamera` contains the narrow compatibility guard: it releases accumulated Shift/Ctrl state on blur and reconciles it with the next pointer event. Tool gestures consume their own captured pointer events, so they no longer disable and re-enable the complete camera script.
 
-Measurement slider reset buttons restore the shared default line width and font size independently. Native endpoint gizmo size compensates for camera viewport height, keeping handles readable in four-panel layouts without additional geometry or render passes.
+Measurement slider reset buttons restore the shared default line width and font size independently. Native endpoint gizmo size compensates for camera viewport height, keeping handles readable in four-panel layouts without additional geometry or render passes. Leaving a tool with Q discards unsaved measurement and section drafts; saved records remain. The shared right-side options can be collapsed into a small trapezoidal bar in any editing tool, including four-view Sectioning.
 
 Focus is contextual: F frames the current mask in Selection, otherwise the entire asset (including after Q), with Measurement retaining its endpoint focus. Empty selections/measurements fall back to whole-asset bounds. The annotation form has no duplicate focus button. Stored selections remain available without affecting navigation focus.
 
