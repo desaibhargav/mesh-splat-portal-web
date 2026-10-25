@@ -12,6 +12,10 @@ const adjustments = [
   { key: "fontSize", label: "Font size", min: 10, max: 28 }
 ] as const;
 
+// A browser cursor follows the pointer without an extra depth-render pass on
+// every mouse move. The click still resolves the actual surface through Picker.
+const pointCursor = `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="5" fill="white" stroke="#222" stroke-width="1.5"/></svg>')}") 10 10, crosshair`;
+
 export function MeasurementControls({ handle, measurement, active, onChange, openRequest }: {
   handle: SelectionHandle; measurement: Measurement; active: boolean; onChange(): void; openRequest: { id: number } | null;
 }) {
@@ -44,7 +48,7 @@ export function MeasurementControls({ handle, measurement, active, onChange, ope
   function clearMeasurements() {
     measurement.clear(); setSelectedId(null); setEditError(null); clearMessage(); redraw();
   }
-  const { busy: picking, message, clearMessage } = useSurfacePick({ handle, active,
+  const { busy: picking, message, clearMessage } = useSurfacePick({ handle, active, cursorStyle: pointCursor,
     acceptsClick: shift => !editing && (shift || (!selected?.saved && (measurement.points.length < 2 || !!measurement.records.at(-1)?.saved))),
     onPick: (point, shift) => { measurement.add(handle.space.toLocal(point), shift || !!measurement.records.at(-1)?.saved); open(measurement.records.at(-1)!.id); redraw(); }
   });

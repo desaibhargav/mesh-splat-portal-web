@@ -20,6 +20,9 @@ export class ImmersiveScene {
   private readonly after = new Vec3();
   private readonly offset = new Vec3();
   private readonly baseScale: number;
+  private readonly initialPosition = new Vec3();
+  private readonly initialRotation = new Quat();
+  private initialScale = 1;
   private grounded = false;
 
   constructor(private readonly handle: SelectionHandle, private readonly bounds: BoundingBox) {
@@ -41,6 +44,7 @@ export class ImmersiveScene {
     this.root.setRotation(rotation);
     const position = camera.getLocalPosition().clone().add(forward.mulScalar(viewingDistance));
     this.root.setPosition(position.sub(rotation.transformVector(this.bounds.center).mulScalar(this.root.getLocalScale().x)));
+    this.rememberPlacement();
     this.updateSection();
   }
 
@@ -56,10 +60,36 @@ export class ImmersiveScene {
     const center = rotation.transformVector(this.bounds.center.clone().mulScalar(scale));
     this.root.setPosition(point.x - center.x, point.y - (this.bounds.center.y - this.bounds.halfExtents.y) * scale, point.z - center.z);
     this.root.enabled = true;
+    this.rememberPlacement();
     this.updateSection();
   }
 
   center(out: Vec3) { return this.root.getWorldTransform().transformPoint(this.bounds.center, out); }
+
+  private rememberPlacement() {
+    this.initialPosition.copy(this.root.getPosition());
+    this.initialRotation.copy(this.root.getRotation());
+    this.initialScale = this.root.getLocalScale().x;
+  }
+
+  reset() {
+    this.root.setLocalScale(this.initialScale, this.initialScale, this.initialScale);
+    this.root.setRotation(this.initialRotation);
+    this.root.setPosition(this.initialPosition);
+  }
+
+  frame(camera: Entity) {
+    const center = this.center(new Vec3());
+    const destination = camera.getPosition().clone().add(camera.forward.clone().mulScalar(viewingDistance));
+    this.root.setPosition(this.root.getPosition().clone().add(destination.sub(center)));
+  }
+
+  rotateAroundCenter(rotation: Quat, center: Vec3) {
+    this.root.setRotation(rotation);
+    this.pivot.copy(this.bounds.center).mulScalar(this.root.getLocalScale().x);
+    rotation.transformVector(this.pivot, this.before);
+    this.root.setPosition(this.offset.sub2(center, this.before));
+  }
 
   zoom(factor: number) {
     const current = this.root.getLocalScale().x;

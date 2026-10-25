@@ -9,7 +9,6 @@ export class ImmersiveGestures {
   private readonly startHand = new Vec3();
   private readonly startPosition = new Vec3();
   private readonly startCenter = new Vec3();
-  private readonly currentCenter = new Vec3();
   private readonly delta = new Vec3();
   private readonly startRotation = new Quat();
   private readonly head = new Quat();
@@ -38,7 +37,9 @@ export class ImmersiveGestures {
     const left = sources.find(source => source.handedness === "left" && source.grip && !source.hand);
     const right = sources.find(source => source.handedness === "right" && source.grip && !source.hand);
     if (left && !left.squeezing && !left.selecting) this.zoom(left, dt);
-    if (left?.selecting && !left.squeezing && !this.menuTargeted()) this.orbit(left);
+    // The menu hover flag is global: a right-hand ray over a menu button must
+    // not stop the independent left-hand orbit gesture.
+    if (left?.selecting && !left.squeezing) this.orbit(left);
     else this.orbiting = null;
     if (right?.selecting && !right.squeezing && !this.menuTargeted()) this.pan(right);
     else this.panning = null;
@@ -66,9 +67,9 @@ export class ImmersiveGestures {
     this.head.transformVector(Vec3.UP, this.upAxis);
     this.localTurn.setFromEulerAngles(-this.delta.dot(this.upAxis) * 360, this.delta.dot(this.rightAxis) * 360, 0);
     this.worldTurn.mul2(this.head, this.localTurn).mul(this.inverseHead);
-    root.setRotation(this.rotation.mul2(this.worldTurn, this.startRotation));
-    this.scene.center(this.currentCenter);
-    root.setPosition(this.nextPosition.copy(root.getPosition()).add(this.startCenter).sub(this.currentCenter));
+    // Compute every pose from the gesture's original pivot. Accumulating a
+    // correction onto last frame's position makes long orbit drags drift.
+    this.scene.rotateAroundCenter(this.rotation.mul2(this.worldTurn, this.startRotation), this.startCenter);
   }
 
   private pan(source: XrInputSource) {

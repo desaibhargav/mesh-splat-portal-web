@@ -18,6 +18,9 @@ export class ImmersiveViewer extends EventHandler {
   error: string | null = null;
   private disposed = false;
   private exitPressed = false;
+  private framePressed = false;
+  private lastReset = 0;
+  private activeScene: ImmersiveScene | null = null;
   private restore: (() => void) | null = null;
   private readonly camera;
   private readonly xr;
@@ -56,6 +59,7 @@ export class ImmersiveViewer extends EventHandler {
     const rig = new Entity("Immersive viewing space");
     app.root.addChild(rig);
     const scene = new ImmersiveScene(this.handle, bounds);
+    this.activeScene = scene;
     const input = new ImmersiveInput(app, rig, scene.root);
     const placement = type === XRTYPE_AR ? new ImmersivePlacement(app, scene, camera.entity) : null;
     const menu = new ImmersiveMeasurement(this.handle, () => this.workspaces.current.measurement,
@@ -72,7 +76,7 @@ export class ImmersiveViewer extends EventHandler {
       app.renderNextFrame = true;
       app.graphicsDevice.setResolution(width, height);
       gestures.destroy(); menu.destroy(); this.measurementMenu = null;
-      placement?.destroy(); input.destroy(); scene.destroy(); rig.destroy();
+      placement?.destroy(); input.destroy(); scene.destroy(); rig.destroy(); this.activeScene = null;
     };
     // Keep tracked poses and controller models in metres; only the artifact
     // presentation is normalized. Source geometry and records stay untouched.
@@ -98,23 +102,33 @@ export class ImmersiveViewer extends EventHandler {
   end() { if (this.active) this.xr?.end(); }
   private controllerExit() {
     const right = this.xr?.input.inputSources.find(source => source.handedness === "right" && !source.hand);
+    const left = this.xr?.input.inputSources.find(source => source.handedness === "left" && !source.hand);
+    const frame = left?.gamepad?.mapping === "xr-standard" && !!left.gamepad.buttons[4]?.pressed;
+    if (frame && !this.framePressed) this.activeScene?.frame(this.camera.entity);
+    this.framePressed = frame;
     const gamepad = right?.gamepad;
     const pressed = gamepad?.mapping === "xr-standard" && !!gamepad.buttons[5]?.pressed;
     const newlyPressed = pressed && !this.exitPressed;
     this.exitPressed = pressed;
-    if (newlyPressed) this.end();
+    if (newlyPressed) {
+      const now = performance.now();
+      if (now - this.lastReset < 3000) this.end();
+      else { this.activeScene?.reset(); this.lastReset = now; }
+    }
   }
   private entered() {
     if (this.disposed) { this.xr?.end(); return; }
     cameraControls(this.camera).enabled = false;
     this.exitPressed = false;
+    this.framePressed = false; this.lastReset = 0;
     this.handle.app.on("update", this.controllerExit, this);
     this.active = true; this.pending = false; this.changed();
-    if (this.tool === "measure") this.measurementMenu?.open();
+    this.measurementMenu?.open();
   }
   private ended() {
     this.handle.app.off("update", this.controllerExit, this);
     this.exitPressed = false;
+    this.framePressed = false; this.lastReset = 0;
     const tool = this.measurementMenu?.currentTool;
     this.restore?.(); this.restore = null;
     this.active = false; this.pending = false; this.changed();

@@ -5,8 +5,9 @@ import { observePointerClick } from "./pointerClick";
 import { SurfacePicker } from "./SurfacePicker";
 
 // Shared click interaction for tools that place points on the visible model.
-export function useSurfacePick({ handle, active, acceptsClick, validateClick, onPick }: {
+export function useSurfacePick({ handle, active, acceptsClick, validateClick, onPick, cursorStyle }: {
   handle: SelectionHandle; active: boolean;
+  cursorStyle?: string;
   acceptsClick(shift: boolean): boolean;
   validateClick?(u: number, v: number): Promise<string | null>;
   onPick(point: Vec3, shift: boolean): void;
@@ -20,7 +21,7 @@ export function useSurfacePick({ handle, active, acceptsClick, validateClick, on
     const picker = new SurfacePicker(handle.app, handle.selection.layers);
     const canvas = handle.app.graphicsDevice.canvas as HTMLCanvasElement;
     const cursor = canvas.style.cursor, touchAction = canvas.style.touchAction;
-    canvas.style.cursor = "crosshair"; canvas.style.touchAction = "none";
+    canvas.style.cursor = cursorStyle ?? "crosshair"; canvas.style.touchAction = "none";
     let pending = false, cancelled = false;
     function identify(event: PointerEvent) {
       const bounds = canvas.getBoundingClientRect();
@@ -47,6 +48,6 @@ export function useSurfacePick({ handle, active, acceptsClick, validateClick, on
       cancelled = true; picker.destroy(); setBusy(false); setMessage(null);
       stop(); canvas.style.cursor = cursor; canvas.style.touchAction = touchAction;
     };
-  }, [handle, active]);
+  }, [handle, active, cursorStyle]);
   return { busy, message, clearMessage: () => setMessage(null) };
 }

@@ -257,6 +257,9 @@ try {
         check(JSON.stringify(state.root)===JSON.stringify(before.root), "XR changed asset geometry space");
         check(type === "immersive-ar" || Math.abs(state.relative[0]-state.eye[0])<1e-4 && Math.abs(state.relative[1]-state.eye[1])<1e-4 && Math.abs(state.relative[2]-state.eye[2]+1.5)<1e-4,
           "Artifact was not placed in front of the first tracked pose: "+JSON.stringify(state));
+        const entryPose = await targetPose(h);
+        check(await h.evaluate(h => h.viewports.perspectivePanel.camera.entity.script.get("xrMenu")?._menuVisible),
+          "XR toolbar did not appear when entering from Navigate");
         if (!split && type === "immersive-vr") {
           await page.evaluate(() => { window.xrDevice.position.z -= .9; });
           await h.evaluate(async h => { for (let i=0;i<3;i++) await new Promise(resolve => h.app.once("postrender",resolve)); });
@@ -278,6 +281,28 @@ try {
         const moved = await canvas.asElement().screenshot();
         check(!first.equals(moved), "Tracked head movement did not change rendered image");
         if (!split) {
+          await page.evaluate(() => window.xrDevice.controllers.left.updateButtonValue("x-button", 1));
+          await settle(h);
+          const framed = await h.evaluate((h, localCenter) => {
+            const Vec3 = h.app.root.getPosition().constructor;
+            const center = h.app.root.findByName("Immersive artifact").getWorldTransform().transformPoint(new Vec3(...localCenter));
+            const camera = h.viewports.perspectivePanel.camera.entity;
+            return center.clone().sub(camera.getPosition()).dot(camera.forward);
+          }, initialBounds.center);
+          check(Math.abs(framed - 1.5) < .02, `Left X did not frame the artifact in front of the headset: ${framed}`);
+          await page.evaluate(() => window.xrDevice.controllers.left.updateButtonValue("x-button", 0));
+          await settle(h);
+        }
+        if (!split) {
+          await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("b-button", 1));
+          await settle(h);
+          check(await page.$eval('.viewer-frame', node => node.dataset.immersive === "true"), "First B exited instead of resetting");
+          const reset = await targetPose(h);
+          check(reset.position.every((value, i) => Math.abs(value - entryPose.position[i]) < 1e-4) &&
+            reset.rotation.every((value, i) => Math.abs(value - entryPose.rotation[i]) < 1e-4) &&
+            Math.abs(reset.scale - entryPose.scale) < 1e-5, "First B did not restore the placed/framed pose");
+          await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("b-button", 0));
+          await settle(h);
           await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("b-button", 1));
         } else {
           await h.evaluate(async h => { await new Promise(resolve => h.app.xr.end(resolve)); });
@@ -311,11 +336,13 @@ try {
     await page.click('[aria-label="Measure distance"]');
     check(await page.$eval('.measurement-panels', node => !!node && getComputedStyle(node).display !== "none"),
       "Desktop Measurement options did not open on tool entry");
+    check(await page.$eval('.viewer-canvas canvas', node => node.style.cursor.includes('data:image/svg+xml')),
+      "Desktop Measurement did not show the white surface-point cursor");
     await page.click('[aria-label="View in VR"]');
     await page.waitForFunction(() => document.querySelector('.viewer-frame')?.dataset.immersive === "true");
     const menuReady = await h.evaluate(h => {
       const menu = h.viewports.perspectivePanel.camera.entity.script?.get("xrMenu");
-      return !!menu?._menuVisible && menu.menuItems[3].label === "Place points";
+      return !!menu?._menuVisible && menu.menuItems[4].label === "Place points";
     });
     check(menuReady, "Measurement menu did not open automatically on XR entry");
     await page.waitForFunction(h => h.viewports.perspectivePanel.camera.entity.script.get("xrMenu")._currentOpacity > .99,
@@ -337,13 +364,13 @@ try {
       const corners = menu._buttons[index].element.worldCorners;
       return [(corners[0].x + corners[2].x) / 2, (corners[0].y + corners[2].y) / 2, (corners[0].z + corners[2].z) / 2 + .25];
     }, index);
-    await positionRightRay(await menuTarget(3));
-    check(await h.evaluate(h => h.viewports.perspectivePanel.camera.entity.script.get("xrMenu")._hoveredButton?.menuData?.index === 3),
+    await positionRightRay(await menuTarget(4));
+    check(await h.evaluate(h => h.viewports.perspectivePanel.camera.entity.script.get("xrMenu")._hoveredButton?.menuData?.index === 4),
       "Controller ray did not hover Place points");
     await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("trigger", 1)); await settle(h);
     await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("trigger", 0)); await settle(h);
-    check(await h.evaluate(h => !h.viewports.perspectivePanel.camera.entity.script?.get("xrMenu")?._menuVisible),
-      "Controller ray did not activate Place points and close the menu");
+    check(await h.evaluate(h => h.viewports.perspectivePanel.camera.entity.script?.get("xrMenu")?._menuVisible),
+      "Toolbar disappeared during point placement");
     const whileMeasuring = await targetPose(h);
     await page.evaluate(() => window.xrDevice.controllers.left.updateAxes("thumbstick", 0, -1)); await settle(h);
     check((await targetPose(h)).scale > whileMeasuring.scale, "Thumbstick zoom stopped in Measure mode");
@@ -354,6 +381,7 @@ try {
       "Orbit stopped in Measure mode");
     await page.evaluate(() => { window.xrDevice.controllers.left.position.x -= .08; }); await settle(h);
     await page.evaluate(() => window.xrDevice.controllers.left.updateButtonValue("trigger", 0)); await settle(h);
+    await page.evaluate(() => { window.xrDevice.controllers.right.position.set(0, 1.6, -.8); }); await settle(h);
     await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("trigger", 1)); await settle(h);
     await page.evaluate(() => { window.xrDevice.controllers.right.position.x += .08; }); await settle(h);
     check(Math.abs((await targetPose(h)).position[0] - whileMeasuring.position[0]) > .02,
@@ -374,6 +402,7 @@ try {
         id: record.id, saved: record.saved, points: record.points.map(point => point.toArray())
       }));
     });
+    let sawPreview = false;
     const aim = async (dx, dy) => {
       const target = await h.evaluate((h, offset) => {
         const bounds = h.selection.bounds(null);
@@ -382,6 +411,12 @@ try {
         return [center.x + offset[0], center.y + offset[1], center.z + radius * 2 + .5];
       }, [dx, dy]);
       await positionRightRay(target);
+      if (!sawPreview) {
+        await page.waitForFunction(h => h.app.root.findByName("XR measurement surface preview")?.enabled,
+          { timeout: 600, polling: 50 }, h).catch(() => {});
+        sawPreview = await h.evaluate(h => !!h.app.root.findByName("XR measurement surface preview")?.enabled);
+        if (sawPreview) await page.screenshot({ path:path.join(output, `${id}-measurement-preview.png`) });
+      }
       await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("trigger", 1)); await settle(h);
       await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("trigger", 0)); await settle(h);
     };
@@ -393,10 +428,32 @@ try {
     }
     check((await measurementRecords()).at(-1)?.points.length === 1,
       "XR controller ray missed the first surface point: " + JSON.stringify(await h.evaluate(h => ({
-        status: h.viewports.perspectivePanel.camera.entity.script.get("xrMenu").menuItems[2].label,
+        status: h.viewports.perspectivePanel.camera.entity.script.get("xrMenu").menuItems[3].label,
         bounds: h.selection.bounds(null)?.center.toArray(),
         scale: h.app.root.findByName("Immersive artifact")?.getLocalScale().toArray()
       }))));
+    if (!sawPreview) {
+      await page.waitForFunction(h => h.app.root.findByName("XR measurement surface preview")?.enabled,
+        { timeout: 1500, polling: 50 }, h).catch(() => {});
+      sawPreview = await h.evaluate(h => !!h.app.root.findByName("XR measurement surface preview")?.enabled);
+      if (sawPreview) await page.screenshot({ path:path.join(output, `${id}-measurement-preview.png`) });
+    }
+    check(sawPreview, "XR surface-point preview never appeared while aiming at the model");
+    const previewCanvas = await h.evaluateHandle(h => h.app.graphicsDevice.canvas);
+    await h.evaluate(h => { h.app.root.findByName("XR measurement surface preview").enabled = true; });
+    await settle(h);
+    check(await h.evaluate(h => h.app.root.findByName("XR measurement surface preview").enabled),
+      "XR surface preview did not remain enabled through rendering");
+    const visiblePreview = await previewCanvas.asElement().screenshot();
+    await h.evaluate(h => { h.app.root.findByName("XR measurement surface preview").enabled = false; });
+    await settle(h);
+    const hiddenPreview = await previewCanvas.asElement().screenshot();
+    check(!visiblePreview.equals(hiddenPreview), "Enabled XR surface-point preview did not change the stereo image: " + JSON.stringify(await h.evaluate(h => {
+      const marker = h.app.root.findByName("XR measurement surface preview"), camera = h.viewports.perspectivePanel.camera;
+      return { position: marker?.getPosition().toArray(), screen: marker && camera.worldToScreen(marker.getPosition()).toArray(),
+        layers: h.app.scene.layers.layerList.map(layer => ({ name: layer.name, id: layer.id })), cameraLayers: camera.layers };
+    })));
+    await h.evaluate(h => { h.app.root.findByName("XR measurement surface preview").enabled = true; });
     for (const [dx, dy] of candidates.slice(1)) {
       await aim(dx,dy);
       if ((await measurementRecords()).at(-1)?.points.length === 2) break;
@@ -410,19 +467,19 @@ try {
     await settle(h);
     await page.waitForFunction(h => h.viewports.perspectivePanel.camera.entity.script.get("xrMenu")._currentOpacity > .99,
       { timeout: 10000 }, h);
-    await positionRightRay(await menuTarget(4));
-    check(await h.evaluate(h => h.viewports.perspectivePanel.camera.entity.script.get("xrMenu")._hoveredButton?.menuData?.index === 4),
+    await positionRightRay(await menuTarget(5));
+    check(await h.evaluate(h => h.viewports.perspectivePanel.camera.entity.script.get("xrMenu")._hoveredButton?.menuData?.index === 5),
       "Controller ray did not hover Save measurement");
     await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("trigger", 1)); await settle(h);
     await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("trigger", 0)); await settle(h);
     check((await measurementRecords()).at(-1)?.saved, "XR Save did not update the shared measurement document");
     const priorB = (await measurementRecords()).at(-1).points[1];
-    await positionRightRay(await menuTarget(8));
+    await positionRightRay(await menuTarget(9));
     await new Promise(resolve => setTimeout(resolve, 350));
     await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("trigger", 1)); await settle(h);
     await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("trigger", 0)); await settle(h);
-    check(await h.evaluate(h => !h.viewports.perspectivePanel.camera.entity.script.get("xrMenu")._menuVisible),
-      "Move point B did not arm surface picking");
+    check(await h.evaluate(h => h.viewports.perspectivePanel.camera.entity.script.get("xrMenu")._menuVisible),
+      "Toolbar disappeared while moving point B");
     for (const [dx, dy] of [[-.12,0],[0,.12],[0,-.12],[.12,.12],[-.12,-.12],[0,0]]) {
       await aim(dx, dy);
       const now = (await measurementRecords()).at(-1).points[1];
@@ -438,12 +495,8 @@ try {
     await new Promise(resolve => setTimeout(resolve, 350));
     await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("trigger", 1)); await settle(h);
     await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("trigger", 0)); await settle(h);
-    check(await h.evaluate(h => !h.viewports.perspectivePanel.camera.entity.script.get("xrMenu")._menuVisible),
-      "Navigate did not close the XR tool menu");
-    await page.evaluate(() => window.xrDevice.controllers.left.updateButtonValue("y-button", 1)); await settle(h);
-    await page.evaluate(() => window.xrDevice.controllers.left.updateButtonValue("y-button", 0)); await settle(h);
     check(await h.evaluate(h => h.viewports.perspectivePanel.camera.entity.script.get("xrMenu")._menuVisible),
-      "Left Y did not reopen the XR tool menu from Navigate");
+      "XR toolbar disappeared in Navigate");
     await positionRightRay(await menuTarget(1));
     await new Promise(resolve => setTimeout(resolve, 350));
     await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("trigger", 1)); await settle(h);

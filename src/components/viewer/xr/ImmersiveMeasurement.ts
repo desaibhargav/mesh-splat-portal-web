@@ -1,4 +1,4 @@
-import { Asset, CanvasFont, Entity, Picker, Vec2, Vec3, type AppBase, type CameraComponent, type XrInputSource } from "playcanvas";
+import { Asset, CanvasFont, Color, Entity, Layer, Mat4, Picker, StandardMaterial, Vec2, Vec3, type AppBase, type CameraComponent, type XrInputSource } from "playcanvas";
 import { XrMenu } from "playcanvas/scripts/esm/xr/xr-menu.mjs";
 import type { Measurement } from "../measurement/Measurement";
 import type { SelectionHandle, SelectionTool } from "../selection/types";
@@ -18,6 +18,14 @@ export class ImmersiveMeasurement {
   private readonly font: CanvasFont;
   private readonly fontAsset: Asset;
   private readonly menu: XrMenu;
+  private readonly pointPreview = new Entity("XR measurement surface preview");
+  private readonly previewMaterial = new StandardMaterial();
+  private readonly previewLayer = new Layer({ name: "XR measurement preview", clearDepthBuffer: true });
+  private previewBusy = false;
+  private previewAt = 0;
+  private readonly previewOrigin = new Vec3(Infinity, Infinity, Infinity);
+  private readonly previewDirection = new Vec3();
+  private readonly previewTransform = new Mat4();
   private picker: Picker | null = null;
   private pickCamera: CameraComponent | null = null;
   private readonly aim = new Vec3();
@@ -25,7 +33,6 @@ export class ImmersiveMeasurement {
   private tapping = false;
   private dragged = false;
   private skipNextRelease = false;
-  private togglePressed = false;
   private tool: SelectionTool;
   private armed = false;
   private moving: 0 | 1 | null = null;
@@ -39,20 +46,22 @@ export class ImmersiveMeasurement {
     private readonly changed: () => void, private readonly ready: () => boolean) {
     const app = handle.app;
     this.tool = tool;
+    this.armed = tool === "measure";
     this.menuHost = handle.viewports.perspectivePanel.camera.entity;
     this.font = new CanvasFont(app, { fontName: "Arial", fontSize: 32 });
-    this.font.createTextures("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,:-…/()");
+    this.font.createTextures("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,:-…/()●|");
     this.fontAsset = new Asset("XR tool font", "font");
     this.fontAsset.resource = this.font;
     app.assets.add(this.fontAsset);
     this.menuHost.script ?? this.menuHost.addComponent("script");
     this.menu = this.menuHost.script!.create(XrMenu, { properties: {
-      fontAsset: this.fontAsset, preferredHand: "left", toggleButtonIndex: 9,
-      buttonWidth: .26, buttonHeight: .032, fontSize: 16,
-      menuOffset: new Vec3(.15, 0, .08), followDistance: .7, followOffset: new Vec2(.28, -.12),
+      fontAsset: this.fontAsset, preferredHand: "left", alwaysVisible: true,
+      buttonWidth: .3, buttonHeight: .042, fontSize: 18,
+      followDistance: .8, followOffset: new Vec2(.25, -.08),
       menuItems: [
         { label: "Navigate", eventName: events.navigate },
         { label: "Measure distance", eventName: events.measure },
+        { label: "X Frame  |  B Reset / Exit" },
         { label: this.message },
         { label: "Place points", eventName: events.pick },
         { label: "Save measurement", eventName: events.save },
@@ -62,6 +71,17 @@ export class ImmersiveMeasurement {
         { label: "Move point B", eventName: events.moveB }
       ]
     } }) as unknown as XrMenu;
+    this.previewMaterial.useLighting = false;
+    this.previewMaterial.emissive.copy(Color.WHITE);
+    this.previewMaterial.diffuse.copy(Color.WHITE);
+    this.previewMaterial.update();
+    app.scene.layers.push(this.previewLayer);
+    this.menuHost.camera!.layers = [...this.menuHost.camera!.layers, this.previewLayer.id];
+    app.root.addChild(this.pointPreview);
+    this.pointPreview.addComponent("render", { type: "sphere", material: this.previewMaterial,
+      layers: [this.previewLayer.id], castShadows: false, receiveShadows: false });
+    this.pointPreview.setLocalScale(.012, .012, .012);
+    this.pointPreview.enabled = false;
     app.on(events.navigate, this.navigate, this);
     app.on(events.measure, this.measureTool, this);
     app.on(events.pick, this.arm, this);
@@ -72,8 +92,8 @@ export class ImmersiveMeasurement {
     app.on(events.moveB, this.moveB, this);
     app.xr!.input.on("selectstart", this.selectStart, this);
     app.xr!.input.on("selectend", this.selectEnd, this);
-    app.on("update", this.menuToggle, this);
     app.on("update", this.trackTap, this);
+    app.on("update", this.previewPoint, this);
     this.refresh();
   }
 
@@ -83,51 +103,40 @@ export class ImmersiveMeasurement {
 
   setTool(tool: SelectionTool) {
     if (this.tool === tool) return;
-    this.tool = tool; this.armed = false; this.moving = null; this.skipNextRelease = false;
-    if (tool === "measure") this.open();
-    else this.hide();
+    this.tool = tool; this.armed = tool === "measure"; this.moving = null; this.skipNextRelease = false;
+    this.open();
     this.refresh();
   }
 
   open() {
-    this.armed = false;
-    // Pinned XrMenu 2.21 runs controller-ray hit testing in always-visible
-    // mode; its controller-anchored branch only toggles and follows.
+    // Keep the tool bar in view while navigating and while placing points.
+    // A hidden menu made the first XR tool undiscoverable on the headset.
     this.menu.alwaysVisible = true;
     this.menu._setMenuVisible(true);
+    // XrManipulation treats any visible XrMenu as a modal dialog. This palette
+    // is persistent, so only ray hits on its buttons should capture input.
+    this.handle.app.fire("xr:menu:active", false);
     this.refresh();
-  }
-
-  private hide() {
-    this.menu.alwaysVisible = false;
-    this.menu._setMenuVisible(false);
-    // XrMenu fades out its UI but leaves the container interactive during the
-    // fade. A release can otherwise activate a second row after a tool switch.
-    if (this.menu._menuContainer) this.menu._menuContainer.enabled = false;
   }
 
   private navigate() {
     if (!this.menu._menuVisible) return;
-    this.hide();
     if (this.tool === "measure" && this.measurement().discardUnsaved()) this.changed();
     this.tool = "navigate";
     this.armed = false; this.skipNextRelease = false;
+    this.refresh();
   }
-  private measureTool() { if (this.menu._menuVisible) { this.tool = "measure"; this.open(); } }
-  private menuToggle() {
-    const left = this.handle.app.xr?.input.inputSources.find(source => source.handedness === "left" && !source.hand);
-    const pressed = !!left?.gamepad?.buttons[5]?.pressed;
-    if (pressed && !this.togglePressed) {
-      if (this.menu.alwaysVisible) this.hide();
-      else this.open();
-    }
-    this.togglePressed = pressed;
+  private measureTool() {
+    if (!this.menu._menuVisible) return;
+    this.tool = "measure"; this.armed = true; this.skipNextRelease = true;
+    this.message = "Aim at a surface; tap right trigger";
+    this.refresh();
   }
   private arm() {
     if (this.tool !== "measure" || !this.menu._menuVisible) return;
     this.moving = null; this.armed = true;
+    this.previewOrigin.set(Infinity, Infinity, Infinity);
     this.skipNextRelease = true; // The UI trigger cannot also place point A.
-    this.hide();
     this.message = "Aim at a surface; tap right trigger"; this.refresh();
   }
   private current() {
@@ -162,8 +171,8 @@ export class ImmersiveMeasurement {
   private move(index: 0 | 1) {
     if (this.tool !== "measure" || !this.menu._menuVisible || this.current()?.points.length !== 2) return;
     this.moving = index; this.armed = true;
+    this.previewOrigin.set(Infinity, Infinity, Infinity);
     this.skipNextRelease = true;
-    this.hide();
     this.message = `Aim and tap to move point ${index ? "B" : "A"}`; this.refresh();
   }
 
@@ -179,6 +188,28 @@ export class ImmersiveMeasurement {
     const right = this.handle.app.xr?.input.inputSources.find(source => source.handedness === "right");
     if (right && this.tapOrigin.distance(right.getPosition() ?? right.getOrigin()) >= .02) this.dragged = true;
   }
+  private previewPoint() {
+    const source = this.handle.app.xr?.input.inputSources.find(input => input.handedness === "right" && !input.hand);
+    if (!this.isArmed || !this.ready() || !source || this.isMenuTargeted || source.selecting || this.dragged) {
+      this.pointPreview.enabled = false; return;
+    }
+    const origin = source.getOrigin(), direction = source.getDirection();
+    const transform = this.handle.space.root.getWorldTransform();
+    if (this.previewBusy || performance.now() - this.previewAt < 120 ||
+      (origin.distance(this.previewOrigin) < .005 && direction.distance(this.previewDirection) < .01 &&
+        transform.equals(this.previewTransform))) return;
+    this.previewAt = performance.now(); this.previewBusy = true;
+    this.previewOrigin.copy(origin); this.previewDirection.copy(direction); this.previewTransform.copy(transform);
+    void this.pick(source).then(point => {
+      if (this.disposed || !this.isArmed || !point || source.selecting || this.isMenuTargeted) {
+        this.pointPreview.enabled = false; return;
+      }
+      // Raise the dot slightly toward the pointer to avoid burying it in the surface.
+      const toward = source.getOrigin().clone().sub(point).normalize().mulScalar(.006);
+      this.pointPreview.setPosition(point.clone().add(toward));
+      this.pointPreview.enabled = true;
+    }).catch(() => { this.pointPreview.enabled = false; }).finally(() => { this.previewBusy = false; });
+  }
   private async selectEnd(source: XrInputSource) {
     if (source.handedness === "right" && this.skipNextRelease) {
       this.skipNextRelease = false; this.tapping = false; return;
@@ -188,6 +219,7 @@ export class ImmersiveMeasurement {
     if (!tapped || !this.isArmed || !this.ready() || this.busy || source.handedness !== "right" || this.isMenuTargeted) return;
     if (!source.getOrigin() || !source.getDirection()) return;
     this.busy = true;
+    this.pointPreview.enabled = false;
     try {
       const point = await this.pick(source);
       if (this.disposed || !this.isArmed) return;
@@ -246,8 +278,10 @@ export class ImmersiveMeasurement {
 
   private refresh() {
     const record = this.current();
-    this.menu.setItemLabel(2, this.tool === "measure" ? this.message : "Choose a tool");
-    this.menu.setItemLabel(6, record?.saved ? `Saved: ${record.name}` : "Choose saved measurement");
+    this.menu.setItemLabel(0, this.tool === "measure" ? "Navigate" : "● Navigate");
+    this.menu.setItemLabel(1, this.tool === "measure" ? "● Measure distance" : "Measure distance");
+    this.menu.setItemLabel(3, this.tool === "measure" ? this.message : "Choose a tool");
+    this.menu.setItemLabel(7, record?.saved ? `Saved: ${record.name}` : "Choose saved measurement");
   }
 
   destroy() {
@@ -256,13 +290,15 @@ export class ImmersiveMeasurement {
     const app: AppBase = this.handle.app;
     app.xr?.input.off("selectstart", this.selectStart, this);
     app.xr?.input.off("selectend", this.selectEnd, this);
-    app.off("update", this.menuToggle, this);
     app.off("update", this.trackTap, this);
+    app.off("update", this.previewPoint, this);
     app.off(events.navigate, this.navigate, this); app.off(events.measure, this.measureTool, this);
     app.off(events.pick, this.arm, this); app.off(events.save, this.save, this);
     app.off(events.cancel, this.cancel, this); app.off(events.previous, this.previous, this);
     app.off(events.moveA, this.moveA, this); app.off(events.moveB, this.moveB, this);
     this.menuHost.script?.destroy("xrMenu"); this.pickEntity?.destroy(); this.picker?.destroy();
+    this.pointPreview.destroy(); this.previewMaterial.destroy();
+    app.scene.layers.remove(this.previewLayer);
     app.assets.remove(this.fontAsset); this.font.destroy();
   }
 }
