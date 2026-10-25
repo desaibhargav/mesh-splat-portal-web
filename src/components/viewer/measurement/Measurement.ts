@@ -10,6 +10,7 @@ export class Measurement {
   private snapshots: MeasurementSnapshot[] = [{ records: [], style: defaultMeasurementStyle }];
   private cursor = 0;
   private nextId = 1;
+  private readonly committed = new Map<number, MeasurementRecord>();
   get records(): readonly MeasurementRecord[] { return this.snapshots[this.cursor]!.records; }
   get style(): MeasurementStyle { return this.snapshots[this.cursor]!.style; }
   get segments(): readonly (readonly Vec3[])[] { return this.records.map(record => record.points); }
@@ -26,9 +27,12 @@ export class Measurement {
   }
   save(id: number, name: string) {
     const previous = this.records.find(record => record.id === id);
-    if (!name.trim() || previous?.points.length !== 2 || (previous.saved && previous.name === name.trim())) return;
+    if (!name.trim() || previous?.points.length !== 2) return;
+    const saved = this.committed.get(id);
+    if (previous.saved && previous.name === name.trim() && saved && previous.points.every((point, i) => point.equals(saved.points[i]!))) return;
     this.change(this.records.map(record => record.id === id
       ? { ...record, name: name.trim(), saved: true } : record));
+    this.committed.set(id, this.records.find(record => record.id === id)!);
   }
   moveEndpoint(id: number, index: number, point: Vec3) {
     const record = this.records.find(record => record.id === id);
@@ -42,9 +46,13 @@ export class Measurement {
   }
   clear() { if (this.records.length) this.change([]); }
   discardUnsaved() {
-    if (!this.records.some(record => !record.saved)) return false;
-    this.change(this.records.filter(record => record.saved));
-    return true;
+    const next = this.records.flatMap(record => {
+      if (!record.saved) return [];
+      const saved = this.committed.get(record.id);
+      return [saved && record.points.some((point, i) => !point.equals(saved.points[i]!)) ? { ...record, points: saved.points } : record];
+    });
+    if (next.length === this.records.length && next.every((record, i) => record === this.records[i])) return false;
+    this.change(next); return true;
   }
   rename(id: number, name: string) {
     const value = name.trim();

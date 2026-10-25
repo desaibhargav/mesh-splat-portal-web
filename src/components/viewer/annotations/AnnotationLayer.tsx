@@ -11,21 +11,21 @@ import { useAnnotationHover } from "./useAnnotationHover";
 import { ViewerAnnotationManager } from "./ViewerAnnotationManager";
 import type { AnnotationRecord } from "./Annotations";
 
-export function AnnotationLayer({ handle, records, interactive, hoverRegions, movingId, onMove }: {
-  handle: SelectionHandle; records: readonly AnnotationRecord[]; interactive: boolean; hoverRegions: boolean;
+export function AnnotationLayer({ color, handle, records, interactive, hoverRegions, movingId, onMove }: {
+  color: string; handle: SelectionHandle; records: readonly AnnotationRecord[]; interactive: boolean; hoverRegions: boolean;
   movingId: number | null; onMove(id: number, position: Vec3): void;
 }) {
   const rig = useViewports(handle);
   const { hovered, error } = useAnnotationHover(handle, records, hoverRegions);
   return <div className="annotation-overlay" data-interactive={interactive}>
     {error && <div className="selection-error" role="alert">Annotation hover: {error}</div>}
-    {rig.visible.map(panel => <AnnotationViewport key={panel.id} handle={handle} panel={panel} records={records}
+    {rig.visible.map(panel => <AnnotationViewport color={color} key={panel.id} handle={handle} panel={panel} records={records}
       interactive={interactive} hovered={panel === rig.active ? hovered : null} movingId={movingId} onMove={onMove} />)}
   </div>;
 }
 
-function AnnotationViewport({ handle: shared, panel, records, interactive, hovered, movingId, onMove }: {
-  handle: SelectionHandle; panel: Viewport; records: readonly AnnotationRecord[]; interactive: boolean; hovered: number | null;
+function AnnotationViewport({ color, handle: shared, panel, records, interactive, hovered, movingId, onMove }: {
+  color: string; handle: SelectionHandle; panel: Viewport; records: readonly AnnotationRecord[]; interactive: boolean; hovered: number | null;
   movingId: number | null; onMove(id: number, position: Vec3): void;
 }) {
   const handle = useViewportHandle(shared, panel);
@@ -39,9 +39,9 @@ function AnnotationViewport({ handle: shared, panel, records, interactive, hover
   useEffect(() => {
     const entity = new Entity("Annotations"); root.current = entity;
     handle.space.root.addChild(entity); entity.addComponent("script");
-    const color = new Color().fromString(getComputedStyle(container.current!).getPropertyValue("--gold").trim());
+    const shade = new Color().fromString(color);
     const annotationManager = entity.script!.create(ViewerAnnotationManager, { properties: {
-      container: container.current!, viewCamera: handle.camera().entity, hotspotColor: color,
+      container: container.current!, viewCamera: handle.camera().entity, hotspotColor: shade,
       hoverColor: Color.WHITE, behindOpacity: 1
     } }) as unknown as ViewerAnnotationManager;
     manager.current = annotationManager;

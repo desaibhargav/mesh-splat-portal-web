@@ -627,6 +627,12 @@ try {
     check(cleared.selected === 0 && cleared.drafts === 0 && cleared.areas.includes("Parent region") && cleared.areas.includes("Combined views"),
       "Clear Selection did not discard every draft and preserve saved selections");
     await page.screenshot({ path: path.join(output, slug + "-selection-draft-session.png") });
+    await drawBox([.2, .28], [.46, .72]);
+    check((await doc()).drafts > 0, "Tool-switch regression did not create a draft");
+    await page.click('[aria-label="Annotate"]'); await settle();
+    const afterSwitch = await doc();
+    check(afterSwitch.selected === 0 && afterSwitch.drafts === 0 && afterSwitch.areas.includes("Parent region") && afterSwitch.areas.includes("Combined views"),
+      "Switching tools retained an unsaved selection or removed a saved selection");
     await page.locator(".back-link").click();
     await page.waitForSelector(".catalog-page");
     console.log("PASS segment create/select/paint/annotation/measurement/quad/return/reopen/visibility/delete/cleanup", slug);

@@ -18,6 +18,7 @@ export function AnnotationControls({ handle, annotations, active, interactive, h
   onChange(): void; openRequest: { id: number } | null;
 }) {
   const [, refresh] = useState(0);
+  const [markerColor] = useState(() => getComputedStyle(handle.app.graphicsDevice.canvas).getPropertyValue("--gold").trim());
   const [draft, setDraft] = useState<AnnotationDraft | null>(null);
   const [kind, setKind] = useState<AnnotationKind | null>(null);
   const [step, setStep] = useState<AnnotationStep>(null);
@@ -80,7 +81,7 @@ export function AnnotationControls({ handle, annotations, active, interactive, h
   const areaPick = useSelectionAreaPick(handle, active && step === "selection", area => {
     const color = area.color ? decodeColor(area.color) :
       getComputedStyle(handle.app.graphicsDevice.canvas).getPropertyValue("--gold").trim();
-    setDraft(current => current && { ...current, region: area.snapshot, color });
+    setDraft(current => current && { ...current, selectionId: area.id, region: area.snapshot, color });
     setStep("marker");
   });
 
@@ -123,7 +124,7 @@ export function AnnotationControls({ handle, annotations, active, interactive, h
   const hasSelections = handle.selection.areas.some(area => area.visible);
 
   return <>
-    {<AnnotationLayer handle={handle} records={displayedAnnotations}
+    {displayedAnnotations.length > 0 && <AnnotationLayer color={markerColor} handle={handle} records={displayedAnnotations}
       interactive={interactive && !choosing} hoverRegions={hoverRegions && !choosing}
       movingId={step === "drag" ? draft?.id ?? 0 : null} onMove={finishMove} />}
     {active && <div className="annotation-panels">

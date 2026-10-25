@@ -100,7 +100,7 @@ function WorkspaceTools({ handle, tool, onToolChange, disabled, captureName, wor
   const unavailable = disabled || !handle || busy || document?.visible === false;
   const selecting = tool === "select" || (tool === "segment" && drawingSegment);
   useEffect(() => {
-    if (tool !== "navigate" || !handle || !history) return;
+    if (tool === "select" || (tool === "segment" && drawingSegment) || disabled || !handle || !history) return;
     generation.current++; // A pending GPU selection must not recreate a discarded draft.
     const selection = handle.selection;
     const areas = selection.areas.filter(area => area.saved);
@@ -112,7 +112,7 @@ function WorkspaceTools({ handle, tool, onToolChange, disabled, captureName, wor
       documentChanged();
     }
     setBusy(false); setEditingSelection(null); setSelectionName("");
-  }, [tool, handle, history, documentChanged]);
+  }, [tool, handle, history, documentChanged, disabled, drawingSegment]);
   useEffect(() => {
     const frame = toolbar.current?.closest(".viewer-frame");
     if (!frame || !handle || !history || (tool === "measure" || tool === "annotate" || tool === "views")) return;
@@ -199,10 +199,7 @@ function WorkspaceTools({ handle, tool, onToolChange, disabled, captureName, wor
   }
   function removeSelection(id: number) {
     if (!handle || !history || unavailable) return;
-    const selection = handle.selection;
-    const state = editingSelection === id
-      ? { masks: selection.state.masks.map(mask => new Uint8Array(mask.length)), isolated: false } : selection.state;
-    setSummary(history.perform(() => selection.restore(state, selection.colors, selection.areas.filter(area => area.id !== id))));
+    setSummary(workspaces!.removeSelection(id));
     if (editingSelection === id) { setEditingSelection(null); setSelectionName(""); }
     documentChanged();
   }

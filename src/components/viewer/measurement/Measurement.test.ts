@@ -111,3 +111,16 @@ it("includes line and font adjustments in measurement undo history", () => {
   measurement.undo(); expect(measurement.style).toEqual(original);
   measurement.redo(); expect(measurement.style.lineWidth).toBe(original.lineWidth + 1);
 });
+
+it("discards unsaved endpoint edits but keeps explicitly updated points", () => {
+  const measurement = new Measurement();
+  measurement.add(new Vec3(0, 0, 0)); measurement.add(new Vec3(1, 0, 0));
+  measurement.save(measurement.records[0]!.id, "Saved");
+  const id = measurement.records[0]!.id;
+  measurement.moveEndpoint(id, 1, new Vec3(2, 0, 0));
+  expect(measurement.discardUnsaved()).toBe(true);
+  expect(measurement.records[0]!.points[1]!.x).toBe(1);
+  measurement.moveEndpoint(id, 1, new Vec3(3, 0, 0)); measurement.save(id, "Saved");
+  expect(measurement.discardUnsaved()).toBe(false);
+  expect(measurement.records[0]!.points[1]!.x).toBe(3);
+});

@@ -21,6 +21,8 @@ fixture.createScene().addChild(fixture.createNode().setMesh(fixture.createMesh()
 const fixtureBody = Buffer.from(await new NodeIO().writeBinary(fixture));
 const assets = {
   "surface-fixture": { type: "mesh", file: "content.glb", body: fixtureBody },
+  "21d12x-006349": { type: "mesh", file: "content.glb" },
+  "2022-01-0056-model": { type: "splat", file: "meta.json" },
   "21e231-006699": { type: "mesh", file: "content.glb" },
   "sakura-garden": { type: "splat", file: "meta.json" }
 };
@@ -265,7 +267,25 @@ try {
       const hit=await input.evaluate(i=>{const s=[...i.hits.keys()].find(s=>s.handedness==='right'); return i.hit(s)?.point.toArray();});
       if(hit){aim=point;break;}
     }
+    if (await h.evaluate(h=>!!h.selection.centers)) {
+      const point=await h.evaluate(h=>{
+        const c=h.selection.centers,t=h.selection.component.entity.getWorldTransform(),b=h.selection.bounds(null),V=b.center.constructor,p=new V();
+        let best=-Infinity,chosen=null;
+        for(let i=0;i<c.length;i+=300){p.set(c[i],c[i+1],c[i+2]);t.transformPoint(p,p);
+          if(p.x<b.center.x-b.halfExtents.x*.35&&Math.abs(p.y-b.center.y)<b.halfExtents.y*.4&&p.z>best){best=p.z;chosen=p.toArray();}}
+        return chosen;
+      });
+      check(point,'No unobstructed splat test target');
+      aim=[point[0],point[1],point[2]+.3]; await move(aim);
+    }
     check(aim,'No surface found for selection stroke');
+    await page.waitForFunction(menu=>!!menu.editing.brush,{timeout:20000},menu);
+    const renderCanvas=await h.evaluateHandle(h=>h.app.graphicsDevice.canvas);
+    const brushImage=await renderCanvas.asElement().screenshot();
+    await page.screenshot({path:path.join(output,`${id}-xr-brush-before.png`)});
+    await menu.evaluate(m=>{m.editing.lines.remove(m.editing.brush);}); await settle(h);
+    check(!brushImage.equals(await renderCanvas.asElement().screenshot()),'Brush has no visible scene pixels');
+    await menu.evaluate(m=>{m.editing.lines.add(m.editing.brush);}); await settle(h);
     check(await input.evaluate(i=>{
       const source=[...i.hits.keys()].find(s=>s.handedness==='right'),hit=i.hit(source),tip=i.pointers.get(source).positions;
       const world=i.handle.space.toWorld(hit.point);return Math.hypot(tip[3]-world.x,tip[4]-world.y,tip[5]-world.z)<.002;
@@ -294,8 +314,48 @@ try {
     await control(options,'Isolate'); check(await h.evaluate(h=>h.selection.summary.isolated),'XR isolate failed');
     await control(options,'Show all');
     await control('XR tool bar','Annotate'); await control(options,'Annotate a selection');
+    if (await h.evaluate(h=>!!h.selection.centers)) {
+      const selectedAim=await h.evaluate(async h=>{
+        const selection=h.selection,area=selection.areas.find(a=>a.saved),bits=area.snapshot.masks[0].bits,
+          centers=selection.centers,transform=selection.component.entity.getWorldTransform(),V=selection.bounds(null).center.constructor,
+          bounds=selection.bounds(null),point=new V();
+        const candidates=[];
+        for(let index=0;index<area.snapshot.masks[0].length&&candidates.length<80;index++){
+          if(!(bits[index>>3]&(1<<(index&7))))continue;
+          point.set(centers[index*3],centers[index*3+1],centers[index*3+2]);transform.transformPoint(point,point);
+          if(point.x<bounds.center.x-bounds.halfExtents.x*.35)candidates.push([point.x,point.y,point.z+.3]);
+        }
+        for(const ray of candidates){const hit=await selection.surfaceHit(new V(...ray),new V(0,0,-1));
+          if(hit&&selection.areaAt(hit.part,hit.index))return ray;}
+        return null;
+      });
+      check(selectedAim,'No saved splat face is hoverable from the selection stroke');
+      aim=selectedAim;
+    }
     await move(aim); await settle(h);
+    if (!(await menu.evaluate(m=>m.editing.message.startsWith('Click ')))) console.log('REGION DEBUG',await h.evaluate(h=>{
+      const i=h.app._callbacks.get('prerender').find(c=>c.scope?.pointers&&c.scope?.hits).scope,s=h.app.xr.input.inputSources.find(s=>s.handedness==='right'),hit=i.hit(s);
+      return {hit,area:hit&&h.selection.areaAt(hit.part,hit.index),selected:h.selection.summary.selected,areas:h.selection.areas.map(a=>({id:a.id,name:a.name,saved:a.saved}))};
+    }));
     check(await menu.evaluate(m=>m.editing.message.startsWith('Click ')),'XR saved region did not highlight');
+    await settle(h);
+    const hoverCanvas=await h.evaluateHandle(h=>h.app.graphicsDevice.canvas);
+    const highlighted=await hoverCanvas.asElement().screenshot();
+    await h.evaluate(h=>{
+      if(h.selection.previews) for(const groups of h.selection.previews.values())for(const g of groups)g.instance.visible=false;
+      else h.app.graphicsDevice.scope.resolve('portalHoverOpacity').setValue(0);
+    }); await settle(h);
+    await page.screenshot({path:path.join(output,`${id}-xr-region-no-hover.png`)});
+    check(!highlighted.equals(await hoverCanvas.asElement().screenshot()),'Region hover has no visible scene pixels');
+    await h.evaluate(h=>{
+      if(h.selection.previews) for(const groups of h.selection.previews.values())for(const g of groups)g.instance.visible=true;
+      else h.app.graphicsDevice.scope.resolve('portalHoverOpacity').setValue(.8);
+    }); await settle(h);
+    if (await h.evaluate(h=>!!h.selection.centers)) {
+      const stable=await hoverCanvas.asElement().screenshot();
+      for(let frame=0;frame<4;frame++)await settle(h);
+      check(stable.equals(await hoverCanvas.asElement().screenshot()),'Splat hover flickered while controller and asset were still');
+    }
     await page.screenshot({path:path.join(output,`${id}-xr-region-hover.png`)});
     await tap(); check(await menu.evaluate(m=>m.editing.step==='marker'),'Selection annotation did not advance to marker');
     await tap(); check(await menu.evaluate(m=>m.editing.step==='details'),'Selection annotation did not advance to details');
@@ -332,27 +392,51 @@ try {
     // Other selection shapes use the same rasterizer and shared controller.
     for (const shape of ['Box','Lasso']) {
       await control(options,shape);
-      await move([aim[0]-.06,aim[1]+.06,aim[2]]);
+      await control(options,'Collapse tool options');
+      await move(aim);
       await page.evaluate(()=>window.xrDevice.controllers.right.updateButtonValue('trigger',1)); await settle(h);
-      for(const [x,y] of (shape==='Box' ? [[.12,-.12]] : [[.12,0],[0,-.12],[-.12,0]])) {
+      for(const [x,y] of (shape==='Box' ? [[.08,-.08]] : [[.08,0],[0,-.08],[-.08,0]])) {
         await page.evaluate(([x,y])=>{window.xrDevice.controllers.right.position.x+=x;window.xrDevice.controllers.right.position.y+=y;},[x,y]); await settle(h);
       }
       await page.evaluate(()=>window.xrDevice.controllers.right.updateButtonValue('trigger',0)); await settle(h);
       await page.waitForFunction(menu=>!menu.editing.busy,{},menu);
       check(await h.evaluate(h=>h.selection.summary.selected>0),shape+' XR gesture selected nothing');
-      await control(options,'Clear Selection');
+      await control(options,'Expand tool options'); await control(options,'Clear Selection');
     }
     const idle=await input.evaluate(i=>[...i.hits.values()].map(s=>s.time));
     for(let i=0;i<5;i++)await settle(h);
     check(await input.evaluate((i,times)=>[...i.hits.values()].every((s,j)=>s.time===times[j]),idle),'Stationary controllers kept issuing surface queries');
     await control(options,'region');
-    const restoredCount=await h.evaluate(h=>h.selection.summary.selected);
+    check(await h.evaluate(h=>h.selection.summary.selected>0),'Saved region did not reopen');
+    await control(options,'Clear Selection');
+    check(await h.evaluate(h=>h.selection.summary.selected===0),'Clear Selection did not clear the active saved region');
+    const draftAim=await h.evaluate(async h=>{
+      const b=h.selection.bounds(null),V=b.center.constructor;
+      for(const x of [-.7,-.5,-.3,0,.3,.5,.7])for(const y of [-.7,-.5,-.3,0,.3,.5,.7]){
+        const origin=new V(b.center.x+b.halfExtents.x*x,b.center.y+b.halfExtents.y*y,b.getMax().z+.3);
+        const hit=await h.selection.surfaceHit(origin,new V(0,0,-1));
+        if(hit&&!h.selection.areaAt(hit.part,hit.index))return origin.toArray();
+      }
+      return null;
+    });
+    check(draftAim,'No unsaved test surface outside the saved selection');
+    await control(options,'Brush'); await move(draftAim);
+    await page.evaluate(()=>window.xrDevice.controllers.right.updateButtonValue('trigger',1)); await settle(h);
+    await page.evaluate(()=>window.xrDevice.controllers.right.position.x+=.04); await settle(h);
+    await page.evaluate(()=>window.xrDevice.controllers.right.updateButtonValue('trigger',0)); await settle(h);
+    await page.waitForFunction(menu=>!menu.editing.busy,{},menu);
+    if (!(await h.evaluate(h=>h.selection.areas.some(a=>!a.saved)))) console.log('DRAFT DEBUG', await h.evaluate(h=>({summary:h.selection.summary,areas:h.selection.areas.map(a=>({saved:a.saved,name:a.name})),message:h.app.xr.input._callbacks.get('selectstart').find(c=>c.scope?.editing)?.scope.editing.message})));
+    check(await h.evaluate(h=>h.selection.areas.some(a=>!a.saved)),'XR selection draft was not created');
+    await control('XR tool bar','Annotate');
+    check(await h.evaluate(h=>h.selection.summary.selected===0&&h.selection.areas.every(a=>a.saved)),'XR tool switch retained an unsaved selection');
     await h.evaluate(h=>new Promise(resolve=>h.app.xr.end(resolve))); await settle(h);
-    await page.waitForSelector('.selection-options');
-    check(await page.$eval('.selection-toolbar [role="status"]',(e,n)=>e.textContent.startsWith(n.toLocaleString()+' /'),restoredCount),'Desktop selection summary did not synchronize from XR');
-    await page.click('[aria-label="Annotate"]');
+    await page.waitForSelector('.annotation-list');
+    check(await page.$eval('.selection-toolbar [role="status"]',e=>e.textContent.startsWith('0 /')),'Desktop selection summary did not synchronize from XR');
     check(await page.$eval('.annotation-list',e=>e.textContent.includes('notex')&&e.textContent.includes('point')),'XR notes missing on desktop');
     await page.screenshot({path:path.join(output,`${id}-xr-editing-back-on-desktop.png`)});
+    await page.click('[aria-label="Select"]'); await page.click('[aria-label="Delete region"]');
+    check(await ws.evaluate(ws=>ws.current.annotations.records.length===1&&ws.current.annotations.records[0].title==='point'),
+      'Deleting a saved selection did not delete only its linked annotations');
     console.log('PASS',id,'ray clipping, hover, select/save/paint/isolate → annotation, point annotation/edit/collapse, desktop sharing');
   }
 
@@ -448,6 +532,7 @@ try {
     console.log("PASS",id,type,"controller models, grip movement, orbit, pan, zoom, release, transition, disconnect");
   }
   for (const id of Object.keys(assets).filter(id=>!process.env.XR_ASSET || id===process.env.XR_ASSET)) {
+    const loadStarted = performance.now();
     await page.goto(`${base}/artifacts/${id}`);
     await page.evaluate(environment => window.xrDevice.sem.loadEnvironment(environment), room);
     await page.waitForSelector('[aria-label="Select"]:not([disabled])', { timeout: 90000 });
@@ -461,6 +546,8 @@ try {
     }), "Compact bottom VR/AR controls did not replace the instructions and four-view button");
     await page.$eval(".viewer-frame", element => element.scrollIntoView());
     const h = await handle();
+    console.log("LOAD",id,Math.round(performance.now()-loadStarted));
+    if (process.env.XR_PROFILE_ONLY) continue;
     if (process.env.XR_EDITING_ONLY) {
       if(process.env.XR_EDITING_SECTION && id!=='surface-fixture') {
         await page.click('[aria-label="Cross section"]');
@@ -477,6 +564,12 @@ try {
         await page.evaluate(()=>window.xrDevice.controllers.right.updateButtonValue('trigger',1));
         await page.waitForFunction(h=>h.app.root.findByName('Immersive artifact')?.enabled,{timeout:15000},h);
         await page.evaluate(()=>window.xrDevice.controllers.right.updateButtonValue('trigger',0)); await settle(h);
+        // Simulate the user's grip move after floor placement, bringing the model
+        // into the visible editing workspace before testing surface gestures.
+        await h.evaluate(h=>{
+          const root=h.app.root.findByName('Immersive artifact'),center=h.selection.bounds(null).center;
+          root.setPosition(root.getPosition().add(center.clone().set(0,1.5,-1.5).sub(center)));
+        }); await settle(h);
       }
       await editingRegression(h,id); continue;
     }

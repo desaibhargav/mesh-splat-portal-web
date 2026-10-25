@@ -35,7 +35,14 @@ export class ImmersiveEditing {
   private readonly lines: WideLineRenderer;
   private line: WideLine | null = null;
   private readonly strokeColor = new Color(1, .8, .3);
-  private gesture: { points: Point[]; diameter: number; depth: number; document: WorkspaceDocument } | null = null;
+  starting: Promise<void> | null = null;
+  private brush: WideLine | null = null;
+  private brushVisible = false;
+  private readonly brushPoints = new Float32Array(49 * 3);
+  private readonly tangent = new Vec3();
+  private readonly bitangent = new Vec3();
+  private readonly worldScale = new Vec3();
+  private gesture: { points: Point[]; diameter: number; depth: number; anchor: Vec3; document: WorkspaceDocument } | null = null;
   private readonly plane = new Plane();
   private readonly ray = new Ray();
   private readonly point = new Vec3();
@@ -51,13 +58,15 @@ export class ImmersiveEditing {
     this.cameraEntity.addComponent("camera", { enabled: false, fov: 90, nearClip: .005, farClip: 100, aspectRatioMode: ASPECT_MANUAL, aspectRatio: 1 });
     this.lines = new WideLineRenderer(handle.app); this.lines.depthTest = false; this.lines.depthWrite = false;
   }
+  get startPoint() { return this.gesture?.anchor ?? null; }
   get drawing() { return !!this.gesture; }
   get annotations() { return this.workspaces.current.annotations; }
   get selection() { return this.handle.selection; }
   private commit() { this.changed(); }
   setTool(tool: SelectionTool) {
     this.revision++; this.gesture = null; this.clearLine(); this.selection.previewArea(null);
-    if (tool === "navigate") { this.workspaces.history.perform(() => this.selection.clear()); this.input.invalidate(); }
+    if (tool !== "select" && this.brush && this.brushVisible) { this.lines.remove(this.brush); this.brushVisible = false; }
+    if (tool !== this.tool) { this.selectionName = ""; this.selectionId = null; this.workspaces.history.perform(() => this.selection.clear()); this.input.invalidate(); }
     this.tool = tool; this.dragging = false; this.draft = null; this.step = tool === "annotate" ? "choose" : null; this.message = "";
   }
   action(action: string, value?: string | number) {
@@ -78,7 +87,7 @@ export class ImmersiveEditing {
         history.perform(() => { this.selection.setAreaVisible(area.id, true); return this.selection.restore(unpackSelection(area.snapshot)); });
         this.selectionId = area.id; this.selectionName = area.name; break;
       }
-      case "remove": history.perform(() => this.selection.restore(this.selection.state, this.selection.colors, this.selection.areas.filter(item => item.id !== value))); break;
+      case "remove": this.workspaces.removeSelection(Number(value)); this.selectionId = null; break;
       case "save": history.perform(() => {
         const areas = saveSelectionArea(this.selection.areas, this.selection.state, this.selectionName, this.selectionId);
         return this.selection.restore(unpackSelection(areas.at(-1)!.snapshot), this.selection.colors, areas);
@@ -117,6 +126,28 @@ export class ImmersiveEditing {
     return this.dragging;
   }
   hover(hit: SurfaceHit | null, source?: XrInputSource) {
+    const showBrush = this.tool === "select" && this.shape === "brush" && hit && source;
+    if (showBrush) {
+      if (!this.brush) {
+        this.brush = new WideLine().set(this.brushPoints, this.strokeColor, 3);
+      }
+      if (!this.brushVisible) { this.lines.add(this.brush); this.brushVisible = true; }
+      this.handle.space.toWorld(hit.point, this.point);
+      const bounds = this.selection.bounds(null), diameter = bounds ? Math.max(bounds.halfExtents.x, bounds.halfExtents.y, bounds.halfExtents.z) * 2 * this.brushSize / 100 : .01;
+      this.handle.space.root.getWorldTransform().getScale(this.worldScale);
+      const radius = Math.max(.005, diameter * Math.max(this.worldScale.x, this.worldScale.y, this.worldScale.z) / 2);
+      this.tangent.cross(source.getDirection(), Vec3.UP).normalize();
+      if (this.tangent.lengthSq() < .01) this.tangent.cross(source.getDirection(), Vec3.RIGHT).normalize();
+      this.bitangent.cross(source.getDirection(), this.tangent).normalize();
+      for (let i = 0; i <= 48; i++) {
+        const angle = i / 48 * Math.PI * 2, offset = i * 3;
+        this.brushPoints[offset] = this.point.x + radius * (this.tangent.x * Math.cos(angle) + this.bitangent.x * Math.sin(angle));
+        this.brushPoints[offset + 1] = this.point.y + radius * (this.tangent.y * Math.cos(angle) + this.bitangent.y * Math.sin(angle));
+        this.brushPoints[offset + 2] = this.point.z + radius * (this.tangent.z * Math.cos(angle) + this.bitangent.z * Math.sin(angle));
+      }
+      this.brush.setPositions(this.brushPoints);
+    } else if (this.brush && this.brushVisible) { this.lines.remove(this.brush); this.brushVisible = false; }
+
     if (this.dragging && hit && this.draft && (!this.draft.region || snapshotContains(this.draft.region, hit.part, hit.index)))
       this.draft = { ...this.draft, position: hit.point };
 
@@ -161,7 +192,7 @@ export class ImmersiveEditing {
       if (this.disposed || token !== this.revision || document !== this.workspaces.current || !hit) return;
       if (this.step === "selection") {
         const area = this.selection.areaAt(hit.part, hit.index);
-        if (area && this.draft) { this.draft = { ...this.draft, region: area.snapshot, color: area.color ? decodeColor(area.color) : null }; this.step = "marker"; }
+        if (area && this.draft) { this.draft = { ...this.draft, selectionId: area.id, region: area.snapshot, color: area.color ? decodeColor(area.color) : null }; this.step = "marker"; }
       } else if ((this.step === "marker" || this.step === "drag") && this.draft) {
         if (this.draft.region && !snapshotContains(this.draft.region, hit.part, hit.index)) { this.message = "Place the marker on the chosen selection."; return; }
         this.draft = { ...this.draft, position: hit.point }; this.step = "details";
@@ -171,18 +202,31 @@ export class ImmersiveEditing {
     finally { this.dragging = false; this.busy = false; if (!this.disposed) this.commit(); }
   }
   start(source: XrInputSource) {
-    if (this.tool !== "select" || this.busy) return;
+    if (this.tool !== "select" || this.busy || this.starting) return;
+    this.starting = this.begin(source).finally(() => { this.starting = null; });
+  }
+  private async begin(source: XrInputSource) {
+    const token = this.revision, origin = source.getOrigin().clone(), direction = source.getDirection().clone();
+    this.busy = true;
+    let hit: SurfaceHit | null;
+    try { hit = await this.input.pick(source); }
+    catch (error) { this.message = String(error); return; }
+    finally { this.busy = false; }
+    if (this.disposed || token !== this.revision) return;
+    if (!hit) { this.message = "Point at the asset to begin selecting."; this.changed(); return; }
     const camera = this.cameraEntity.camera!;
-    this.cameraEntity.setPosition(source.getOrigin());
-    this.cameraEntity.lookAt(this.point.copy(source.getDirection()).add(source.getOrigin()), this.handle.viewports.perspectivePanel.camera.entity.up);
+    this.cameraEntity.setPosition(origin);
+    this.cameraEntity.lookAt(this.point.copy(direction).add(origin), this.handle.viewports.perspectivePanel.camera.entity.up);
     camera.onAppPrerender(); // Disabled query cameras need the native transform invalidation explicitly.
     const bounds = this.selection.bounds(null), rect = this.handle.app.graphicsDevice.clientRect;
-    const hit = this.input.hit(source);
-    const anchor = hit ? this.handle.space.toWorld(hit.point) : bounds?.center;
-    const depth = anchor ? Math.max(camera.nearClip, this.point.sub2(anchor, source.getOrigin()).dot(this.cameraEntity.forward)) : 1;
-    this.plane.setFromPointNormal(this.point.copy(this.cameraEntity.forward).mulScalar(depth).add(source.getOrigin()), this.cameraEntity.forward);
-    this.gesture = { points: [], depth, diameter: bounds ? brushDiameter(bounds, camera, this.brushSize) / rect.width * 512 : 10,
+    const anchor = this.handle.space.toWorld(hit.point);
+    const depth = Math.max(camera.nearClip, this.point.sub2(anchor, origin).dot(this.cameraEntity.forward));
+    this.plane.setFromPointNormal(this.point.copy(this.cameraEntity.forward).mulScalar(depth).add(origin), this.cameraEntity.forward);
+    this.gesture = { points: [], depth, anchor: hit.point.clone(), diameter: bounds ? brushDiameter(bounds, camera, this.brushSize) / rect.width * 512 : 10,
       document: this.workspaces.current };
+    const rectStart = this.handle.app.graphicsDevice.clientRect;
+    camera.worldToScreen(anchor, this.screen);
+    this.gesture.points.push({ x: this.screen.x / rectStart.width * 512, y: this.screen.y / rectStart.height * 512 });
     this.track(source);
   }
   track(source: XrInputSource) {
@@ -214,6 +258,7 @@ export class ImmersiveEditing {
     this.line = new WideLine().set(positions, this.strokeColor, 3); this.lines.add(this.line);
   }
   async end() {
+    await this.starting;
     const gesture = this.gesture; this.gesture = null; this.clearLine();
     if (!gesture || gesture.points.length === 0) return;
     const camera = this.cameraEntity.camera!, token = this.revision;

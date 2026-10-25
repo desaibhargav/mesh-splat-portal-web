@@ -40,3 +40,13 @@ it("renames annotations and controls marker visibility without changing their co
   expect(annotations.records[0]).toMatchObject({ title: "Feature", text: "Note", visible: false });
   annotations.undo(); expect(annotations.records[0]!.visible).toBe(true);
 });
+
+it("deletes linked region notes while retaining point notes and other selections", () => {
+  const annotations = new Annotations();
+  const region = { isolated: false, masks: [{ bits: new Uint8Array([1]), length: 1 }] };
+  annotations.save({ title: "Linked", text: "", position: new Vec3(), region, selectionId: 7 });
+  annotations.save({ title: "Other", text: "", position: new Vec3(), region, selectionId: 8 });
+  annotations.save({ title: "Point", text: "", position: new Vec3(), region: null });
+  annotations.removeForSelection(7, region);
+  expect(annotations.records.map(record => record.title)).toEqual(["Other", "Point"]);
+});

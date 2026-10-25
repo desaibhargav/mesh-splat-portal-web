@@ -2,6 +2,7 @@ import type { SelectionArea, SelectionSnapshot, SelectionState } from "./types";
 import type { SelectionOperation } from "./rectangle";
 import { packSelection, selectionsEqual, snapshotContains } from "./selectionSnapshot";
 
+export const selectionHoverOpacity = 0.8;
 export const selectionColors = [
   { name: "Red", hex: "#e53935" }, { name: "Orange", hex: "#fb8c00" },
   { name: "Yellow", hex: "#fdd835" }, { name: "Green", hex: "#43a047" },

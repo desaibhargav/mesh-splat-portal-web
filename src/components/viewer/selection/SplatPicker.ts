@@ -73,7 +73,20 @@ export function configureSplatPicking(app: AppBase): () => void {
       "loadPcId().r",
       language === SHADERLANGUAGE_GLSL ? "user_portalPrimitiveId" : "output.user_portalPrimitiveId"
     ), languageName));
-    chunks.set("gsplatPS", splatSectionFragment(ShaderChunks.get(app.graphicsDevice, language).get("gsplatPS")!, languageName));
+    const fragment = splatSectionFragment(ShaderChunks.get(app.graphicsDevice, language).get("gsplatPS")!, languageName);
+    chunks.set("gsplatPS", languageName === "glsl" ?
+      `uniform sampler2D portalHoverMask; uniform float portalHoverOpacity;\n${fragment}`.replace("modifySplatColor(gaussianUV, fragColor);", `modifySplatColor(gaussianUV, fragColor);
+        if (portalHoverOpacity > 0.0) {
+          uint portalId = getPortalPrimitiveId(); uint portalWidth = uint(textureSize(portalHoverMask, 0).x);
+          float portalHovered = texelFetch(portalHoverMask, ivec2(int(portalId % portalWidth), int(portalId / portalWidth)), 0).r;
+          fragColor.rgb = mix(fragColor.rgb, vec3(1.0), portalHovered * portalHoverOpacity);
+        }`) :
+      `var portalHoverMask: texture_2d<f32>; uniform portalHoverOpacity: f32;\n${fragment}`.replace("modifySplatColor(vec2f(gaussianUV), &fragColor);", `modifySplatColor(vec2f(gaussianUV), &fragColor);
+        if (uniform.portalHoverOpacity > 0.0) {
+          let portalId = getPortalPrimitiveId(); let portalWidth = textureDimensions(portalHoverMask).x;
+          let portalHovered = textureLoad(portalHoverMask, vec2i(i32(portalId % portalWidth), i32(portalId / portalWidth)), 0).r;
+          fragColor = vec4f(mix(fragColor.rgb, vec3f(1.0), portalHovered * uniform.portalHoverOpacity), fragColor.a);
+        }`));
     chunks.set("gsplatModifyVS", language === SHADERLANGUAGE_GLSL ? `
       void modifySplatCenter(inout vec3 center) { setPortalPrimitiveId(splat.index); }
       void modifySplatRotationScale(vec3 originalCenter, vec3 modifiedCenter, inout vec4 rotation, inout vec3 scale) {}

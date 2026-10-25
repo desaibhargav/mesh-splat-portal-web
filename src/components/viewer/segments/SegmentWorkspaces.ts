@@ -84,6 +84,13 @@ export class SegmentWorkspaces extends EventHandler {
     }
   }
   get history() { return this.current.history ??= new SelectionHistory(this.handle.selection); }
+  removeSelection(id: number) {
+    const selection = this.handle.selection, area = selection.areas.find(area => area.id === id);
+    if (!area) return selection.summary;
+    const result = this.history.perform(() => selection.restore({ masks: selection.state.masks.map(mask => new Uint8Array(mask.length)), isolated: false },
+      selection.colors, selection.areas.filter(area => area.id !== id)));
+    this.current.annotations.removeForSelection(id, area.snapshot); this.fire("change"); return result;
+  }
   setColor(color: number) {
     const document = this.current;
     if (!document.region || document.color === color) return;

@@ -4,7 +4,7 @@ import {
   TYPE_INT8, TYPE_INT16, TYPE_UINT8, TYPE_UINT16, Vec3, type VertexBuffer,
   type AppBase, type CameraComponent, type Layer, type RenderComponent
 } from "playcanvas";
-import { currentSelectionArea, paintSelection, decodeColor, discardDraftSelection, recordSelectionGesture, selectionAreaAt, updateSelectionAreas, visiblePaint, visibleSelections, type PaintState } from "./selectionColors";
+import { currentSelectionArea, paintSelection, decodeColor, discardDraftSelection, recordSelectionGesture, selectionAreaAt, selectionHoverOpacity, updateSelectionAreas, visiblePaint, visibleSelections, type PaintState } from "./selectionColors";
 import { applySelection, projectSelection } from "./projectSelection";
 import type { SelectionOperation } from "./rectangle";
 import { MeshPicker } from "./MeshPicker";
@@ -174,7 +174,7 @@ export class MeshSelection {
           part.previewMaterial.useLighting = false;
           part.previewMaterial.cull = part.baseMaterial.cull;
           part.previewMaterial.blendType = BLEND_NORMAL;
-          part.previewMaterial.opacity = this.tint.a;
+          part.previewMaterial.opacity = selectionHoverOpacity;
           part.previewMaterial.emissive.copy(Color.WHITE);
           part.previewMaterial.emissiveIntensity = 1;
           part.previewMaterial.depthWrite = false;

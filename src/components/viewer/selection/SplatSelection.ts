@@ -1,9 +1,10 @@
+import { SplatSurfacePicker } from "./visibility/SplatSurfacePicker";
 import { constrainMask, type SelectionScope } from "./selectionScope";
 import {
   BoundingBox, Color, FILTER_NEAREST, Mat4, PIXELFORMAT_R8, PIXELFORMAT_RGBA8, Texture, Vec3, WORKBUFFER_UPDATE_ONCE,
   type AppBase, type CameraComponent, type GSplatComponent
 } from "playcanvas";
-import { currentSelectionArea, paintSelection, decodeColor, discardDraftSelection, recordSelectionGesture, selectionAreaAt, updateSelectionAreas, visiblePaint, visibleSelections, type PaintState } from "./selectionColors";
+import { currentSelectionArea, paintSelection, decodeColor, discardDraftSelection, recordSelectionGesture, selectionAreaAt, selectionHoverOpacity, updateSelectionAreas, visiblePaint, visibleSelections, type PaintState } from "./selectionColors";
 import type { SelectionOperation } from "./rectangle";
 import { applySelection, projectSelection } from "./projectSelection";
 import { captureDepth, depthTest } from "./SelectionDepth";
@@ -19,7 +20,6 @@ const modifier = {
 uniform sampler2D portalScope;
 uniform sampler2D portalSelection;
 uniform sampler2D portalPaint;
-uniform sampler2D portalPreview;
 uniform vec4 portalSelectionTint;
 uniform float portalSelectionVisible;
 uniform float portalIsolate;
@@ -32,15 +32,12 @@ void modifySplatColor(vec3 center, inout vec4 color) {
     }
     float selected = texelFetch(portalSelection, splat.uv, 0).r;
     color.rgb = mix(color.rgb, portalSelectionTint.rgb, selected * portalSelectionTint.a * portalSelectionVisible * step(paint.a, 0.0));
-    float previewed = texelFetch(portalPreview, splat.uv, 0).r;
-    color.rgb = mix(color.rgb, vec3(1.0), previewed * portalSelectionTint.a);
     color.a *= mix(1.0, selected, portalIsolate) * texelFetch(portalScope, splat.uv, 0).r;
 }`,
   wgsl: `
 var portalScope: texture_2d<f32>;
 var portalSelection: texture_2d<f32>;
 var portalPaint: texture_2d<f32>;
-var portalPreview: texture_2d<f32>;
 uniform portalSelectionTint: vec4f;
 uniform portalSelectionVisible: f32;
 uniform portalIsolate: f32;
@@ -54,12 +51,11 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
     let selected = textureLoad(portalSelection, vec2i(splat.uv), 0).r;
     (*color) = vec4f(mix((*color).rgb, uniform.portalSelectionTint.rgb, selected * uniform.portalSelectionTint.a * uniform.portalSelectionVisible * step(paint.a, 0.0)),
         (*color).a * mix(1.0, selected, uniform.portalIsolate) * textureLoad(portalScope, vec2i(splat.uv), 0).r);
-    let previewed = textureLoad(portalPreview, vec2i(splat.uv), 0).r;
-    (*color) = vec4f(mix((*color).rgb, vec3f(1.0), previewed * uniform.portalSelectionTint.a), (*color).a);
 }`
 };
 
 export class SplatSelection {
+  private surfacePicker: SplatSurfacePicker | null = null;
   private readonly scopeTexture: Texture;
   private scope: SelectionScope = null;
   private scopeCount: number | null = null;
@@ -109,7 +105,8 @@ export class SplatSelection {
     (this.scopeTexture.lock() as Uint8Array).fill(255); this.scopeTexture.unlock();
     component.setParameter("portalScope", this.scopeTexture);
     component.setParameter("portalPaint", this.paintTexture);
-    component.setParameter("portalPreview", this.previewTexture);
+    component.system.app.graphicsDevice.scope.resolve("portalHoverMask").setValue(this.previewTexture);
+    component.system.app.graphicsDevice.scope.resolve("portalHoverOpacity").setValue(0);
     component.setParameter("portalSelection", this.texture);
     component.setParameter("portalSelectionTint", new Float32Array([tint.r, tint.g, tint.b, tint.a]));
     component.setParameter("portalSelectionVisible", 1);
@@ -146,31 +143,10 @@ export class SplatSelection {
     return index !== null && index < this.mask.length && (!this.scope || this.scope[0]![index]) ? { part: 0, index } : null;
   }
 
-  // On CPU-sorted splats the engine's Picker cannot supply a depth pixel.
-  // Use the resource's already-resident centers for an on-demand ray query;
-  // this allocates no index, GPU buffer, or work during ordinary rendering.
-  pickRay(origin: Vec3, direction: Vec3): Vec3 | null { return this.surfaceHit(origin, direction)?.point ?? null; }
+  async pickRay(origin: Vec3, direction: Vec3) { return (await this.surfaceHit(origin, direction))?.point ?? null; }
   surfaceHit(origin: Vec3, direction: Vec3) {
-    const transform = this.component.entity.getWorldTransform();
-    const inverse = new Mat4().invert(transform);
-    const start = inverse.transformPoint(origin, new Vec3());
-    const forward = inverse.transformVector(direction, new Vec3()).normalize();
-    const retained = sectionTest(this.component.system.app, this.centers, transform);
-    const size = this.component.resource!.aabb.halfExtents.length() * 2;
-    const margin = Math.max(1e-5, size / Math.sqrt(this.mask.length));
-    let best = Infinity, candidate = -1;
-    for (let index = 0; index < this.mask.length; index++) {
-      if ((this.scope && !this.scope[0]![index]) || (this.isolated && !this.mask[index]) || (retained && !retained(index))) continue;
-      const offset = index * 3;
-      const x = this.centers[offset]! - start.x, y = this.centers[offset + 1]! - start.y, z = this.centers[offset + 2]! - start.z;
-      const depth = x * forward.x + y * forward.y + z * forward.z;
-      if (depth <= 0 || depth >= best) continue;
-      const radialSq = x * x + y * y + z * z - depth * depth;
-      const radius = margin + depth * .035; // 2° controller-pointing cone
-      if (radialSq <= radius * radius) { best = depth; candidate = offset; }
-    }
-    return candidate < 0 ? null : { part: 0, index: candidate / 3, point: transform.transformPoint(new Vec3(
-      this.centers[candidate]!, this.centers[candidate + 1]!, this.centers[candidate + 2]!), new Vec3()) };
+    this.surfacePicker ??= new SplatSurfacePicker(this.component.system.app, this.centers, this.component.entity);
+    return this.surfacePicker.pick(origin, direction, this.mask, this.isolated, this.scope?.[0] ?? null);
   }
 
   select(region: SelectionRegion, operation: SelectionOperation, camera: SelectionCamera, hits?: Uint8Array[]): SelectionSummary {
@@ -217,6 +193,9 @@ export class SplatSelection {
   previewArea(area: SelectionArea | null) {
     if (this.preview?.snapshot === area?.snapshot) return;
     this.preview = area;
+    const app = this.component.system.app;
+    app.graphicsDevice.scope.resolve("portalHoverOpacity").setValue(area ? selectionHoverOpacity : 0);
+    if (!area) { app.renderNextFrame = true; return; }
     const pixels = this.previewTexture.lock() as Uint8Array;
     pixels.fill(0);
     const mask = area?.snapshot.masks[0];
@@ -224,7 +203,7 @@ export class SplatSelection {
       if ((!this.scope || this.scope[0]![index]) && (mask.bits[index >> 3]! & (1 << (index & 7)))) pixels[index] = 255;
     }
     this.previewTexture.unlock();
-    this.component.workBufferUpdate = WORKBUFFER_UPDATE_ONCE;
+    app.renderNextFrame = true;
   }
   renameArea(id: number, name: string): SelectionSummary {
     const value = name.trim();
@@ -268,6 +247,7 @@ export class SplatSelection {
     return bounds.value;
   }
   private update() {
+    this.surfacePicker?.invalidate();
     this.picker?.invalidate();
     const selection = this.texture.lock() as Uint8Array;
     selection.set(this.isolated ? this.mask : visibleSelections(this.selectionAreas, [this.mask.length])[0]!);
@@ -298,7 +278,9 @@ export class SplatSelection {
   destroy() {
     if (this.disposed) return;
     this.disposed = true;
-    this.picker?.destroy(); this.releasePicking();
+    this.component.system.app.graphicsDevice.scope.resolve("portalHoverOpacity").setValue(0);
+    this.component.system.app.graphicsDevice.scope.resolve("portalHoverMask").setValue(null);
+    this.surfacePicker?.destroy(); this.picker?.destroy(); this.releasePicking();
     this.component.setWorkBufferModifier(null);
     for (const name of ["portalScope", "portalSelection", "portalSelectionTint", "portalSelectionVisible", "portalIsolate", "portalPaint", "portalPreview"]) this.component.deleteParameter(name);
     this.scopeTexture.destroy(); this.texture.destroy(); this.paintTexture.destroy(); this.previewTexture.destroy();

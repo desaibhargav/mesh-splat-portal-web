@@ -1,9 +1,10 @@
 import { Vec3 } from "playcanvas";
+import { selectionsEqual } from "../selection/selectionSnapshot";
 import type { SelectionSnapshot } from "../selection/types";
 
 export interface AnnotationRecord {
   id: number; title: string; text: string; position: Vec3; region: SelectionSnapshot | null;
-  color?: string | null; visible: boolean;
+  selectionId?: number; color?: string | null; visible: boolean;
 }
 export type AnnotationDraft = Omit<AnnotationRecord, "id" | "position" | "visible"> & {
   id?: number; position: Vec3 | null; visible?: boolean;
@@ -22,6 +23,11 @@ export class Annotations {
     this.change(draft.id === undefined ? [...this.records, record] : this.records.map(item => item.id === record.id ? record : item));
   }
   remove(id: number) { this.change(this.records.filter(item => item.id !== id)); }
+  removeForSelection(id: number, region: SelectionSnapshot) {
+    const next = this.records.filter(record => record.selectionId !== id &&
+      !(record.selectionId === undefined && record.region && selectionsEqual(record.region, region)));
+    if (next.length !== this.records.length) this.change(next);
+  }
   rename(id: number, title: string) {
     const value = title.trim();
     if (value && this.records.find(record => record.id === id)?.title !== value) {

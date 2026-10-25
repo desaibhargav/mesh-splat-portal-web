@@ -58,7 +58,7 @@ export class ImmersiveTools {
     this.tool = ["measure", "select", "annotate"].includes(tool) ? tool : "navigate";
     this.editing.setTool(this.tool);
     this.armed = this.tool === "measure"; this.moving = null; this.selectedId = null; this.message = "";
-    this.pointPreview.set(null); this.refresh();
+    this.pointPreview.set(null); this.commit();
   }
   open() { this.refresh(); }
   private current() { return this.measurement().records.find(record => record.id === this.selectedId); }
@@ -107,6 +107,7 @@ export class ImmersiveTools {
   private previewPoint() {
     const source = this.handle.app.xr?.input.inputSources.find(input => input.handedness === "right" && !input.hand);
     if (source) this.editing.hover(this.isMenuTargeted ? null : this.input.hit(source), this.isMenuTargeted ? undefined : source);
+    if (this.tool === "select" && this.editing.startPoint) { this.pointPreview.set(this.editing.startPoint); return; }
     if (this.tool === "annotate" && this.editing.draft?.position && this.editing.step === "details") {
       this.pointPreview.set(this.editing.draft.position); return;
     }
@@ -120,7 +121,7 @@ export class ImmersiveTools {
   }
   private async selectEnd(source: XrInputSource) {
     if (source.handedness !== "right") return;
-    if (this.editing.drawing) { await this.editing.end(); return; }
+    if (this.editing.drawing || this.editing.starting) { await this.editing.end(); return; }
     const tapped = this.tapping && !this.dragged && this.tapOrigin.distance(source.getPosition() ?? source.getOrigin()) < .02;
     this.tapping = false; this.dragged = false;
     if (this.tool === "annotate") {
