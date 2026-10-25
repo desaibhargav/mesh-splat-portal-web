@@ -133,7 +133,9 @@ export class SplatSelection {
   async hitTest(app: AppBase, camera: CameraComponent, region: SelectionRegion): Promise<Uint8Array[]> {
     const matrix = new Mat4().mul2(camera.projectionMatrix, camera.viewMatrix).mul(this.component.entity.getWorldTransform());
     const depth = await captureDepth(app, camera, this.layers.map(id => app.scene.layers.getLayerById(id)!)), hits = new Uint8Array(this.mask.length);
-    projectSelection(this.centers, hits, matrix.data, region, "set", false, depthTest(depth));
+    const visible = depthTest(depth), retained = sectionTest(app, this.centers, this.component.entity.getWorldTransform());
+    projectSelection(this.centers, hits, matrix.data, region, "set", false,
+      (id, u, v, w, z) => (!retained || retained(id)) && visible(id, u, v, w, z));
     constrainMask(hits, this.scope?.[0]);
     return [hits];
   }
@@ -147,7 +149,8 @@ export class SplatSelection {
   // On CPU-sorted splats the engine's Picker cannot supply a depth pixel.
   // Use the resource's already-resident centers for an on-demand ray query;
   // this allocates no index, GPU buffer, or work during ordinary rendering.
-  pickRay(origin: Vec3, direction: Vec3): Vec3 | null {
+  pickRay(origin: Vec3, direction: Vec3): Vec3 | null { return this.surfaceHit(origin, direction)?.point ?? null; }
+  surfaceHit(origin: Vec3, direction: Vec3) {
     const transform = this.component.entity.getWorldTransform();
     const inverse = new Mat4().invert(transform);
     const start = inverse.transformPoint(origin, new Vec3());
@@ -166,8 +169,8 @@ export class SplatSelection {
       const radius = margin + depth * .035; // 2° controller-pointing cone
       if (radialSq <= radius * radius) { best = depth; candidate = offset; }
     }
-    return candidate < 0 ? null : transform.transformPoint(new Vec3(
-      this.centers[candidate]!, this.centers[candidate + 1]!, this.centers[candidate + 2]!), new Vec3());
+    return candidate < 0 ? null : { part: 0, index: candidate / 3, point: transform.transformPoint(new Vec3(
+      this.centers[candidate]!, this.centers[candidate + 1]!, this.centers[candidate + 2]!), new Vec3()) };
   }
 
   select(region: SelectionRegion, operation: SelectionOperation, camera: SelectionCamera, hits?: Uint8Array[]): SelectionSummary {

@@ -68,6 +68,14 @@ function WorkspaceTools({ handle, tool, onToolChange, disabled, captureName, wor
   const [, refreshDocument] = useState(0);
   const generation = useRef(0);
   const toolbar = useRef<HTMLDivElement>(null);
+  // XR operates on the same controller without going through React setters.
+  // Keep desktop counts/actions in sync when a shared document edit arrives.
+  useEffect(() => {
+    if (!workspaces || !handle) return;
+    const changed = () => setSummary(handle.selection.summary);
+    workspaces.on("change", changed);
+    return () => { workspaces.off("change", changed); };
+  }, [workspaces, handle]);
   const history = workspaces?.history;
   const measurement = document?.measurement;
   const annotations = document?.annotations;

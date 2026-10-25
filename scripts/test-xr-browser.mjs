@@ -142,7 +142,7 @@ try {
     }), "Larger horizontal turn did not gently recenter a level toolbar");
     await page.evaluate(()=>window.xrDevice.quaternion.set(0,0,0,1));
     for (let i=0;i<40;i++) await settle(h);
-    await clickToolbar(h,81);
+    await clickToolbar(h,130);
     // Known source-plane coordinates plus nontrivial presentation scale/rotation/pan.
     await h.evaluate(h=> {
       const root=h.app.root.findByName("Immersive artifact"), Vec3=root.getPosition().constructor;
@@ -213,6 +213,149 @@ try {
     await page.waitForFunction(()=>document.querySelector('.viewer-frame')?.dataset.immersive==="false");
     console.log("PASS known surface: desktop/XR preview and clicks, transformed endpoints/line, no extra scene camera, level toolbar dead zone/follow");
   }
+  async function editingRegression(h, id) {
+    const workspace = () => page.evaluateHandle(() => {
+      const node=document.querySelector('.selection-toolbar'); let f=node[Object.keys(node).find(k=>k.startsWith('__reactFiber$'))];
+      while(f&&!f.memoizedProps?.workspaces)f=f.return; return f.memoizedProps.workspaces;
+    });
+    const ws=await workspace();
+    const menu=await h.evaluateHandle(h=>h.app.xr.input._callbacks.get('selectstart').find(c=>c.scope?.editing)?.scope);
+    const input=await h.evaluateHandle(h=>h.app._callbacks.get('prerender').find(c=>c.scope?.pointers&&c.scope?.hits)?.scope);
+    const move = async point => {
+      await page.evaluate(()=>{const c=window.xrDevice.controllers.right;c.position.set(0,0,0);c.quaternion.set(0,0,0,1);}); await settle(h);
+      const offset=await h.evaluate(h=>h.app.xr.input.inputSources.find(s=>s.handedness==='right').getOrigin().toArray());
+      await page.evaluate(p=>window.xrDevice.controllers.right.position.set(...p),point.map((v,i)=>v-offset[i])); await settle(h);
+    };
+    const tap=async()=>{
+      await page.evaluate(()=>window.xrDevice.controllers.right.updateButtonValue('trigger',1)); await settle(h);
+      await page.evaluate(()=>window.xrDevice.controllers.right.updateButtonValue('trigger',0)); await settle(h);
+    };
+    const control = async (name,label,click=true) => {
+      const target=await h.evaluate((h,name,label)=> {
+        const e=h.app.root.findByName(name), p=e.element._callbacks.get('click')[0].scope;
+        const c=p.controls.find(c=>c.label===label); if(!c)throw Error('Missing control '+label+' in '+p.controls.map(c=>c.label));
+        const corners=e.element.worldCorners,u=(c.x+c.width/2)/e.element.width,v=1-(c.y+c.height/2)/e.element.height;
+        return [corners[0].x+(corners[1].x-corners[0].x)*u+(corners[3].x-corners[0].x)*v,
+          corners[0].y+(corners[1].y-corners[0].y)*u+(corners[3].y-corners[0].y)*v,corners[0].z+.2];
+      },name,label);
+      await move(target);
+      const feedback=await h.evaluate((h,name,label)=>{
+        const e=h.app.root.findByName(name), p=e.element._callbacks.get('click')[0].scope;
+        const input=h.app._callbacks.get('prerender').find(c=>c.scope?.pointers&&c.scope?.hits).scope;
+        const source=h.app.xr.input.inputSources.find(s=>s.handedness==='right');
+        const tip=Array.from(input.pointers.get(source).positions).slice(3);
+        const c=p.controls.find(c=>c.label===label), pixel=p.context.getImageData(Math.round((c.x+1)*2),Math.round((c.y+c.height/2)*2),1,1).data;
+        return {hover:p.isHovered(label),pixel:Array.from(pixel),tip,plane:e.element.worldCorners[0].z};
+      },name,label);
+      check(feedback.hover, 'No hover feedback on '+label);
+      check(feedback.pixel[0]>190&&feedback.pixel[1]>150&&feedback.pixel[2]<160,'Hovered control border was not visibly highlighted: '+label+' '+feedback.pixel);
+      check(Math.abs(feedback.tip[2]-feedback.plane)<.002,'Controller ray crossed UI '+label+': '+JSON.stringify(feedback));
+      if(click) await tap();
+    };
+    const options='XR measurement options';
+    const type=async label=>{for(const key of label) await control('XR text keyboard',key); await control('XR text keyboard','Done');};
+    await control('XR tool bar','Select');
+    check(await menu.evaluate(m=>m.currentTool==='select'),'Selection toolbar did not activate');
+    await control(options,'Brush');
+    const bounds=await h.evaluate(h=>{const b=h.selection.bounds(null);return {center:b.center.toArray(),radius:b.halfExtents.length(),front:b.getMax().z};});
+    let aim=null;
+    for(const x of [0,-.1,.1,-.2,.2]) {
+      const point=[bounds.center[0]+x,bounds.center[1],bounds.front+.3]; await move(point);
+      await page.waitForFunction(input=>[...input.hits.values()].every(s=>!s.pending),{timeout:20000},input);
+      const hit=await input.evaluate(i=>{const s=[...i.hits.keys()].find(s=>s.handedness==='right'); return i.hit(s)?.point.toArray();});
+      if(hit){aim=point;break;}
+    }
+    check(aim,'No surface found for selection stroke');
+    check(await input.evaluate(i=>{
+      const source=[...i.hits.keys()].find(s=>s.handedness==='right'),hit=i.hit(source),tip=i.pointers.get(source).positions;
+      const world=i.handle.space.toWorld(hit.point);return Math.hypot(tip[3]-world.x,tip[4]-world.y,tip[5]-world.z)<.002;
+    }),'Controller ray did not stop at its surface hit');
+    await page.evaluate(()=>window.xrDevice.controllers.right.updateButtonValue('trigger',1)); await settle(h);
+    await page.evaluate(()=>window.xrDevice.controllers.right.position.x+=.04); await settle(h);
+    await page.evaluate(()=>window.xrDevice.controllers.right.updateButtonValue('trigger',0)); await settle(h);
+    await page.waitForFunction(h=>h.selection.summary.selected>0,{timeout:30000},h);
+    await page.waitForFunction(menu=>!menu.editing.busy,{},menu);
+    console.log('XR selected',id,await h.evaluate(h=>h.selection.summary.selected));
+    if(process.env.XR_EDITING_SECTION && id==='sakura-garden') {
+      check(await h.evaluate(h=>{
+        const selection=h.selection, plane=h.app.graphicsDevice.scope.resolve('portalSectionPlane').getValue();
+        const V=h.app.root.getPosition().constructor, point=new V(),transform=selection.component.entity.getWorldTransform();
+        return selection.state.masks[0].every((chosen,i)=>{
+          if(!chosen)return true;
+          point.set(selection.centers[i*3],selection.centers[i*3+1],selection.centers[i*3+2]);transform.transformPoint(point,point);
+          return point.x*plane[0]+point.y*plane[1]+point.z*plane[2]+plane[3]>=-1e-6;
+        });
+      }),'Sectioned selection included removed splats');
+    }
+    await control(options,'Selection name'); await type('region'); await control(options,'Save selection');
+    check(await h.evaluate(h=>h.selection.areas.some(a=>a.saved&&a.name==='region')),'XR selection not saved');
+    await control(options,'Blue');
+    const saved=await h.evaluate(h=>h.selection.areas.filter(a=>a.saved).length);
+    await control(options,'Isolate'); check(await h.evaluate(h=>h.selection.summary.isolated),'XR isolate failed');
+    await control(options,'Show all');
+    await control('XR tool bar','Annotate'); await control(options,'Annotate a selection');
+    await move(aim); await settle(h);
+    check(await menu.evaluate(m=>m.editing.message.startsWith('Click ')),'XR saved region did not highlight');
+    await page.screenshot({path:path.join(output,`${id}-xr-region-hover.png`)});
+    await tap(); check(await menu.evaluate(m=>m.editing.step==='marker'),'Selection annotation did not advance to marker');
+    await tap(); check(await menu.evaluate(m=>m.editing.step==='details'),'Selection annotation did not advance to details');
+    await control(options,'Title'); await type('note');
+    await control(options,'Description'); await type('surface'); await control(options,'Save annotation');
+    check(await ws.evaluate(ws=>ws.current.annotations.records.length===1&&ws.current.annotations.records[0].region),'XR region annotation was not saved');
+    await move(aim); await settle(h);
+    check(await h.evaluate(h=>h.app.root.findByName('XR annotation description')?.parent.enabled),'XR annotated-region hover omitted description');
+    await page.screenshot({path:path.join(output,`${id}-xr-annotated-selection.png`)});
+    await control(options,'note'); await control(options,'Title'); await type('x'); await control(options,'Save annotation');
+    check(await ws.evaluate(ws=>ws.current.annotations.records[0].title==='notex'),'XR annotation editing failed');
+    await control(options,'New annotation'); await control(options,'Annotate with a point'); await move(aim); await tap();
+    await control(options,'Title'); await type('point'); await control(options,'Save annotation');
+    check(await ws.evaluate(ws=>ws.current.annotations.records.length===2),'XR point annotation failed');
+    await control(options,'point'); await control(options,'Move annotation 2');
+    await control(options,'Collapse tool options');
+    const marker=await ws.evaluate(ws=>ws.current.annotations.records[1].position.toArray());
+    const markerWorld=await h.evaluate((h,p)=>{const V=h.app.root.getPosition().constructor;return h.space.toWorld(new V(...p)).toArray();},marker);
+    await move([markerWorld[0],markerWorld[1],bounds.front+.3]);
+    await page.evaluate(()=>window.xrDevice.controllers.right.updateButtonValue('trigger',1)); await settle(h);
+    check(await menu.evaluate(m=>m.editing.dragging),'XR marker did not grab under trigger');
+    await page.evaluate(()=>window.xrDevice.controllers.right.position.x+=.03); await settle(h);
+    await page.evaluate(()=>window.xrDevice.controllers.right.updateButtonValue('trigger',0)); await settle(h);
+    await page.waitForFunction(menu=>!menu.editing.busy,{},menu);
+    check(await menu.evaluate(m=>m.editing.step==='details'),'XR marker drag failed to finish');
+    await control(options,'Expand tool options'); await control(options,'Save annotation');
+    check(await ws.evaluate((ws,p)=>ws.current.annotations.records[1].position.distance({x:p[0],y:p[1],z:p[2]})>1e-4,marker),'XR annotation marker did not move');
+    await control(options,'Collapse tool options'); await control(options,'Expand tool options');
+    await control('XR tool bar','Navigate (Q)');
+    check(await h.evaluate((h,count)=>h.selection.areas.filter(a=>a.saved).length===count,saved),'Navigate removed saved selection');
+    await control('XR tool bar','Select'); await control(options,'region');
+    await control(options,'Clear Selection');
+    check(await h.evaluate(h=>h.selection.summary.selected===0),'XR clear selection failed');
+    // Other selection shapes use the same rasterizer and shared controller.
+    for (const shape of ['Box','Lasso']) {
+      await control(options,shape);
+      await move([aim[0]-.06,aim[1]+.06,aim[2]]);
+      await page.evaluate(()=>window.xrDevice.controllers.right.updateButtonValue('trigger',1)); await settle(h);
+      for(const [x,y] of (shape==='Box' ? [[.12,-.12]] : [[.12,0],[0,-.12],[-.12,0]])) {
+        await page.evaluate(([x,y])=>{window.xrDevice.controllers.right.position.x+=x;window.xrDevice.controllers.right.position.y+=y;},[x,y]); await settle(h);
+      }
+      await page.evaluate(()=>window.xrDevice.controllers.right.updateButtonValue('trigger',0)); await settle(h);
+      await page.waitForFunction(menu=>!menu.editing.busy,{},menu);
+      check(await h.evaluate(h=>h.selection.summary.selected>0),shape+' XR gesture selected nothing');
+      await control(options,'Clear Selection');
+    }
+    const idle=await input.evaluate(i=>[...i.hits.values()].map(s=>s.time));
+    for(let i=0;i<5;i++)await settle(h);
+    check(await input.evaluate((i,times)=>[...i.hits.values()].every((s,j)=>s.time===times[j]),idle),'Stationary controllers kept issuing surface queries');
+    await control(options,'region');
+    const restoredCount=await h.evaluate(h=>h.selection.summary.selected);
+    await h.evaluate(h=>new Promise(resolve=>h.app.xr.end(resolve))); await settle(h);
+    await page.waitForSelector('.selection-options');
+    check(await page.$eval('.selection-toolbar [role="status"]',(e,n)=>e.textContent.startsWith(n.toLocaleString()+' /'),restoredCount),'Desktop selection summary did not synchronize from XR');
+    await page.click('[aria-label="Annotate"]');
+    check(await page.$eval('.annotation-list',e=>e.textContent.includes('notex')&&e.textContent.includes('point')),'XR notes missing on desktop');
+    await page.screenshot({path:path.join(output,`${id}-xr-editing-back-on-desktop.png`)});
+    console.log('PASS',id,'ray clipping, hover, select/save/paint/isolate → annotation, point annotation/edit/collapse, desktop sharing');
+  }
+
   async function manipulate(h, id, type) {
     await page.waitForFunction(h => h.app.root.findByName("XR controller left")?.findComponents("render").length &&
       h.app.root.findByName("XR controller right")?.findComponents("render").length, {timeout:45000}, h);
@@ -318,6 +461,25 @@ try {
     }), "Compact bottom VR/AR controls did not replace the instructions and four-view button");
     await page.$eval(".viewer-frame", element => element.scrollIntoView());
     const h = await handle();
+    if (process.env.XR_EDITING_ONLY) {
+      if(process.env.XR_EDITING_SECTION && id!=='surface-fixture') {
+        await page.click('[aria-label="Cross section"]');
+        await page.locator('.section-buttons button ::-p-text(Enable section)').click();
+        await page.locator('[aria-label="Section name"]').fill('Editing cut');
+        await page.locator('.section-options button ::-p-text(Save section)').click();
+        await page.keyboard.press('q');
+      }
+      await page.click(process.env.XR_EDITING_AR ? '[aria-label="View in your room"]' : '[aria-label="View in VR"]');
+      await page.waitForFunction(()=>document.querySelector('.viewer-frame')?.dataset.immersive==='true'); await settle(h);
+      if(process.env.XR_EDITING_AR) {
+        await page.evaluate(()=>{const c=window.xrDevice.controllers.right;c.position.set(.3,1.3,-.5);c.quaternion.set(-Math.sin(7*Math.PI/36),0,0,Math.cos(7*Math.PI/36));});
+        await page.waitForFunction(h=>h.app.root.findByName('AR placement target')?.enabled,{timeout:15000},h);
+        await page.evaluate(()=>window.xrDevice.controllers.right.updateButtonValue('trigger',1));
+        await page.waitForFunction(h=>h.app.root.findByName('Immersive artifact')?.enabled,{timeout:15000},h);
+        await page.evaluate(()=>window.xrDevice.controllers.right.updateButtonValue('trigger',0)); await settle(h);
+      }
+      await editingRegression(h,id); continue;
+    }
     if (id === "surface-fixture") { await surfaceRegression(h); continue; }
     const desktopCamera = () => h.evaluate(h => ({
       position: h.camera().entity.getPosition().toArray(),
@@ -405,7 +567,7 @@ try {
         check(await h.evaluate(h => h.app.root.findByName("XR tool bar")?.parent.enabled),
           "XR toolbar did not appear when entering from Navigate");
         if (type === "immersive-ar") {
-          await clickToolbar(h, 81);
+          await clickToolbar(h, 130);
           check(await h.evaluate(h=>h.app.root.findByName("XR measurement options").parent.enabled), "AR measurement icon did not open options");
           if (!split) await page.screenshot({path:path.join(output, `${id}-ar-measurement-options.png`)});
           await clickToolbar(h, 32);
@@ -539,7 +701,7 @@ try {
         }))));
       await tap();
     };
-    await panelClick("XR tool bar", 81, 25);
+    await panelClick("XR tool bar", 130, 25);
     check(await h.evaluate(h => h.app.root.findByName("XR measurement options").parent.enabled), "Measurement icon did not open options: "+JSON.stringify(await h.evaluate(h=> {
       const element=h.app.root.findByName("XR tool bar").element;
       const panel=element._callbacks.get("click")[0].scope;
@@ -667,7 +829,7 @@ try {
     await panelClick("XR tool bar", 32, 25);
     check(await h.evaluate(h => !h.app.root.findByName("XR measurement options").parent.enabled), "Navigate left Measurement options open");
     check((await measurementRecords()).at(-1)?.saved, "Navigate removed the saved measurement");
-    await panelClick("XR tool bar", 81, 25);
+    await panelClick("XR tool bar", 130, 25);
     for (const [dx, dy] of candidates) {
       await aim(dx,dy);
       if ((await measurementRecords()).some(record=>!record.saved)) break;
@@ -684,7 +846,7 @@ try {
     await page.waitForFunction(() => document.querySelector('.viewer-frame')?.dataset.immersive === "true");
     await settle(h);
     check(await h.evaluate(h=>!h.app.root.findByName("XR measurement options").parent.enabled), "Repeated entry reopened Measurement");
-    await panelClick("XR tool bar", 81, 25);
+    await panelClick("XR tool bar", 130, 25);
     await panelClick("XR measurement options", 246, 44);
     check((await measurementRecords()).length === 0, "XR saved-list delete did not remove the shared measurement");
     await h.evaluate(async h => { await new Promise(resolve=>h.app.xr.end(resolve)); });

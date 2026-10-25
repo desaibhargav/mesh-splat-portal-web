@@ -81,6 +81,8 @@ it("picks the exact transformed surface and ignores cut or hidden foreground fac
   const origin = new Vector3(0, 0, 2).applyMatrix4(model), direction = new Vector3(0, 0, -1).transformDirection(model);
   const input = { origin: origin.toArray(), direction: direction.toArray(), section: null as number[] | null,
     parts: parts.map(() => ({ model: model.toArray(), side: 2 as const })) };
+  expect(bvh.surfaceHit(input, [null, null])).toMatchObject({ part: 1 });
+  expect(bvh.surfaceHit(input, [null, new Uint8Array(2)])).toMatchObject({ part: 0, index: 0 });
   const front = new Vector3(0, 0, .2).applyMatrix4(model);
   expect(new Vector3().fromArray(bvh.raycast(input, [null, null])!).distanceTo(front)).toBeLessThan(1e-6);
   const back = new Vector3(0, 0, 0).applyMatrix4(model);

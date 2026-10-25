@@ -30,11 +30,11 @@ export class SpatialPanel {
 
   constructor(private readonly app: AppBase, name: string, private readonly width: number,
     private readonly position: Vec3, parent: Entity, private readonly redraw: () => void,
-    private readonly bottomAnchored = false) {
+    private readonly bottomAnchored = false, priority = 0) {
     this.entity = new Entity(name);
     parent.addChild(this.screen);
     this.screen.setLocalPosition(position);
-    this.screen.addComponent("screen", { screenSpace: false, referenceResolution: [1000, 1000] });
+    this.screen.addComponent("screen", { screenSpace: false, referenceResolution: [1000, 1000], priority });
     this.screen.setLocalScale(.0012, .0012, .0012);
     this.screen.addChild(this.entity);
     this.texture = new Texture(app.graphicsDevice, { name, format: PIXELFORMAT_RGBA8, srgb: true, mipmaps: false,
@@ -64,6 +64,12 @@ export class SpatialPanel {
     return this.context;
   }
   finish() {
+    const hovered = this.controls.find(control => control.label === this.hovered);
+    if (hovered) {
+      const ctx = this.context; ctx.save(); ctx.strokeStyle = "#dbc17b"; ctx.lineWidth = 2;
+      ctx.shadowColor = "#dbc17b"; ctx.shadowBlur = 6;
+      ctx.strokeRect(hovered.x + 1, hovered.y + 1, hovered.width - 2, hovered.height - 2); ctx.restore();
+    }
     this.texture.resize(this.canvas.width, this.canvas.height);
     this.texture.setSource(this.canvas); this.app.renderNextFrame = true;
   }
@@ -100,10 +106,12 @@ export class SpatialPanel {
       (point.y - control.y) / control.height : (point.x - control.x) / control.width)));
   }
   private start(event: ElementSelectEvent) {
+    if (event.inputSource.handedness !== "right") return;
     const control = this.hit(event);
     if (control?.drag) { this.dragging = control.label; this.apply(control, event); }
   }
   private move(event: ElementSelectEvent) {
+    if (event.inputSource.handedness !== "right") return;
     if (this.dragging) {
       const control = this.controls.find(item => item.label === this.dragging);
       if (control) this.apply(control, event);
@@ -111,12 +119,13 @@ export class SpatialPanel {
     const hovered = this.hit(event)?.label ?? null;
     if (hovered !== this.hovered) { this.hovered = hovered; this.redraw(); }
   }
-  private end() { this.dragging = null; }
+  private end(event: ElementSelectEvent) { if (event.inputSource.handedness === "right") this.dragging = null; }
   private click(event: ElementSelectEvent) {
+    if (event.inputSource.handedness !== "right") return;
     const control = this.hit(event);
     if (control && !control.drag) this.apply(control, event);
   }
-  private leave() { if (this.hovered) { this.hovered = null; this.redraw(); } }
+  private leave(event: ElementSelectEvent) { if (event.inputSource.handedness !== "right") return; if (this.hovered) { this.hovered = null; this.redraw(); } }
   destroy() { this.screen.destroy(); this.texture.destroy(); }
 }
 

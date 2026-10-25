@@ -228,3 +228,9 @@ a { color: #536d7d; }
   .workspace-banner { top: calc(54px + var(--selection-toolbar-height) + 130px); right: 12px; transform: none; }
   .viewer-frame:has(.workspace-banner) .annotation-panels { max-height: calc(100% - var(--selection-toolbar-height) - 54px - 130px - 12px - 43px - 70px); }
 }
+
+/* Shared interactive feedback: border/light lift, without moving hit targets. */
+.viewer-frame :is(button, input, textarea, select):not(:disabled):hover {
+  border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold), 0 2px 7px #0005;
+  filter: brightness(1.12);
+}

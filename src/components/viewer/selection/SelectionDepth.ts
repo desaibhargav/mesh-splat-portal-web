@@ -22,14 +22,27 @@ export async function captureDepth(app: AppBase, camera: CameraComponent, layers
     pass.destroy(); target.destroy(); color.destroy(); depth.destroy();
   };
   app.on("destroy", release);
+  // Engine 2.21's CPU-sorted unified splat mesh is camera-bound and its
+  // prepareForPicking only supports GPU sorting. For an XR controller view,
+  // replay the resident headset mesh in the native depth pass. Depth testing
+  // is independent of transparency sort order; no second sort/buffer is needed.
+  const headset = app.xr?.active ? app.xr.camera?.camera : null;
+  const replay = headset && camera !== headset && !device.isWebGPU ? layers.flatMap(layer => layer.meshInstances)
+    .filter(instance => instance.isVisibleFunc?.(headset.camera)).map(instance => ({ instance, visible: instance.isVisibleFunc! })) : [];
   try {
     pass.init(target); pass.setClearColor(Color.WHITE); pass.depthStencilOps.clearDepth = true;
-    pass.update(camera, app.scene, layers, new Map(), true);
-    renderPickView(camera, () => pass.render());
+    try {
+      for (const { instance, visible } of replay) instance.isVisibleFunc = (query: CameraComponent["camera"]) => query === camera.camera || visible(query);
+      renderPickView(camera, () => {
+        pass.update(camera, app.scene, layers, new Map(), true); pass.render();
+      });
+    } finally { for (const { instance, visible } of replay) instance.isVisibleFunc = visible; }
     const pixels = await depth.read(0, 0, width, height, { immediate: true });
     if (disposed) throw new Error("Viewer closed during selection.");
     return { values: decodeDepth(pixels as Uint8Array, width, height, !device.isWebGPU), width, height, near, far, orthographic };
-  } finally { app.off("destroy", release); release(); }
+  } finally {
+    app.off("destroy", release); release();
+  }
 }
 
 export function depthTest(depth: DepthImage): VisibilityTest {

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { rasterizeGesture } from "./rasterizeGesture";
 import { brushDiameter } from "./brushDiameter";
 import { rectangleBetween, selectionOperation, type Point, type SelectionOperation } from "./rectangle";
 import type { SelectionHandle, SelectionRegion, SelectionShape } from "./types";
@@ -66,23 +67,11 @@ export function SelectionGesture({ handle, tool, brushSize, onSelect }: {
       if (drag?.id !== event.pointerId) return;
       event.preventDefault(); event.stopImmediatePropagation();
       const path = [...drag.points, point(event)];
-      const bitmap = document.createElement("canvas"), bounds = canvas.getBoundingClientRect();
-      bitmap.width = Math.ceil(bounds.width); bitmap.height = Math.ceil(bounds.height);
-      const context = bitmap.getContext("2d")!;
-      context.fillStyle = "white"; context.strokeStyle = "white";
-      if (tool === "rectangle") {
-        const rectangle = rectangleBetween(path[0]!, path.at(-1)!);
-        context.fillRect(rectangle.start.x, rectangle.start.y, rectangle.end.x - rectangle.start.x, rectangle.end.y - rectangle.start.y);
-      } else {
-        context.beginPath(); context.moveTo(path[0]!.x, path[0]!.y);
-        for (const p of path.slice(1)) context.lineTo(p.x, p.y);
-        if (tool === "lasso") { context.closePath(); context.fill("evenodd"); }
-        else { context.lineWidth = brushPixels; context.lineCap = "round"; context.lineJoin = "round"; context.stroke(); }
-      }
       const r = drag.rect;
-      const pixels = context.getImageData(r.left, r.top, r.width, r.height).data;
+      const region = rasterizeGesture(tool, path.map(p => ({ x: p.x - r.left, y: p.y - r.top })),
+        r.width, r.height, brushPixels);
       reset();
-      onSelect({ pixels, width: r.width, height: r.height }, selectionOperation(event));
+      onSelect(region, selectionOperation(event));
     }
     function wheel(event: WheelEvent) {
       if (drag) { event.preventDefault(); event.stopImmediatePropagation(); }

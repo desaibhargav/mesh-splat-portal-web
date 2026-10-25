@@ -120,8 +120,9 @@ export class MeshPicker {
         camera.calculateProjection = target => target.copy(projection);
       }
       camera.layers = [...layers, this.layer.id];
-      this.pass.update(camera, this.app.scene, [this.layer], new Map(), false);
-      renderPickView(camera, () => this.pass.render());
+      renderPickView(camera, () => {
+        this.pass.update(camera, this.app.scene, [this.layer], new Map(), false); this.pass.render();
+      });
     } finally { camera.layers = layers; camera.calculateProjection = calculateProjection; }
     this.signature = signature;
   }

@@ -123,7 +123,7 @@ export function AnnotationControls({ handle, annotations, active, interactive, h
   const hasSelections = handle.selection.areas.some(area => area.visible);
 
   return <>
-    {displayedAnnotations.length > 0 && <AnnotationLayer handle={handle} records={displayedAnnotations}
+    {<AnnotationLayer handle={handle} records={displayedAnnotations}
       interactive={interactive && !choosing} hoverRegions={hoverRegions && !choosing}
       movingId={step === "drag" ? draft?.id ?? 0 : null} onMove={finishMove} />}
     {active && <div className="annotation-panels">

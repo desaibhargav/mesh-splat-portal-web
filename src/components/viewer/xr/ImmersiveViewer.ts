@@ -8,7 +8,7 @@ import { ImmersiveScene } from "./ImmersiveScene";
 import { ImmersiveInput } from "./ImmersiveInput";
 import { ImmersivePlacement } from "./ImmersivePlacement";
 import { ImmersiveGestures } from "./ImmersiveGestures";
-import { ImmersiveMeasurement } from "./ImmersiveMeasurement";
+import { ImmersiveTools } from "./ImmersiveTools";
 import { measurementAppearance } from "../measurement/measurementAppearance";
 type ImmersiveType = typeof XRTYPE_AR | typeof XRTYPE_VR;
 
@@ -25,7 +25,7 @@ export class ImmersiveViewer extends EventHandler {
   private restore: (() => void) | null = null;
   private readonly camera;
   private readonly xr;
-  private measurementMenu: ImmersiveMeasurement | null = null;
+  private toolMenu: ImmersiveTools | null = null;
 
   constructor(private readonly handle: SelectionHandle, private readonly workspaces: SegmentWorkspaces,
     private tool: SelectionTool, private readonly changeTool: (tool: SelectionTool) => void) {
@@ -42,7 +42,7 @@ export class ImmersiveViewer extends EventHandler {
 
   setTool(tool: SelectionTool) {
     this.tool = tool;
-    this.measurementMenu?.setTool(tool);
+    this.toolMenu?.setTool(tool);
   }
 
   start(type: ImmersiveType) {
@@ -62,11 +62,11 @@ export class ImmersiveViewer extends EventHandler {
     app.root.addChild(rig);
     const scene = new ImmersiveScene(this.handle, bounds);
     this.activeScene = scene;
-    const input = new ImmersiveInput(app, rig, scene.root);
+    const input = new ImmersiveInput(app, rig, scene.root, this.handle);
     const placement = type === XRTYPE_AR ? new ImmersivePlacement(app, scene, camera.entity) : null;
-    const menu = new ImmersiveMeasurement(this.handle, () => this.workspaces.current.measurement,
-      () => this.workspaces.fire("change"), () => !placement || placement.placed);
-    this.measurementMenu = menu;
+    const menu = new ImmersiveTools(this.handle, () => this.workspaces.current.measurement,
+      () => this.workspaces.fire("change"), () => !placement || placement.placed, input, this.workspaces);
+    this.toolMenu = menu;
     const gestures = new ImmersiveGestures(app, camera.entity, scene, () => !placement || placement.placed,
       () => menu.blocksPan, () => menu.isArmed);
     const place = () => { if (type === XRTYPE_VR) scene.place(camera.entity); };
@@ -77,7 +77,7 @@ export class ImmersiveViewer extends EventHandler {
       recallFrame(camera, frame); cameraControls(camera).enabled = enabled;
       app.renderNextFrame = true;
       app.graphicsDevice.setResolution(width, height);
-      gestures.destroy(); menu.destroy(); this.measurementMenu = null;
+      gestures.destroy(); menu.destroy(); this.toolMenu = null;
       placement?.destroy(); input.destroy(); scene.destroy(); rig.destroy(); this.activeScene = null;
     };
     // Keep tracked poses and controller models in metres; only the artifact
@@ -125,13 +125,13 @@ export class ImmersiveViewer extends EventHandler {
     this.framePressed = false; this.lastReset = 0;
     this.handle.app.on("update", this.controllerExit, this);
     this.active = true; this.pending = false; this.changed();
-    this.measurementMenu?.open();
+    this.toolMenu?.open();
   }
   private ended() {
     this.handle.app.off("update", this.controllerExit, this);
     this.exitPressed = false;
     this.framePressed = false; this.lastReset = 0;
-    const tool = this.measurementMenu?.currentTool;
+    const tool = this.toolMenu?.currentTool;
     this.restore?.(); this.restore = null;
     this.active = false; this.pending = false; this.changed();
     // Sync the menu choice after leaving PlayCanvas's XR update. React panel

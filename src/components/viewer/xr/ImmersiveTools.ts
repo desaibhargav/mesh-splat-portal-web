@@ -1,21 +1,19 @@
-import { Mat4, Vec3, type XrInputSource } from "playcanvas";
+import { Vec3, type XrInputSource } from "playcanvas";
 import { SurfacePointMarker } from "../picking/SurfacePointMarker";
-import { pickSurfaceRay } from "../picking/surfaceRay";
+import { ImmersiveInput } from "./ImmersiveInput";
+import { ImmersiveEditing } from "./ImmersiveEditing";
+import type { SegmentWorkspaces } from "../segments/SegmentWorkspaces";
 import type { Measurement } from "../measurement/Measurement";
 import type { SelectionHandle, SelectionTool } from "../selection/types";
-import { MeasurementPanel } from "./MeasurementPanel";
+import { ToolPanel } from "./ToolPanel";
 import { spatialInput } from "./SpatialPanel";
 
-// Input/presentation adapter over the same Measurement document as desktop.
-export class ImmersiveMeasurement {
-  private readonly ui: MeasurementPanel;
+// Session tool input/presentation over the shared desktop documents.
+export class ImmersiveTools {
+  private readonly ui: ToolPanel;
   private readonly releaseInput: () => void;
   private readonly pointPreview: SurfacePointMarker;
-  private previewTask: Promise<void> | null = null;
-  private previewAt = 0;
-  private readonly previewOrigin = new Vec3(Infinity, Infinity, Infinity);
-  private readonly previewDirection = new Vec3();
-  private readonly previewTransform = new Mat4();
+  private readonly editing: ImmersiveEditing;
   private readonly tapOrigin = new Vec3();
   private readonly endpoint = new Vec3();
   private readonly rayPoint = new Vec3();
@@ -32,11 +30,12 @@ export class ImmersiveMeasurement {
   private message = "";
 
   constructor(private readonly handle: SelectionHandle, private readonly measurement: () => Measurement,
-    private readonly changed: () => void, private readonly ready: () => boolean) {
+    private readonly changed: () => void, private readonly ready: () => boolean, private readonly input: ImmersiveInput, workspaces: SegmentWorkspaces) {
     const app = handle.app, camera = handle.viewports.perspectivePanel.camera;
     this.releaseInput = spatialInput(app);
-    this.ui = new MeasurementPanel(app, camera.entity, {
-      tool: active => this.setTool(active ? "measure" : "navigate"),
+    this.editing = new ImmersiveEditing(handle, workspaces, input, () => this.commit());
+    this.ui = new ToolPanel(app, camera.entity, {
+      tool: tool => this.setTool(tool),
       open: id => { this.revision++; this.selectedId = id; this.name = this.current()!.name; this.armed = false; this.refresh(); },
       remove: id => { this.revision++; this.measurement().remove(id); if (id === this.selectedId) this.selectedId = null; this.commit(); },
       name: value => { this.name = value; this.refresh(); }, save: () => this.save(),
@@ -51,14 +50,15 @@ export class ImmersiveMeasurement {
   }
   get isArmed() { return this.tool === "measure" && this.armed; }
   get isMenuTargeted() { return this.ui.targeted; }
-  get blocksPan() { return this.ui.targeted || this.moving !== null; }
+  get blocksPan() { return this.ui.targeted || this.moving !== null || this.tool === "select" || this.editing.dragging; }
   get currentTool() { return this.tool; }
   setTool(tool: SelectionTool) {
     this.revision++;
     if (tool !== "measure" && this.tool === "measure" && this.measurement().discardUnsaved()) this.changed();
-    this.tool = tool === "measure" ? "measure" : "navigate";
+    this.tool = ["measure", "select", "annotate"].includes(tool) ? tool : "navigate";
+    this.editing.setTool(this.tool);
     this.armed = this.tool === "measure"; this.moving = null; this.selectedId = null; this.message = "";
-    this.previewOrigin.set(Infinity, Infinity, Infinity); this.refresh();
+    this.pointPreview.set(null); this.refresh();
   }
   open() { this.refresh(); }
   private current() { return this.measurement().records.find(record => record.id === this.selectedId); }
@@ -74,7 +74,9 @@ export class ImmersiveMeasurement {
   // so a pan release cannot also create a measurement.
   private selectStart(source: XrInputSource) {
     if (source.handedness !== "right") return;
-    this.tapping = this.tool === "measure" && !this.isMenuTargeted;
+    if (this.tool === "select" && !this.isMenuTargeted && this.ready()) { this.editing.start(source); return; }
+    if (!this.isMenuTargeted && this.editing.beginAnnotationDrag(source)) return;
+    this.tapping = (this.tool === "measure" || this.tool === "annotate") && !this.isMenuTargeted;
     this.dragged = false;
     if (!this.tapping) return;
     this.tapOrigin.copy(source.getPosition() ?? source.getOrigin());
@@ -90,41 +92,41 @@ export class ImmersiveMeasurement {
     }
   }
   private trackTap() {
+    const source = this.handle.app.xr?.input.inputSources.find(input => input.handedness === "right");
+    if (source && this.editing.drawing) this.editing.track(source);
     if (!this.tapping || this.dragged) return;
     const right = this.handle.app.xr?.input.inputSources.find(source => source.handedness === "right");
     if (right && this.tapOrigin.distance(right.getPosition() ?? right.getOrigin()) >= .02) this.dragged = true;
   }
   private cancelPointer(source: XrInputSource) {
     if (source.handedness !== "right") return;
+    this.editing.cancelGesture();
     this.revision++; this.moving = null; this.tapping = this.dragged = false;
     this.armed = this.tool === "measure" && this.current()?.points.length !== 2;
   }
   private previewPoint() {
     const source = this.handle.app.xr?.input.inputSources.find(input => input.handedness === "right" && !input.hand);
-    if (!this.isArmed || !this.ready() || !source || this.isMenuTargeted ||
+    if (source) this.editing.hover(this.isMenuTargeted ? null : this.input.hit(source), this.isMenuTargeted ? undefined : source);
+    if (this.tool === "annotate" && this.editing.draft?.position && this.editing.step === "details") {
+      this.pointPreview.set(this.editing.draft.position); return;
+    }
+    const previewing = this.isArmed || this.tool === "select" || (this.tool === "annotate" && (this.editing.step === "marker" || this.editing.step === "drag"));
+    if (!previewing || !this.ready() || !source || this.isMenuTargeted ||
       (this.moving === null && (source.selecting || this.dragged))) {
       this.pointPreview.set(null); return;
     }
-    const origin = source.getOrigin(), direction = source.getDirection();
-    const transform = this.handle.space.root.getWorldTransform();
-    if (this.busy || this.previewTask || performance.now() - this.previewAt < 16 ||
-      (origin.distance(this.previewOrigin) < .0005 && direction.distance(this.previewDirection) < .001 &&
-        transform.equals(this.previewTransform))) return;
-    this.previewAt = performance.now();
-    const revision = this.revision;
-    this.previewOrigin.copy(origin); this.previewDirection.copy(direction); this.previewTransform.copy(transform);
-    this.previewTask = this.pick(source).then(point => {
-      if (this.disposed || revision !== this.revision) return;
-      if (!this.isArmed || !point || this.isMenuTargeted) {
-        this.pointPreview.set(null); return;
-      }
-      this.pointPreview.set(point);
-    }).catch(() => { if (!this.disposed) this.pointPreview.set(null); }).finally(() => { this.previewTask = null; });
+    const hit = this.input.hit(source);
+    this.pointPreview.set(hit?.point ?? null);
   }
   private async selectEnd(source: XrInputSource) {
     if (source.handedness !== "right") return;
+    if (this.editing.drawing) { await this.editing.end(); return; }
     const tapped = this.tapping && !this.dragged && this.tapOrigin.distance(source.getPosition() ?? source.getOrigin()) < .02;
     this.tapping = false; this.dragged = false;
+    if (this.tool === "annotate") {
+      if ((tapped || this.editing.dragging) && !this.isMenuTargeted && this.ready()) await this.editing.click(source);
+      return;
+    }
     if ((!tapped && this.moving === null) || !this.isArmed || !this.ready() || this.busy || this.isMenuTargeted) {
       if (this.moving !== null) { this.moving = null; this.armed = false; }
       return;
@@ -168,12 +170,12 @@ export class ImmersiveMeasurement {
   }
 
   private pick(source: XrInputSource) {
-    return pickSurfaceRay(this.handle, source.getOrigin(), source.getDirection());
+    return this.input.pick(source).then(hit => hit?.point ?? null);
   }
 
   private refresh() {
     const model = this.measurement();
-    this.ui.render({ active: this.tool === "measure", records: model.records, selectedId: this.selectedId,
+    this.ui.render({ active: this.tool !== "navigate", tool: this.tool, editing: this.editing, records: model.records, selectedId: this.selectedId,
       name: this.name, message: this.message, style: model.style, busy: this.busy });
   }
   destroy() {
@@ -183,6 +185,6 @@ export class ImmersiveMeasurement {
     app.xr?.input.off("selectstart", this.selectStart, this); app.xr?.input.off("selectend", this.selectEnd, this);
     app.xr?.input.off("remove", this.cancelPointer, this);
     app.off("update", this.trackTap, this); app.off("update", this.previewPoint, this);
-    this.ui.destroy(); this.releaseInput(); this.pointPreview.destroy();
+    this.editing.destroy(); this.ui.destroy(); this.releaseInput(); this.pointPreview.destroy();
   }
 }

@@ -11,7 +11,7 @@ self.onmessage = ({ data }: MessageEvent<{ id: number; geometry?: VisibilityGeom
     if (data.geometry) { geometry = new MeshVisibilityQuery(data.geometry); counts = data.geometry.map(part => part.indices.length / 3); return; }
     if (data.ray) {
       if (data.visible) rayVisibility = data.visible;
-      self.postMessage({ id: data.id, point: geometry.raycast(data.ray, rayVisibility) }); return;
+      self.postMessage({ id: data.id, hit: geometry.surfaceHit(data.ray, rayVisibility) }); return;
     }
     const query = data.query!;
     const hits = data.image ? facesInMask(data.image, query.alpha, query.width, query.height, counts) : counts.map(count => new Uint8Array(count));
