@@ -63,10 +63,10 @@ export class ImmersiveViewer extends EventHandler {
     const input = new ImmersiveInput(app, rig, scene.root);
     const placement = type === XRTYPE_AR ? new ImmersivePlacement(app, scene, camera.entity) : null;
     const menu = new ImmersiveMeasurement(this.handle, () => this.workspaces.current.measurement,
-      this.tool, () => this.workspaces.fire("change"), () => !placement || placement.placed);
+      () => this.workspaces.fire("change"), () => !placement || placement.placed);
     this.measurementMenu = menu;
     const gestures = new ImmersiveGestures(app, camera.entity, scene, () => !placement || placement.placed,
-      () => menu.isMenuTargeted, () => menu.isArmed);
+      () => menu.blocksPan, () => menu.isArmed);
     const place = () => { if (type === XRTYPE_VR) scene.place(camera.entity); };
     this.restore = () => {
       xr.off("update", place);

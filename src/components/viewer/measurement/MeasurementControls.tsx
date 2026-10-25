@@ -6,11 +6,7 @@ import { MeasurementVisuals } from "./MeasurementVisuals";
 import { defaultMeasurementStyle } from "./MeasurementRenderer";
 import { MeasurementGizmos, type EndpointPreview } from "./MeasurementGizmos";
 import { useSurfacePick } from "../picking/useSurfacePick";
-
-const adjustments = [
-  { key: "lineWidth", label: "Line width", min: 1, max: 8 },
-  { key: "fontSize", label: "Font size", min: 10, max: 28 }
-] as const;
+import { measurementAdjustments } from "./measurementFields";
 
 // A browser cursor follows the pointer without an extra depth-render pass on
 // every mouse move. The click still resolves the actual surface through Picker.
@@ -121,7 +117,7 @@ export function MeasurementControls({ handle, measurement, active, onChange, ope
         <label>Measurement name<input aria-label="Measurement name" value={name} onChange={event => setName(event.target.value)} /></label>
         <button disabled={busy || selected.points.length !== 2 || !name.trim()} className="tool-action-save" onClick={save}>{selected.saved ? "Update measurement" : "Save measurement"}</button>
       </>}
-      {adjustments.map(({ key, label, min, max }) => <SliderControl key={key} label={label} min={min} max={max} value={measurement.style[key]}
+      {measurementAdjustments.map(({ key, label, min, max }) => <SliderControl key={key} label={label} min={min} max={max} value={measurement.style[key]}
         onChange={value => { measurement.setStyle({ ...measurement.style, [key]: value }); redraw(); }}
         defaultValue={defaultMeasurementStyle[key]} />)}
       <button disabled={busy || measurement.points.length === 0} className="tool-action-reset" onClick={clearMeasurements}>Clear measurements</button>
