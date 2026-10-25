@@ -259,6 +259,11 @@ try {
     await control('XR tool bar','Select');
     check(await menu.evaluate(m=>m.currentTool==='select'),'Selection toolbar did not activate');
     await control(options,'Brush');
+    const toolbarBefore=await h.evaluate(h=>h.app.root.findByName('XR tool bar').element._callbacks.get('click')[0].scope.canvas.toDataURL());
+    await control('XR tool bar','Select',false);
+    const toolbarHovered=await h.evaluate(h=>h.app.root.findByName('XR tool bar').element._callbacks.get('click')[0].scope.canvas.toDataURL());
+    check(toolbarBefore!==toolbarHovered,'Selected toolbar button gave no additional hover feedback');
+    await control(options,'Brush',false);
     const bounds=await h.evaluate(h=>{const b=h.selection.bounds(null);return {center:b.center.toArray(),radius:b.halfExtents.length(),front:b.getMax().z};});
     let aim=null;
     for(const x of [0,-.1,.1,-.2,.2]) {

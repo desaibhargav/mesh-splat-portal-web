@@ -66,9 +66,11 @@ export class SpatialPanel {
   finish() {
     const hovered = this.controls.find(control => control.label === this.hovered);
     if (hovered) {
-      const ctx = this.context; ctx.save(); ctx.strokeStyle = "#dbc17b"; ctx.lineWidth = 2;
-      ctx.shadowColor = "#dbc17b"; ctx.shadowBlur = 6;
-      ctx.strokeRect(hovered.x + 1, hovered.y + 1, hovered.width - 2, hovered.height - 2); ctx.restore();
+      const ctx = this.context; ctx.save();
+      ctx.fillStyle = "#ffd36e22"; ctx.strokeStyle = "#ffe08c"; ctx.lineWidth = 3;
+      ctx.shadowColor = "#ffd36e"; ctx.shadowBlur = 12;
+      ctx.beginPath(); ctx.roundRect(hovered.x + 1.5, hovered.y + 1.5,
+        hovered.width - 3, hovered.height - 3, 3); ctx.fill(); ctx.stroke(); ctx.restore();
     }
     this.texture.resize(this.canvas.width, this.canvas.height);
     this.texture.setSource(this.canvas); this.app.renderNextFrame = true;

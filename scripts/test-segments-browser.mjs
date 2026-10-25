@@ -235,6 +235,10 @@ try {
       await page.keyboard.press("Enter");
       await settle();
     }
+    const selectHoverBefore=await page.$eval('[aria-label="Select"]',e=>getComputedStyle(e).boxShadow);
+    await page.hover('[aria-label="Select"]');
+    check(await page.$eval('[aria-label="Select"]',(e,before)=>getComputedStyle(e).boxShadow!==before,selectHoverBefore),
+      'Desktop Select button gave no hover feedback');
     await page.click("[aria-label=\"Select\"]");
     await exact("X-ray off");
     await drawBox();
