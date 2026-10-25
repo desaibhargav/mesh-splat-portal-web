@@ -1,7 +1,7 @@
 import { constrainMask, type SelectionScope } from "./selectionScope";
 import {
   BLEND_NORMAL, CULLFACE_NONE, Color, Entity, Mat4, Mesh, MeshInstance, PRIMITIVE_TRIANGLES, SEMANTIC_POSITION, StandardMaterial,
-  TYPE_INT8, TYPE_INT16, TYPE_UINT8, TYPE_UINT16, type VertexBuffer,
+  TYPE_INT8, TYPE_INT16, TYPE_UINT8, TYPE_UINT16, Vec3, type VertexBuffer,
   type AppBase, type CameraComponent, type Layer, type RenderComponent
 } from "playcanvas";
 import { currentSelectionArea, paintSelection, decodeColor, discardDraftSelection, recordSelectionGesture, selectionAreaAt, updateSelectionAreas, visiblePaint, visibleSelections, type PaintState } from "./selectionColors";
@@ -133,6 +133,10 @@ export class MeshSelection {
   async primitiveAt(app: AppBase, camera: CameraComponent, u: number, v: number) {
     this.picker ??= new MeshPicker(app, this.parts);
     return this.picker.primitiveAt(camera, u, v, this.isolated);
+  }
+  pickRay(origin: Vec3, direction: Vec3) {
+    this.visibility ??= new MeshVisibility(this.app, this.parts);
+    return this.visibility.raycast(origin, direction, this.isolated);
   }
   get state(): SelectionState { return { masks: this.parts.map(part => part.mask), isolated: this.isolated }; }
   get colors(): PaintState { return this.paintState; }
@@ -272,6 +276,7 @@ export class MeshSelection {
     this.refresh(); return this.summary;
   }
   private refresh() {
+    this.visibility?.invalidateRays();
     this.clearPreviews();
     this.picker?.invalidate();
     const displayColors = visiblePaint(this.paintState, this.selectionAreas);

@@ -1,25 +1,27 @@
-import { CULLFACE_BACK, CULLFACE_FRONT, type AppBase, type CameraComponent, type MeshInstance } from "playcanvas";
+import { CULLFACE_BACK, CULLFACE_FRONT, Vec3, type AppBase, type CameraComponent, type MeshInstance } from "playcanvas";
 import type { SelectionRegion } from "../types";
 import type { VisibilityGeometry, VisibilityPart, VisibilityQuery } from "./visibilityTypes";
 import { regionAlpha, type PickImage } from "../pickImage";
 
 interface Part { source: MeshInstance; positions: Float32Array; indices: number[]; mask: Uint8Array; scope: Uint8Array | null }
+interface Reply { id: number; result?: Uint8Array[]; point?: number[] | null; error?: string }
 
 // One lazily-created worker per mesh controller. Geometry is copied/transferred
 // once, never on animation frames; visibility and camera snapshots belong to
 // each committed gesture. Closing the viewer terminates its queries and memory.
 export class MeshVisibility {
   private readonly worker = new Worker(new URL("./visibility.worker.ts", import.meta.url), { type: "module" });
-  private readonly pending = new Map<number, { resolve(value: Uint8Array[]): void; reject(error: Error): void }>();
+  private readonly pending = new Map<number, { resolve(value: Reply): void; reject(error: Error): void }>();
+  private rayDirty = true;
   private serial = 0;
   private disposed = false;
   private failure?: Error;
   constructor(private readonly app: AppBase, private readonly parts: Part[]) {
     const geometry: VisibilityGeometry[] = parts.map(part => ({ positions: part.positions.slice(), indices: Uint32Array.from(part.indices) }));
-    this.worker.onmessage = ({ data }: MessageEvent<{ id: number; result?: Uint8Array[]; error?: string }>) => {
+    this.worker.onmessage = ({ data }: MessageEvent<Reply>) => {
       if (data.id === 0 && data.error) { this.fail(new Error(data.error)); return; }
       const pending = this.pending.get(data.id); this.pending.delete(data.id);
-      if (data.result) pending?.resolve(data.result); else pending?.reject(new Error(data.error));
+      if (data.error) pending?.reject(new Error(data.error)); else pending?.resolve(data);
     };
     this.worker.onerror = event => this.fail(new Error(event.message || "Mesh visibility worker failed."));
     this.worker.postMessage({ id: 0, geometry }, geometry.flatMap(part => [part.positions.buffer, part.indices.buffer]));
@@ -44,8 +46,28 @@ export class MeshVisibility {
     if (this.failure) return Promise.reject(this.failure);
     const id = ++this.serial;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      this.pending.set(id, { resolve: data => resolve(data.result!), reject });
       this.worker.postMessage({ id, query: snapshot, image }, [snapshot.alpha.buffer, ...(image ? [image.pixels.buffer] : [])]);
+    });
+  }
+
+  invalidateRays() { this.rayDirty = true; }
+  raycast(origin: Vec3, direction: Vec3, isolated: boolean): Promise<Vec3 | null> {
+    if (this.disposed || this.failure) return Promise.reject(this.failure ?? new Error("Viewer closed during surface picking."));
+    const enabled = !!this.app.graphicsDevice.scope.resolve("portalSectionEnabled").getValue();
+    const plane = this.app.graphicsDevice.scope.resolve("portalSectionPlane").getValue() as ArrayLike<number> | undefined;
+    const parts = this.parts.map(part => {
+      const cull = part.source.material.cull;
+      return { model: Array.from(part.source.node.getWorldTransform().data), side: (enabled ? 2 : cull === CULLFACE_BACK ? 0 : cull === CULLFACE_FRONT ? 1 : 2) as 0 | 1 | 2 };
+    });
+    // Send masks only after an edit, never copy a dense mask per hover sample.
+    const visible = this.rayDirty ? this.parts.map(part => isolated || part.scope ?
+      Uint8Array.from(part.mask, (value, face) => Number((!isolated || !!value) && (!part.scope || !!part.scope[face]))) : null) : undefined;
+    this.rayDirty = false;
+    const id = ++this.serial;
+    return new Promise((resolve, reject) => {
+      this.pending.set(id, { resolve: data => resolve(data.point ? new Vec3(...data.point as [number, number, number]) : null), reject });
+      this.worker.postMessage({ id, ray: { origin: origin.toArray(), direction: direction.toArray(), parts, section: enabled && plane ? Array.from(plane) : null }, visible });
     });
   }
 

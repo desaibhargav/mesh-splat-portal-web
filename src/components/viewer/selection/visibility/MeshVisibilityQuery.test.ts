@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Matrix4, OrthographicCamera, PerspectiveCamera } from "three";
+import { Matrix4, OrthographicCamera, PerspectiveCamera, Vector3 } from "three";
 import { MeshVisibilityQuery } from "./MeshVisibilityQuery";
 import type { VisibilityGeometry, VisibilityQuery } from "./visibilityTypes";
 
@@ -73,4 +73,19 @@ describe("accelerated centroid visibility supplement", () => {
     const result = select(parts);
     expect(result[0]![0]).toBe(255); expect(result[1]!.some(Boolean)).toBe(false);
   });
+});
+
+it("picks the exact transformed surface and ignores cut or hidden foreground faces", () => {
+  const parts = [target, geometry(rectangle(-1, 1, .2))], bvh = new MeshVisibilityQuery(parts);
+  const model = new Matrix4().makeRotationY(.4).setPosition(1, 2, -3).scale(new Vector3(.3, .8, .5));
+  const origin = new Vector3(0, 0, 2).applyMatrix4(model), direction = new Vector3(0, 0, -1).transformDirection(model);
+  const input = { origin: origin.toArray(), direction: direction.toArray(), section: null as number[] | null,
+    parts: parts.map(() => ({ model: model.toArray(), side: 2 as const })) };
+  const front = new Vector3(0, 0, .2).applyMatrix4(model);
+  expect(new Vector3().fromArray(bvh.raycast(input, [null, null])!).distanceTo(front)).toBeLessThan(1e-6);
+  const back = new Vector3(0, 0, 0).applyMatrix4(model);
+  expect(new Vector3().fromArray(bvh.raycast(input, [null, new Uint8Array(2)])!).distanceTo(back)).toBeLessThan(1e-6);
+  const normal = new Vector3(0, 0, -1).transformDirection(model);
+  input.section = [...normal.toArray(), -normal.dot(back) + .01];
+  expect(new Vector3().fromArray(bvh.raycast(input, [null, null])!).distanceTo(back)).toBeLessThan(1e-6);
 });

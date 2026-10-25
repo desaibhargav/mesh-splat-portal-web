@@ -4,3 +4,6 @@ export interface VisibilityQuery {
   projection: number[]; view: number[]; parts: VisibilityPart[]; section: number[] | null;
   width: number; height: number; alpha: Uint8Array; hits: Uint8Array[];
 }
+export interface SurfaceRayQuery {
+  origin: number[]; direction: number[]; parts: Omit<VisibilityPart, "visible">[]; section: number[] | null;
+}

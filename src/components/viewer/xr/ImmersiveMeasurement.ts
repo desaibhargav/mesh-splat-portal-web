@@ -1,4 +1,6 @@
-import { Color, Entity, Layer, Mat4, Picker, StandardMaterial, Vec3, type CameraComponent, type XrInputSource } from "playcanvas";
+import { Mat4, Vec3, type XrInputSource } from "playcanvas";
+import { SurfacePointMarker } from "../picking/SurfacePointMarker";
+import { pickSurfaceRay } from "../picking/surfaceRay";
 import type { Measurement } from "../measurement/Measurement";
 import type { SelectionHandle, SelectionTool } from "../selection/types";
 import { MeasurementPanel } from "./MeasurementPanel";
@@ -8,18 +10,12 @@ import { spatialInput } from "./SpatialPanel";
 export class ImmersiveMeasurement {
   private readonly ui: MeasurementPanel;
   private readonly releaseInput: () => void;
-  private pickEntity: Entity | null = null;
-  private readonly pointPreview = new Entity("XR measurement surface preview");
-  private readonly previewMaterial = new StandardMaterial();
-  private readonly previewLayer = new Layer({ name: "XR measurement preview", clearDepthBuffer: true });
+  private readonly pointPreview: SurfacePointMarker;
   private previewTask: Promise<void> | null = null;
   private previewAt = 0;
   private readonly previewOrigin = new Vec3(Infinity, Infinity, Infinity);
   private readonly previewDirection = new Vec3();
   private readonly previewTransform = new Mat4();
-  private picker: Picker | null = null;
-  private pickCamera: CameraComponent | null = null;
-  private readonly aim = new Vec3();
   private readonly tapOrigin = new Vec3();
   private readonly endpoint = new Vec3();
   private readonly rayPoint = new Vec3();
@@ -47,14 +43,7 @@ export class ImmersiveMeasurement {
       clear: () => { this.revision++; this.measurement().clear(); this.selectedId = null; this.armed = true; this.commit(); },
       style: style => { this.measurement().setStyle(style); this.commit(); }
     });
-    this.previewMaterial.useLighting = false;
-    this.previewMaterial.emissive.copy(Color.WHITE); this.previewMaterial.diffuse.copy(Color.WHITE); this.previewMaterial.update();
-    app.scene.layers.push(this.previewLayer);
-    camera.layers = [...camera.layers, this.previewLayer.id];
-    app.root.addChild(this.pointPreview);
-    this.pointPreview.addComponent("render", { type: "sphere", material: this.previewMaterial,
-      layers: [this.previewLayer.id], castShadows: false, receiveShadows: false });
-    this.pointPreview.setLocalScale(.012, .012, .012); this.pointPreview.enabled = false;
+    this.pointPreview = new SurfacePointMarker(handle);
     app.xr!.input.on("selectstart", this.selectStart, this); app.xr!.input.on("selectend", this.selectEnd, this);
     app.xr!.input.on("remove", this.cancelPointer, this);
     app.on("update", this.trackTap, this); app.on("update", this.previewPoint, this);
@@ -114,12 +103,12 @@ export class ImmersiveMeasurement {
     const source = this.handle.app.xr?.input.inputSources.find(input => input.handedness === "right" && !input.hand);
     if (!this.isArmed || !this.ready() || !source || this.isMenuTargeted ||
       (this.moving === null && (source.selecting || this.dragged))) {
-      this.pointPreview.enabled = false; return;
+      this.pointPreview.set(null); return;
     }
     const origin = source.getOrigin(), direction = source.getDirection();
     const transform = this.handle.space.root.getWorldTransform();
-    if (this.busy || this.previewTask || performance.now() - this.previewAt < 120 ||
-      (origin.distance(this.previewOrigin) < .005 && direction.distance(this.previewDirection) < .01 &&
+    if (this.busy || this.previewTask || performance.now() - this.previewAt < 16 ||
+      (origin.distance(this.previewOrigin) < .0005 && direction.distance(this.previewDirection) < .001 &&
         transform.equals(this.previewTransform))) return;
     this.previewAt = performance.now();
     const revision = this.revision;
@@ -127,13 +116,10 @@ export class ImmersiveMeasurement {
     this.previewTask = this.pick(source).then(point => {
       if (this.disposed || revision !== this.revision) return;
       if (!this.isArmed || !point || this.isMenuTargeted) {
-        this.pointPreview.enabled = false; return;
+        this.pointPreview.set(null); return;
       }
-      // Raise the dot slightly toward the pointer to avoid burying it in the surface.
-      const toward = source.getOrigin().clone().sub(point).normalize().mulScalar(.006);
-      this.pointPreview.setPosition(point.clone().add(toward));
-      this.pointPreview.enabled = true;
-    }).catch(() => { if (!this.disposed) this.pointPreview.enabled = false; }).finally(() => { this.previewTask = null; });
+      this.pointPreview.set(point);
+    }).catch(() => { if (!this.disposed) this.pointPreview.set(null); }).finally(() => { this.previewTask = null; });
   }
   private async selectEnd(source: XrInputSource) {
     if (source.handedness !== "right") return;
@@ -146,15 +132,14 @@ export class ImmersiveMeasurement {
     if (!source.getOrigin() || !source.getDirection()) return;
     this.busy = true;
     const revision = this.revision;
-    this.pointPreview.enabled = false;
+    this.pointPreview.set(null);
     try {
-      await this.previewTask;
       if (this.disposed || revision !== this.revision) return;
       const point = await this.pick(source);
       if (this.disposed || revision !== this.revision || !this.isArmed) return;
       if (!point) { this.message = "Aim at a visible surface"; return; }
       const model = this.measurement();
-      const local = this.handle.space.toLocal(point);
+      const local = point;
       if (this.moving !== null) {
         const record = this.current();
         const previous = record?.points[this.moving];
@@ -182,28 +167,8 @@ export class ImmersiveMeasurement {
     }
   }
 
-  private async pick(source: XrInputSource) {
-    const origin = source.getOrigin(), direction = source.getDirection();
-    // CPU-sorted splats have no native Picker depth. The direct center query
-    // avoids an offscreen pass or second camera for that renderer path.
-    if (this.handle.selection.pickRay) return this.handle.selection.pickRay(origin, direction);
-    if (!this.pickCamera) {
-      this.pickEntity = new Entity("XR surface pick camera");
-      this.handle.app.root.addChild(this.pickEntity);
-      this.pickEntity.addComponent("camera", { fov: 1, nearClip: .01, farClip: 100 });
-      this.pickCamera = this.pickEntity.camera!;
-      this.pickCamera.layers = [...this.handle.selection.layers];
-      this.pickCamera.enabled = false;
-      this.picker = new Picker(this.handle.app, 64, 64, true);
-    }
-    this.pickEntity!.setPosition(origin);
-    this.pickEntity!.lookAt(this.aim.copy(direction).add(origin));
-    const layers = this.handle.selection.layers.map(id => this.handle.app.scene.layers.getLayerById(id)!).filter(Boolean);
-    this.pickCamera.enabled = true;
-    try {
-      this.picker!.prepare(this.pickCamera, this.handle.app.scene, layers);
-      return await this.picker!.getWorldPointAsync(32, 32);
-    } finally { this.pickCamera.enabled = false; }
+  private pick(source: XrInputSource) {
+    return pickSurfaceRay(this.handle, source.getOrigin(), source.getDirection());
   }
 
   private refresh() {
@@ -218,7 +183,6 @@ export class ImmersiveMeasurement {
     app.xr?.input.off("selectstart", this.selectStart, this); app.xr?.input.off("selectend", this.selectEnd, this);
     app.xr?.input.off("remove", this.cancelPointer, this);
     app.off("update", this.trackTap, this); app.off("update", this.previewPoint, this);
-    this.ui.destroy(); this.releaseInput(); this.pickEntity?.destroy(); this.picker?.destroy();
-    this.pointPreview.destroy(); this.previewMaterial.destroy(); app.scene.layers.remove(this.previewLayer);
+    this.ui.destroy(); this.releaseInput(); this.pointPreview.destroy();
   }
 }

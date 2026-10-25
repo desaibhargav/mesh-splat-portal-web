@@ -114,6 +114,20 @@ try {
     return { visible, missing, selected: handle.selection.summary.selected };
   });
   if (coverage.visible < 9000 || coverage.missing.length) throw Error("Dense brush coverage: " + JSON.stringify(coverage));
+  const surfaceRays = await (await handle()).evaluate(async handle => {
+    const camera=handle.camera(), rect=handle.app.graphicsDevice.clientRect, times=[];
+    let hits=0;
+    for (let i=0;i<60;i++) {
+      const x=rect.width*(.45+.1*i/59), y=rect.height*.5;
+      const origin=camera.screenToWorld(x,y,camera.nearClip), target=camera.screenToWorld(x,y,camera.farClip);
+      const start=performance.now();
+      if (await handle.selection.pickRay(origin,target.sub(origin).normalize())) hits++;
+      times.push(performance.now()-start);
+    }
+    times.sort((a,b)=>a-b);
+    return {hits,medianMs:times[30],p95Ms:times[57],maxMs:times[59]};
+  });
+  if (!surfaceRays.hits) throw Error("Dense surface-point rays returned no hits");
   await clickText("Isolate");
   await page.screenshot({ path: path.join(output, "brush-isolated.png") });
   await clickText("Show all");
@@ -143,5 +157,5 @@ try {
   await page.locator('a ::-p-text(Back to collection)').click();
   await Promise.race([closed, new Promise((_, reject) => setTimeout(() => reject(Error("Visibility worker leaked after navigation")), 10000))]);
   if (errors.length) throw Error(errors.join("\n"));
-  console.log("PASS dense scan brush + isolation + navigation + worker cleanup", { ...coverage, timings, idle, output });
+  console.log("PASS dense scan brush + isolation + navigation + worker cleanup", { ...coverage, surfaceRays, timings, idle, output });
 } finally { await browser.close(); server.close(); }

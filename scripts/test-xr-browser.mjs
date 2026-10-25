@@ -10,7 +10,17 @@ const derivatives = path.join(root, "mesh-splat-artifact-service/data/assets/der
 const output = await mkdtemp(path.join(tmpdir(), "gab-xr-"));
 const require = createRequire(path.join(root, "mesh-splat-artifact-service/package.json"));
 const { default: puppeteer } = await import(require.resolve("puppeteer"));
+const { Document, NodeIO } = await import(require.resolve("@gltf-transform/core"));
+const fixture = new Document(), buffer = fixture.createBuffer();
+const positions = fixture.createAccessor().setType("VEC3").setArray(new Float32Array([-1,-1,0,1,-1,0,1,1,0,-1,1,0])).setBuffer(buffer);
+const normals = fixture.createAccessor().setType("VEC3").setArray(new Float32Array([0,0,1,0,0,1,0,0,1,0,0,1])).setBuffer(buffer);
+const indices = fixture.createAccessor().setType("SCALAR").setArray(new Uint16Array([0,1,2,0,2,3])).setBuffer(buffer);
+const material = fixture.createMaterial().setBaseColorFactor([.15,.3,.5,1]).setDoubleSided(true);
+const primitive = fixture.createPrimitive().setAttribute("POSITION", positions).setAttribute("NORMAL", normals).setIndices(indices).setMaterial(material);
+fixture.createScene().addChild(fixture.createNode().setMesh(fixture.createMesh().addPrimitive(primitive)).setTranslation([2,1,-.5]));
+const fixtureBody = Buffer.from(await new NodeIO().writeBinary(fixture));
 const assets = {
+  "surface-fixture": { type: "mesh", file: "content.glb", body: fixtureBody },
   "21e231-006699": { type: "mesh", file: "content.glb" },
   "sakura-garden": { type: "splat", file: "meta.json" }
 };
@@ -48,7 +58,7 @@ try {
       }) });
     } else if (assets[parts[0]] && parts.length === 2 && /^[-a-zA-Z0-9._]+$/.test(parts[1])) {
       try {
-        const body = await readFile(path.join(derivatives, parts[0], parts[1]));
+        const body = assets[parts[0]].body ?? await readFile(path.join(derivatives, parts[0], parts[1]));
         request.respond({ status: 200, contentType: parts[1].endsWith(".glb") ? "model/gltf-binary" : parts[1].endsWith(".json") ? "application/json" : "application/octet-stream", body });
       } catch { request.respond({ status: 404 }); }
     } else request.continue();
@@ -63,7 +73,12 @@ try {
   });
   async function settle(h) {
     await h.evaluate(async h => {
-      for (let i=0;i<3;i++) await new Promise(resolve => h.app.once("postrender", resolve));
+      let timer;
+      try {
+        await Promise.race([(async()=> {
+          for (let i=0;i<3;i++) await new Promise(resolve => h.app.once("postrender", resolve));
+        })(), new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error("Viewer stopped rendering during interaction")),12000);})]);
+      } finally {clearTimeout(timer);}
     });
   }
   const targetPose = h => h.evaluate(h => {
@@ -83,6 +98,120 @@ try {
     await page.evaluate(position=>window.xrDevice.controllers.right.position.set(...position), position); await settle(h);
     await page.evaluate(()=>window.xrDevice.controllers.right.updateButtonValue("trigger",1)); await settle(h);
     await page.evaluate(()=>window.xrDevice.controllers.right.updateButtonValue("trigger",0)); await settle(h);
+  }
+  async function surfaceRegression(h) {
+    const points = [[1.7,.8,-.5],[2.3,1.2,-.5]];
+    const records = () => page.evaluate(() => {
+      const node = document.querySelector(".selection-toolbar");
+      let fiber = node[Object.keys(node).find(key=>key.startsWith("__reactFiber$"))];
+      while (fiber && !fiber.memoizedProps?.workspaces) fiber = fiber.return;
+      return fiber.memoizedProps.workspaces.current.measurement.records.map(r=>r.points.map(p=>p.toArray()));
+    });
+    const distance = (a,b) => Math.hypot(...a.map((v,i)=>v-b[i]));
+    await page.click('[aria-label="Measure distance"]');
+    const box = await (await page.$('.viewer-canvas canvas')).boundingBox();
+    for (const [index, point] of points.entries()) {
+      const screen = await h.evaluate((h,p)=> {
+        const Vec3 = h.app.root.getPosition().constructor;
+        return h.camera().worldToScreen(h.space.toWorld(new Vec3(...p))).toArray();
+      }, point);
+      await page.mouse.move(box.x+screen[0], box.y+screen[1]);
+      await page.waitForFunction(h=>h.app.root.findByName("Surface point preview")?.enabled, {timeout:15000}, h);
+      await settle(h);
+      const preview = await h.evaluate(h=>h.space.toLocal(h.app.root.findByName("Surface point preview").getPosition()).toArray());
+      check(distance(preview,point)<.002, `Desktop preview missed the known plane: ${preview}`);
+      await page.screenshot({path:path.join(output, `fixture-desktop-preview-${index}.png`)});
+      await page.mouse.click(box.x+screen[0], box.y+screen[1]);
+      await page.waitForFunction((h,n)=>h.app.root.findByName("Measurements")?.findByName("Measurement segment")?.children.filter(e=>e.name==="Measurement endpoint").length===n,
+        {timeout:10000},h,index+1);
+      check(distance((await records())[0][index],point)<.002, "Desktop click did not commit its surface preview");
+    }
+    await page.click('.measurement-actions .tool-action-reset'); await page.keyboard.press("q");
+    await page.click('[aria-label="View in VR"]');
+    await page.waitForFunction(()=>document.querySelector('.viewer-frame')?.dataset.immersive==="true"); await settle(h);
+    const initialUi = await h.evaluate(h=>Array.from(h.app.root.findByName("XR workspace UI").getWorldTransform().data));
+    await page.evaluate(()=>window.xrDevice.quaternion.set(Math.sin(.3),0,0,Math.cos(.3)));
+    for (let i=0;i<8;i++) await settle(h);
+    check(await h.evaluate((h,before)=>Array.from(h.app.root.findByName("XR workspace UI").getWorldTransform().data).every((v,i)=>Math.abs(v-before[i])<1e-5),initialUi),
+      "Looking up moved the workspace UI");
+    await page.evaluate(()=>window.xrDevice.quaternion.set(0,Math.sin(.45),0,Math.cos(.45)));
+    for (let i=0;i<40;i++) await settle(h);
+    check(await h.evaluate(h=> {
+      const anchor=h.app.root.findByName("XR workspace UI"), head=h.viewports.perspectivePanel.camera.entity;
+      return anchor.forward.dot(head.forward)>.98 && Math.abs(anchor.up.y-1)<1e-5;
+    }), "Larger horizontal turn did not gently recenter a level toolbar");
+    await page.evaluate(()=>window.xrDevice.quaternion.set(0,0,0,1));
+    for (let i=0;i<40;i++) await settle(h);
+    await clickToolbar(h,81);
+    // Known source-plane coordinates plus nontrivial presentation scale/rotation/pan.
+    await h.evaluate(h=> {
+      const root=h.app.root.findByName("Immersive artifact"), Vec3=root.getPosition().constructor;
+      const center=h.space.toWorld(new Vec3(2,1,-.5));
+      root.setLocalScale(.7,.7,.7); root.setEulerAngles(20,-25,10);
+      const moved=h.space.toWorld(new Vec3(2,1,-.5));
+      root.setPosition(root.getPosition().clone().add(center).sub(moved).add(new Vec3(.08,.04,0)));
+    }); await settle(h);
+    let wrongCameraFrames=0;
+    await h.evaluate(h=> {
+      h.app.__surfaceCameraLeaks=0;
+      h.app.on("postrender", ()=> {
+        if(h.app.systems.camera.cameras.some(c=>c.enabled && c.entity!==h.app.xr.camera)) h.app.__surfaceCameraLeaks++;
+      });
+    });
+    for (const [index, point] of points.entries()) {
+      const ray = await h.evaluate((h,p)=> {
+        const Vec3=h.app.root.getPosition().constructor, Quat=h.app.root.getRotation().constructor;
+        const world=h.space.toWorld(new Vec3(...p)), normal=h.space.root.getWorldTransform().transformVector(new Vec3(0,0,1)).normalize();
+        return {origin:world.clone().add(normal.clone().mulScalar(.35)).toArray(),
+          rotation:new Quat().setFromDirections(new Vec3(0,0,-1),normal.mulScalar(-1)).toArray(),world:world.toArray()};
+      },point);
+      await page.evaluate(q=> {const c=window.xrDevice.controllers.right; c.position.set(0,0,0);c.quaternion.set(...q);},ray.rotation); await settle(h);
+      const offset=await h.evaluate(h=>h.app.xr.input.inputSources.find(s=>s.handedness==="right").getOrigin().toArray());
+      await page.evaluate(p=>window.xrDevice.controllers.right.position.set(...p),ray.origin.map((v,i)=>v-offset[i]));
+      await page.waitForFunction((h,expected)=> {
+        const marker=h.app.root.findByName("Surface point preview");
+        return marker?.enabled && marker.getPosition().distance({x:expected[0],y:expected[1],z:expected[2]})<.002;
+      },{timeout:15000},h,ray.world);
+      await settle(h); await page.screenshot({path:path.join(output,`fixture-xr-preview-${index}.png`)});
+      await page.evaluate(()=>window.xrDevice.controllers.right.updateButtonValue("trigger",1)); await settle(h);
+      await page.evaluate(()=>window.xrDevice.controllers.right.updateButtonValue("trigger",0)); await settle(h);
+      check(distance((await records())[0][index],point)<.002, `XR point ${index} missed the transformed surface`);
+    }
+    const verifyAnchors = async () => {
+      await settle(h);
+      return h.evaluate((h,points)=> {
+        const Vec3=h.app.root.getPosition().constructor;
+        const expected=points.map(p=>h.space.toWorld(new Vec3(...p)));
+        const visual=h.app.root.findByName("Measurements").findByName("Measurement segment");
+        const markers=visual.children.filter(e=>e.name==="Measurement endpoint");
+        const line=visual.findByName("XR measurement line");
+        return {errors:markers.map((m,i)=>m.getPosition().distance(expected[i])),
+          markerState:markers.map(m=>({enabled:m.enabled,scale:m.getLocalScale().toArray(),sphereScale:m.findByName("Measurement marker").getLocalScale().toArray()})),
+          layers:h.viewports.perspectivePanel.camera.layers,
+          lineError:line.getPosition().distance(expected[0].clone().lerp(expected[0],expected[1],.5)),
+          lengthError:Math.abs(line.getLocalScale().y-expected[0].distance(expected[1]))};
+      },points);
+    };
+    let anchors=await verifyAnchors();
+    console.log("SURFACE VISUALS",JSON.stringify(anchors));
+    check(anchors.errors.every(v=>v<.002)&&anchors.lineError<.002&&anchors.lengthError<.002, "Measurement visuals missed their transformed surface anchors: "+JSON.stringify(anchors));
+    await page.evaluate(()=>{window.xrDevice.controllers.left.connected=false;window.xrDevice.controllers.right.connected=false;}); await settle(h);
+    const fixtureCanvas=await h.evaluateHandle(h=>h.app.graphicsDevice.canvas);
+    const withEndpoints=await fixtureCanvas.asElement().screenshot();
+    await h.evaluate(h=>h.app.root.findByName("Measurements").findComponents("render").filter(r=>r.entity.name==="Measurement marker").forEach(r=>{r.enabled=false;}));
+    await settle(h);
+    check(!withEndpoints.equals(await fixtureCanvas.asElement().screenshot()), "Endpoint spheres had valid transforms but produced no visible pixels");
+    await h.evaluate(h=>h.app.root.findByName("Measurements").findComponents("render").filter(r=>r.entity.name==="Measurement marker").forEach(r=>{r.enabled=true;}));
+    await settle(h); await page.screenshot({path:path.join(output,"fixture-xr-surface-measurement.png")});
+    await h.evaluate(h=>{const r=h.app.root.findByName("Immersive artifact");r.setLocalScale(.4,.4,.4);r.setEulerAngles(-15,30,25);r.setPosition(-.1,1.4,-1.8);});
+    anchors=await verifyAnchors();
+    check(anchors.errors.every(v=>v<.002)&&anchors.lineError<.002&&anchors.lengthError<.002, "Saved anchors drifted after additional asset manipulation");
+    wrongCameraFrames=await h.evaluate(h=>h.app.__surfaceCameraLeaks);
+    check(wrongCameraFrames===0, `A picking camera rendered ${wrongCameraFrames} visible frames`);
+    await page.screenshot({path:path.join(output,"fixture-xr-transformed-measurement.png")});
+    await h.evaluate(async h=>{await new Promise(resolve=>h.app.xr.end(resolve));});
+    await page.waitForFunction(()=>document.querySelector('.viewer-frame')?.dataset.immersive==="false");
+    console.log("PASS known surface: desktop/XR preview and clicks, transformed endpoints/line, no extra scene camera, level toolbar dead zone/follow");
   }
   async function manipulate(h, id, type) {
     await page.waitForFunction(h => h.app.root.findByName("XR controller left")?.findComponents("render").length &&
@@ -175,7 +304,7 @@ try {
     await page.evaluate(() => window.xrDevice.controllers.left.updateAxes("thumbstick",0,0)); await settle(h);
     console.log("PASS",id,type,"controller models, grip movement, orbit, pan, zoom, release, transition, disconnect");
   }
-  for (const id of Object.keys(assets)) {
+  for (const id of Object.keys(assets).filter(id=>!process.env.XR_ASSET || id===process.env.XR_ASSET)) {
     await page.goto(`${base}/artifacts/${id}`);
     await page.evaluate(environment => window.xrDevice.sem.loadEnvironment(environment), room);
     await page.waitForSelector('[aria-label="Select"]:not([disabled])', { timeout: 90000 });
@@ -189,6 +318,7 @@ try {
     }), "Compact bottom VR/AR controls did not replace the instructions and four-view button");
     await page.$eval(".viewer-frame", element => element.scrollIntoView());
     const h = await handle();
+    if (id === "surface-fixture") { await surfaceRegression(h); continue; }
     const desktopCamera = () => h.evaluate(h => ({
       position: h.camera().entity.getPosition().toArray(),
       rotation: h.camera().entity.getRotation().toArray(),
@@ -356,7 +486,20 @@ try {
     // XR entry keeps Navigate, even if Measurement was active on desktop.
     await page.click('[aria-label="Measure distance"]');
     check(await page.$eval('.measurement-panels', node => getComputedStyle(node).display !== "none"), "Desktop options missing");
-    check(await page.$eval('.viewer-canvas canvas', node => node.style.cursor.includes('data:image/svg+xml')), "Desktop point cursor missing");
+    const hoverCanvas = await (await page.$(".viewer-canvas canvas")).boundingBox();
+    let desktopPreview = false;
+    const hoverCandidates=await h.evaluate(h=>h.viewports.visible.flatMap(panel=> {
+      const r=panel.camera.rect;
+      return [[.5,.5],[.4,.5],[.6,.5],[.5,.4],[.5,.6]].map(([u,v])=>[r.x+r.z*u,1-r.y-r.w+r.w*v]);
+    }));
+    for (const [u,v] of hoverCandidates) {
+      await page.mouse.move(hoverCanvas.x+hoverCanvas.width*u, hoverCanvas.y+hoverCanvas.height*v);
+      await page.waitForFunction(h=>h.app.root.findByName("Surface point preview")?.enabled, {timeout:1500}, h).catch(()=>{});
+      desktopPreview = await h.evaluate(h=>!!h.app.root.findByName("Surface point preview")?.enabled);
+      if (desktopPreview) break;
+    }
+    check(desktopPreview, "Desktop did not render a live surface-point sphere");
+    await page.screenshot({path:path.join(output, `${id}-desktop-surface-preview.png`)});
     await page.click('[aria-label="View in VR"]');
     await page.waitForFunction(() => document.querySelector('.viewer-frame')?.dataset.immersive === "true");
     await settle(h);
@@ -397,7 +540,13 @@ try {
       await tap();
     };
     await panelClick("XR tool bar", 81, 25);
-    check(await h.evaluate(h => h.app.root.findByName("XR measurement options").parent.enabled), "Measurement icon did not open options");
+    check(await h.evaluate(h => h.app.root.findByName("XR measurement options").parent.enabled), "Measurement icon did not open options: "+JSON.stringify(await h.evaluate(h=> {
+      const element=h.app.root.findByName("XR tool bar").element;
+      const panel=element._callbacks.get("click")[0].scope;
+      const source=h.app.xr.input.inputSources.find(s=>s.handedness==="right");
+      return {coordinates:panel.coordinates({inputSource:source}),controls:panel.controls.map(c=>({label:c.label,x:c.x,y:c.y})),
+        tools:h.app.xr.input._callbacks.get("selectstart").map(h=>h.scope?.currentTool).filter(Boolean),selecting:source.selecting};
+    })));
     await page.screenshot({ path:path.join(output, `${id}-measurement-options.png`) });
     const measurementRecords = () => page.evaluate(() => {
       const node = document.querySelector(".selection-toolbar");
@@ -421,9 +570,9 @@ try {
         return [center.x + offset[0], center.y + offset[1], center.z + radius * 2 + .5];
       }, [dx, dy]);
       await positionRightRay(target);
-      await page.waitForFunction(h => h.app.root.findByName("XR measurement surface preview")?.enabled,
+      await page.waitForFunction(h => h.app.root.findByName("Surface point preview")?.enabled,
         { timeout: 600, polling: 50 }, h).catch(() => {});
-      sawPreview ||= await h.evaluate(h => !!h.app.root.findByName("XR measurement surface preview")?.enabled);
+      sawPreview ||= await h.evaluate(h => !!h.app.root.findByName("Surface point preview")?.enabled);
       if (click) await tap();
     };
     const candidates = [[0,0],[-.12,0],[.12,0],[0,.12],[0,-.12],[-.12,.12],[.12,-.12],[-.25,0],[.25,0],[0,.25],[0,-.25]];

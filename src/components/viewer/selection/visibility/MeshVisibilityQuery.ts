@@ -1,6 +1,6 @@
 import { BufferAttribute, BufferGeometry, Frustum, Matrix4, Ray, Vector3, type Side } from "three";
 import { MeshBVH } from "three-mesh-bvh";
-import type { VisibilityGeometry, VisibilityQuery } from "./visibilityTypes";
+import type { SurfaceRayQuery, VisibilityGeometry, VisibilityQuery } from "./visibilityTypes";
 
 // The upstream selection example combines shapecast pruning with raycastFirst
 // for centroid visibility. Use those public library queries, retaining native
@@ -14,6 +14,27 @@ export class MeshVisibilityQuery {
       geometry.setIndex(new BufferAttribute(part.indices, 1));
       return new MeshBVH(geometry, { indirect: true });
     });
+  }
+
+  // Reuse the selection BVHs for live surface pointing. The public library
+  // query handles traversal/intersection; app policy filters hidden/cut faces.
+  raycast(query: SurfaceRayQuery, visible: (Uint8Array | null)[]): number[] | null {
+    const origin = new Vector3().fromArray(query.origin), direction = new Vector3().fromArray(query.direction);
+    let distance = Infinity, result: Vector3 | null = null;
+    this.trees.forEach((tree, index) => {
+      const part = query.parts[index]!, model = new Matrix4().fromArray(part.model), inverse = model.clone().invert();
+      const ray = new Ray(origin, direction).clone().applyMatrix4(inverse);
+      const filtered = !!visible[index] || !!query.section;
+      const hits = filtered ? tree.raycast(ray, part.side as Side) : [tree.raycastFirst(ray, part.side as Side)];
+      for (const hit of hits) {
+        if (!hit || hit.faceIndex == null || (visible[index] && !visible[index]![hit.faceIndex])) continue;
+        const world = hit.point.applyMatrix4(model), plane = query.section;
+        if (plane && world.x * plane[0]! + world.y * plane[1]! + world.z * plane[2]! + plane[3]! < 0) continue;
+        const candidate = origin.distanceToSquared(world);
+        if (candidate < distance) { distance = candidate; result = world; }
+      }
+    });
+    return result ? (result as Vector3).toArray() : null;
   }
 
   select(query: VisibilityQuery): Uint8Array[] {

@@ -9,6 +9,7 @@ import { ImmersiveInput } from "./ImmersiveInput";
 import { ImmersivePlacement } from "./ImmersivePlacement";
 import { ImmersiveGestures } from "./ImmersiveGestures";
 import { ImmersiveMeasurement } from "./ImmersiveMeasurement";
+import { measurementAppearance } from "../measurement/measurementAppearance";
 type ImmersiveType = typeof XRTYPE_AR | typeof XRTYPE_VR;
 
 export class ImmersiveViewer extends EventHandler {
@@ -47,6 +48,7 @@ export class ImmersiveViewer extends EventHandler {
   start(type: ImmersiveType) {
     if (!this.xr || this.disposed || this.pending || this.active || !this.available(type)) return;
     const { app, selection } = this.handle, camera = this.camera, xr = this.xr;
+    measurementAppearance(app);
     const bounds = selection.bounds(null);
     if (!bounds || bounds.halfExtents.length() === 0) {
       this.error = "The asset has no visible bounds to display."; this.changed(); return;

@@ -5,6 +5,7 @@ import {
 } from "playcanvas";
 import type { SelectionHandle } from "../selection/types";
 import { formatDistance } from "./Measurement";
+import { measurementAppearance } from "./measurementAppearance";
 
 import { defaultMeasurementStyle, type MeasurementStyle } from "./measurementStyle";
 export { defaultMeasurementStyle, type MeasurementStyle } from "./measurementStyle";
@@ -61,10 +62,9 @@ export class MeasurementRenderer {
 
   constructor(private readonly handle: SelectionHandle) {
     this.camera = handle.camera();
-    const style = getComputedStyle(handle.app.graphicsDevice.canvas);
-    this.markerSize = parseFloat(style.getPropertyValue("--measurement-marker-size"));
-    this.gap = parseFloat(style.getPropertyValue("--measurement-label-gap"));
-    const shared = acquireResources(handle.app, style.fontFamily);
+    const appearance = measurementAppearance(handle.app);
+    this.markerSize = appearance.markerSize; this.gap = appearance.gap;
+    const shared = acquireResources(handle.app, appearance.font);
     this.font = shared.font; this.material = shared.material;
     handle.app.root.addChild(this.root);
     handle.app.scene.layers.push(this.layer);
@@ -73,6 +73,10 @@ export class MeasurementRenderer {
     this.lines.depthTest = false; this.lines.depthWrite = false;
     handle.app.on("prerender", this.update, this);
     handle.app.on("destroy", this.destroy, this);
+    handle.app.xr?.on("end", this.attachLayer, this);
+  }
+  private attachLayer() {
+    if (!this.camera.layers.includes(this.layer.id)) this.camera.layers = [...this.camera.layers, this.layer.id];
   }
 
   private text(parent: Entity, value: string): Entity {
@@ -191,6 +195,7 @@ export class MeasurementRenderer {
     if (this.disposed) return;
     this.disposed = true;
     this.handle.app.off("prerender", this.update, this); this.handle.app.off("destroy", this.destroy, this);
+    this.handle.app.xr?.off("end", this.attachLayer, this);
     this.lines.destroy(); this.root.destroy(); releaseResources(this.handle.app); this.handle.app.scene.layers.remove(this.layer);
     this.camera.layers = this.camera.layers.filter(id => id !== this.layer.id);
   }

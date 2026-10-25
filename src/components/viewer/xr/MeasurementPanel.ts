@@ -5,6 +5,7 @@ import { formatDistance, type MeasurementRecord } from "../measurement/Measureme
 import { measurementAdjustments } from "../measurement/measurementFields";
 import { defaultMeasurementStyle, type MeasurementStyle } from "../measurement/measurementStyle";
 import { SpatialPanel } from "./SpatialPanel";
+import { SpatialUiAnchor } from "./SpatialUiAnchor";
 
 interface PanelState {
   active: boolean; records: readonly MeasurementRecord[]; selectedId: number | null;
@@ -19,6 +20,7 @@ interface PanelActions {
 // A device presentation of the existing Measurement form. Values and actions
 // go straight to the shared Measurement document; no XR copy of the records.
 export class MeasurementPanel {
+  private readonly anchor: SpatialUiAnchor;
   private readonly toolbar: SpatialPanel;
   private readonly options: SpatialPanel;
   private readonly keyboard: SpatialPanel;
@@ -37,10 +39,12 @@ export class MeasurementPanel {
     this.theme = toolAppearance(app.graphicsDevice.canvas as HTMLCanvasElement);
     this.font = this.theme.font; this.gold = this.theme.gold;
     this.saveColor = this.theme.save; this.resetColor = this.theme.reset;
+    this.anchor = new SpatialUiAnchor(app, camera, () => this.targeted ||
+      !!app.xr?.input.inputSources.some(source => source.selecting || source.squeezing));
     const redraw = () => { if (this.state) this.render(this.state); };
-    this.toolbar = new SpatialPanel(app, "XR tool bar", 116, new Vec3(-.07, .25, -.8), camera, redraw);
-    this.options = new SpatialPanel(app, "XR measurement options", 270, new Vec3(.10, -.35, -.8), camera, redraw, true);
-    this.keyboard = new SpatialPanel(app, "XR text keyboard", 350, new Vec3(-.23, -.19, -.65), camera, redraw);
+    this.toolbar = new SpatialPanel(app, "XR tool bar", 116, new Vec3(-.07, .25, -.8), this.anchor.root, redraw);
+    this.options = new SpatialPanel(app, "XR measurement options", 270, new Vec3(.10, -.35, -.8), this.anchor.root, redraw, true);
+    this.keyboard = new SpatialPanel(app, "XR text keyboard", 350, new Vec3(-.23, -.19, -.65), this.anchor.root, redraw);
     this.options.enabled = this.keyboard.enabled = false;
   }
   get targeted() { return this.toolbar.isTargeted || this.options.isTargeted || this.keyboard.isTargeted; }
@@ -189,5 +193,5 @@ export class MeasurementPanel {
     this.centered(panel, "Done", 233, 164, 109, 23, () => { this.typing = false; this.render(this.state!); }, this.saveColor);
     panel.finish();
   }
-  destroy() { this.toolbar.destroy(); this.options.destroy(); this.keyboard.destroy(); }
+  destroy() { this.toolbar.destroy(); this.options.destroy(); this.keyboard.destroy(); this.anchor.destroy(); }
 }

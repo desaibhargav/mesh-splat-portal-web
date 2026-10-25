@@ -21,7 +21,7 @@ export interface SelectionController {
   updateSection(): void;
   readonly layers: readonly number[];
   primitiveAt(app: AppBase, camera: CameraComponent, u: number, v: number): Promise<{ part: number; index: number } | null>;
-  pickRay?(origin: Vec3, direction: Vec3): Vec3 | null;
+  pickRay(origin: Vec3, direction: Vec3): Vec3 | null | Promise<Vec3 | null>;
   hitTest(app: AppBase, camera: CameraComponent, region: SelectionRegion): Promise<Uint8Array[]>;
   readonly state: SelectionState;
   readonly colors: PaintState;
