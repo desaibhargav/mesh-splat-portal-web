@@ -42,7 +42,8 @@ export class ImmersivePlacement {
 
   private startSource(source: XrInputSource) {
     const session = this.app.xr?.session, request = session?.requestHitTestSource?.bind(session);
-    if (this.disposed || this.placed || !this.reference || !request || this.pending.has(source) || this.sources.has(source)) return;
+    if (source.handedness !== "left" || this.disposed || this.placed || !this.reference || !request ||
+      this.pending.has(source) || this.sources.has(source)) return;
     this.pending.add(source);
     // PlayCanvas's input-source helper requests transient hit tests. Persistent
     // controller rays need the WebXR targetRaySpace, which PlayCanvas exposes.
@@ -83,6 +84,7 @@ export class ImmersivePlacement {
   }
 
   private select(source: XrInputSource) {
+    if (source.handedness !== "left") return;
     const hit = this.hits.get(source);
     if (!hit || performance.now() - hit.at >= 250 || this.placed) return;
     this.scene.placeOnFloor(hit.point, this.camera);

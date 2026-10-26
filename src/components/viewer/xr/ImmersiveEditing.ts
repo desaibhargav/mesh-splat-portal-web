@@ -223,7 +223,7 @@ export class ImmersiveEditing {
     this.screen.sub2(handle, source.getOrigin());
     const along = this.screen.dot(source.getDirection());
     this.inverse.copy(source.getDirection()).mulScalar(along).add(source.getOrigin());
-    return along > 0 && this.inverse.distance(handle) <= .035;
+    return along > 0 && this.inverse.distance(handle) <= .065;
   }
   private beginDepthDrag(source: XrInputSource) {
     const visual = this.volumeVisual;
@@ -259,6 +259,7 @@ export class ImmersiveEditing {
     const rectStart = this.handle.app.graphicsDevice.clientRect;
     camera.worldToScreen(anchor, this.screen);
     this.gesture.points.push({ x: this.screen.x / rectStart.width * 512, y: this.screen.y / rectStart.height * 512 });
+    if (this.shape !== "brush") this.showGestureVolume();
     this.track(source);
   }
   track(source: XrInputSource) {
@@ -283,7 +284,24 @@ export class ImmersiveEditing {
     const next = { x: Math.max(0, Math.min(512, this.screen.x / rect.width * 512)), y: Math.max(0, Math.min(512, this.screen.y / rect.height * 512)) };
     const path = this.gesture.points, last = path.at(-1);
     if (last && Math.hypot(last.x - next.x, last.y - next.y) < 1) return;
-    path.push(next); this.drawLine(path);
+    path.push(next);
+    if (this.shape === "brush") this.drawLine(path);
+    else this.showGestureVolume();
+  }
+  private showGestureVolume() {
+    if (!this.gesture) return;
+    // Stroke geometry is bounded and changes only when the pointer advances.
+    // The worker selection query still runs only after trigger release.
+    try {
+      const volume = this.makeVolume(this.gesture, true);
+      if (!volume) return;
+      if (this.volumeVisual) this.volumeVisual.setOutline(volume.outline);
+      else {
+        const root = new Matrix4().fromArray(this.handle.space.root.getWorldTransform().data);
+        const localFrame = root.clone().invert().multiply(new Matrix4().fromArray(volume.matrix));
+        this.volumeVisual = new SelectionVolumeVisual(this.handle, volume, localFrame, this.theme.gold);
+      }
+    } catch { /* A lasso can be temporarily open or self crossing while drawing. */ }
   }
   private drawLine(path: Point[]) {
     this.clearLine();
@@ -315,10 +333,13 @@ export class ImmersiveEditing {
         if (!volume) { this.message = "Draw a larger selection volume."; this.commit(); return; }
         this.volumeBaseline = { state: { masks: this.selection.state.masks.map(mask => mask.slice()), isolated: this.selection.state.isolated },
           colors: this.selection.colors, areas: this.selection.areas };
-        const root = new Matrix4().fromArray(this.handle.space.root.getWorldTransform().data);
-        const localFrame = root.clone().invert().multiply(new Matrix4().fromArray(volume.matrix));
-        this.volumeVisual = new SelectionVolumeVisual(this.handle, volume, localFrame, this.theme.gold);
-        await this.commitVolume(volume, false);
+        if (this.volumeVisual) this.volumeVisual.setOutline(volume.outline);
+        else {
+          const root = new Matrix4().fromArray(this.handle.space.root.getWorldTransform().data);
+          const localFrame = root.clone().invert().multiply(new Matrix4().fromArray(volume.matrix));
+          this.volumeVisual = new SelectionVolumeVisual(this.handle, volume, localFrame, this.theme.gold);
+        }
+        await this.commitVolume(this.volumeVisual.volume, false);
       } catch (error) { this.clearVolume(); this.message = String(error); this.commit(); }
       return;
     }
@@ -333,16 +354,31 @@ export class ImmersiveEditing {
     } catch (error) { this.message = String(error); }
     finally { this.busy = false; this.input.invalidate(); if (!this.disposed) this.commit(); }
   }
-  private makeVolume(gesture: NonNullable<typeof this.gesture>): SelectionVolume | null {
-    const path = gesture.points;
+  private makeVolume(gesture: NonNullable<typeof this.gesture>, preview = false): SelectionVolume | null {
+    let path = gesture.points;
+    if (preview && path.length < (this.shape === "lasso" ? 3 : 2)) {
+      const first = path[0]!;
+      path = this.shape === "lasso"
+        ? [...path, ...(path.length === 1 ? [{ x: first.x + 8, y: first.y }] : []),
+          { x: first.x + 4, y: first.y + 8 }]
+        : [first, { x: first.x + 8, y: first.y + 8 }];
+    }
     if (path.length < 2) return null;
     const anchor = this.handle.space.toWorld(gesture.anchor);
     const camera = this.cameraEntity, rect = this.handle.app.graphicsDevice.clientRect;
+    const bounds = this.selection.bounds(null);
+    const forward = camera.forward, far = bounds?.getMax(), near = bounds?.getMin();
+    const farCorner = far && near ? new Vec3(
+      forward.x > 0 ? far.x : near.x,
+      forward.y > 0 ? far.y : near.y,
+      forward.z > 0 ? far.z : near.z) : anchor;
+    const span = bounds ? bounds.halfExtents.length() * 2 : .1;
+    const back = Math.max(0, farCorner.clone().sub(anchor).dot(forward)) + Math.max(.01, span * .02);
     const worldFrame = new Matrix4().makeBasis(
       new Vector3(camera.right.x, camera.right.y, camera.right.z),
       new Vector3(camera.up.x, camera.up.y, camera.up.z),
-      new Vector3(camera.forward.x, camera.forward.y, camera.forward.z));
-    worldFrame.setPosition(anchor.x, anchor.y, anchor.z);
+      new Vector3(-forward.x, -forward.y, -forward.z));
+    worldFrame.setPosition(anchor.x + forward.x * back, anchor.y + forward.y * back, anchor.z + forward.z * back);
     const inverse = worldFrame.clone().invert();
     const project = (point: Point): [number, number] => {
       camera.camera!.screenToWorld(point.x / 512 * rect.width, point.y / 512 * rect.height, gesture.depth, this.inverse);
@@ -358,8 +394,7 @@ export class ImmersiveEditing {
       outline = path.filter((_, i) => i === 0 || i === path.length - 1 || i % stride === 0).map(project);
     }
     if (outline.length < 3) return null;
-    const bounds = this.selection.bounds(null);
-    const depth = bounds ? Math.max(bounds.halfExtents.x, bounds.halfExtents.y, bounds.halfExtents.z) * .6 : .1;
+    const depth = back + Math.max(.03, span * .12);
     return { shape: this.shape as "rectangle" | "lasso", matrix: worldFrame.toArray(), outline, depth };
   }
   private async commitVolume(volume: SelectionVolume, adjustment: boolean) {

@@ -12,7 +12,7 @@ export class SelectionVolumeVisual {
   private readonly entity = new Entity("XR selection volume");
   private readonly handleEntity = new Entity("XR volume depth handle");
   private readonly mesh: Mesh;
-  private readonly positions: number[];
+  private positions: number[] = [];
   private readonly indices: number[] = [];
   private readonly releaseLayer: () => void;
   private readonly center = new Vector3();
@@ -38,24 +38,28 @@ export class SelectionVolumeVisual {
     this.handleMaterial.update();
     this.handleEntity.addComponent("render", { type: "sphere", material: this.handleMaterial, layers: [this.layer.id],
       castShadows: false, receiveShadows: false });
-    this.handleEntity.setLocalScale(.025, .025, .025);
-    const points = volume.outline.map(([x, y]) => new Vector2(x, y));
-    const triangles = ShapeUtils.triangulateShape(points, []);
-    const n = points.length;
-    for (const [a, b, c] of triangles) {
-      this.indices.push(a!, c!, b!, a! + n, b! + n, c! + n);
-    }
+    this.handleEntity.setLocalScale(.045, .045, .045);
+    this.mesh = new Mesh(app.graphicsDevice);
+    this.setOutline(volume.outline);
+    const instance = new MeshInstance(this.mesh, this.material, this.entity);
+    instance.pick = false;
+    this.entity.addComponent("render", { meshInstances: [instance], layers: [this.layer.id], castShadows: false, receiveShadows: false });
+  }
+
+  // Keep one PlayCanvas mesh while the controller draws. The outline is capped
+  // at 128 vertices by the gesture adapter; only a changed stroke uploads it.
+  setOutline(outline: [number, number][]) {
+    this.volume.outline = outline;
+    const points = outline.map(([x, y]) => new Vector2(x, y));
+    const triangles = ShapeUtils.triangulateShape(points, []), n = points.length;
+    this.indices.length = 0;
+    for (const [a, b, c] of triangles) this.indices.push(a!, c!, b!, a! + n, b! + n, c! + n);
     for (let i = 0; i < n; i++) {
       const next = (i + 1) % n;
       this.indices.push(i, next, i + n, next, next + n, i + n);
     }
     this.positions = new Array(n * 6).fill(0);
-    this.mesh = new Mesh(app.graphicsDevice);
-    this.updateGeometry();
-    this.mesh.setIndices(this.indices); this.mesh.update(PRIMITIVE_TRIANGLES);
-    const instance = new MeshInstance(this.mesh, this.material, this.entity);
-    instance.pick = false;
-    this.entity.addComponent("render", { meshInstances: [instance], layers: [this.layer.id], castShadows: false, receiveShadows: false });
+    this.mesh.setIndices(this.indices);
     this.update();
   }
 

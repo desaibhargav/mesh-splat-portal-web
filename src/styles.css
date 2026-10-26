@@ -63,6 +63,8 @@ a { color: #536d7d; }
 .viewer-frame:fullscreen { width: 100vw; height: 100vh; border: 0; border-radius: 0; }
 .viewer-canvas { position: absolute; inset: 42px 0 var(--viewer-footer-height); }
 .viewer-canvas canvas { display: block; width: 100% !important; height: 100% !important; }
+.viewer-pan-surface { position: absolute; inset: calc(42px + var(--selection-toolbar-height)) 0 var(--viewer-footer-height); z-index: 1; cursor: grab; touch-action: none; }
+.viewer-pan-surface:active { cursor: grabbing; }
 .viewer-toolbar { position: absolute; z-index: 2; top: 0; right: 0; left: 0; display: flex; height: 42px; align-items: center; justify-content: space-between; padding: 0 .9rem; border-bottom: 1px solid #444; color: #bbb; background: #252525; font-size: .7rem; font-weight: bold; letter-spacing: .09em; text-transform: uppercase; }
 .viewer-loading, .viewer-error { position: absolute; z-index: 3; inset: 42px 0 var(--viewer-footer-height); display: grid; gap: .7rem; place-content: center; color: #ddd; background: rgb(24 24 24 / .88); }
 .viewer-loading progress { width: min(270px, 70vw); accent-color: var(--gold); }

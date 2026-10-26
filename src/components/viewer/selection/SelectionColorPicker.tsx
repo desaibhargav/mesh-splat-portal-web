@@ -15,9 +15,10 @@ export function SelectionColorPicker({ onApply, onReset, disabled }: {
       onClick={() => { setColor(entry.hex); onApply(entry.hex); }} />)}</div>
     <button type="button" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>Custom color</button>
     {expanded && <div className="selection-custom-color">
-      <HexColorPicker color={color} onChange={setColor} />
-      <label>Hex color<HexColorInput color={color} onChange={setColor} prefixed /></label>
-      <button type="button" disabled={!valid} onClick={() => onApply(color)} style={{ borderColor: valid ? color : undefined }}>Apply color</button>
+      <div onPointerUp={() => { if (valid) onApply(color); }}><HexColorPicker color={color} onChange={setColor} /></div>
+      <label>Hex color<HexColorInput color={color} onChange={setColor} prefixed
+        onBlur={() => { if (valid) onApply(color); }}
+        onKeyDown={event => { if (event.key === "Enter" && valid) onApply(color); }} /></label>
     </div>}
     {onReset && <button type="button" title="Remove applied color" aria-label="Remove Color" className="tool-action-reset" onClick={onReset}>Remove Color</button>}
   </fieldset>;

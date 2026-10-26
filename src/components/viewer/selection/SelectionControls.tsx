@@ -18,6 +18,7 @@ import { ViewControls } from "../views/ViewControls";
 import { SectionControls } from "../section/SectionControls";
 import { CaptureControls } from "../capture/CaptureControls";
 import { tools } from "../toolDefinitions";
+import { BrowserPan } from "../BrowserPan";
 
 const selectionShapes: { shape: SelectionShape; label: string }[] = [
   { shape: "rectangle", label: "Box" },
@@ -52,6 +53,7 @@ function WorkspaceTools({ handle, tool, onToolChange, disabled, captureName, wor
 }) {
   const [drawingSegment, setDrawingSegment] = useState(false);
   const [optionsCollapsed, setOptionsCollapsed] = useState(false);
+  const [panMode, setPanMode] = useState(false);
   const [segmentSeed, setSegmentSeed] = useState<SelectionSnapshot | null>(null);
   const document = workspaces?.current;
   const [summary, setSummary] = useState(handle?.selection.summary);
@@ -82,6 +84,7 @@ function WorkspaceTools({ handle, tool, onToolChange, disabled, captureName, wor
   const documentChanged = useCallback(() => refreshDocument(value => value + 1), []);
   useEffect(() => { if (tool !== "segment") { setSegmentSeed(null); setDrawingSegment(false); } }, [tool]);
   useEffect(() => { setOptionsCollapsed(false); }, [tool]);
+  useEffect(() => { if (tool !== "navigate") setPanMode(false); }, [tool]);
   useEffect(() => {
     setSummary(handle?.selection.summary); setError(null); setBusy(false); setBusyLabel("Selecting…");
     return () => { generation.current++; };
@@ -265,8 +268,11 @@ function WorkspaceTools({ handle, tool, onToolChange, disabled, captureName, wor
         <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round"
           strokeDasharray={item.tool === "select" ? "3 2" : undefined}><path d={item.path} /></svg>
       </button>)}
+      {tool === "navigate" && <button type="button" aria-label="Pan mode" aria-pressed={panMode}
+        title="Drag to pan" disabled={unavailable} onClick={() => setPanMode(value => !value)}>Pan</button>}
       <span role="status">{busy ? busyLabel : summary ? `${summary.selected.toLocaleString()} / ${summary.total.toLocaleString()} selected` : "Preparing selection…"}</span>
     </div>
+    {panMode && tool === "navigate" && handle && !disabled && <BrowserPan handle={handle} />}
     {workspaces && document && document.id !== 0 && <div className="workspace-banner" role="group" aria-label="Active workspace">
       <span>Segment: {document.name}{!document.visible && " (hidden)"}</span>
       <button className="tool-action-reset" onClick={() => { workspaces.open(0); onToolChange("navigate"); }}>Return to asset</button>

@@ -10,6 +10,7 @@ import { ImmersivePlacement } from "./ImmersivePlacement";
 import { ImmersiveGestures } from "./ImmersiveGestures";
 import { ImmersiveTools } from "./ImmersiveTools";
 import { measurementAppearance } from "../measurement/measurementAppearance";
+import { SplatSelection } from "../selection/SplatSelection";
 type ImmersiveType = typeof XRTYPE_AR | typeof XRTYPE_VR;
 
 export class ImmersiveViewer extends EventHandler {
@@ -41,6 +42,7 @@ export class ImmersiveViewer extends EventHandler {
   }
 
   available(type: ImmersiveType) { return this.xr?.isAvailable(type) ?? false; }
+  private get isSplat() { return this.handle.selection instanceof SplatSelection; }
 
   setTool(tool: SelectionTool) {
     this.tool = tool;
@@ -62,7 +64,9 @@ export class ImmersiveViewer extends EventHandler {
     const width = app.graphicsDevice.width, height = app.graphicsDevice.height;
     const rig = new Entity("Immersive viewing space");
     app.root.addChild(rig);
-    const scene = new ImmersiveScene(this.handle, bounds);
+    // Keep the source-space bounds fixed while the asset is reparented and
+    // manipulated in XR; SelectionHandle.bounds() reflects its live transform.
+    const scene = new ImmersiveScene(this.handle, bounds.clone());
     this.activeScene = scene;
     const input = new ImmersiveInput(app, rig, scene.root, this.handle);
     const placement = type === XRTYPE_AR ? new ImmersivePlacement(app, scene, camera.entity) : null;
@@ -94,7 +98,7 @@ export class ImmersiveViewer extends EventHandler {
     xr.once("update", place);
     this.pending = true; this.error = null; this.changed();
     try {
-      xr.start(camera, type, XRSPACE_LOCALFLOOR, { callback: error => {
+      xr.start(camera, type, XRSPACE_LOCALFLOOR, { framebufferScaleFactor: this.isSplat ? .75 : 1, callback: error => {
         if (error) { this.error = error.message; this.ended(); }
         else if (this.disposed) xr.end();
       } });
@@ -129,6 +133,9 @@ export class ImmersiveViewer extends EventHandler {
   private entered() {
     if (this.disposed) { this.xr?.end(); return; }
     cameraControls(this.camera).enabled = false;
+    // Native fixed foveation is applied only when the headset's XR layer
+    // supports it. A lower splat framebuffer scale bounds stereo fill cost.
+    if (this.isSplat && this.xr?.fixedFoveation !== null) this.xr!.fixedFoveation = .5;
     this.exitPressed = false;
     this.framePressed = this.undoPressed = this.redoPressed = false; this.lastReset = 0;
     this.handle.app.on("update", this.controllerExit, this);

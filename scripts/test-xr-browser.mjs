@@ -444,9 +444,20 @@ try {
       await control(options,'Collapse tool options');
       await move(aim);
       await page.evaluate(()=>window.xrDevice.controllers.right.updateButtonValue('trigger',1)); await settle(h);
+      check(await menu.evaluate(m=>!!m.editing.volumeVisual && !!m.editing.gesture),
+        shape+' did not show a 3D envelope on trigger press');
       for(const [x,y] of (shape==='Box' ? [[.08,-.08]] : [[.08,0],[0,-.08],[-.08,0]])) {
         await page.evaluate(([x,y])=>{window.xrDevice.controllers.right.position.x+=x;window.xrDevice.controllers.right.position.y+=y;},[x,y]); await settle(h);
       }
+      const drawingVolume=await menu.evaluate(m=>{
+        const visual=m.editing.volumeVisual,gesture=m.editing.gesture;
+        if(!visual||!gesture)return null;
+        const anchor=m.editing.handle.space.toWorld(gesture.anchor);
+        const front=visual.handleWorld();
+        return {depth:visual.volume.depth,front:front.clone().sub(anchor).dot(m.editing.handle.viewports.perspectivePanel.camera.entity.forward)};
+      });
+      check(drawingVolume?.depth>0,shape+' did not show a 3D volume during the stroke');
+      check(drawingVolume.front<0,shape+' volume did not project forward of the picked surface');
       const committedAt=performance.now();
       await page.evaluate(()=>window.xrDevice.controllers.right.updateButtonValue('trigger',0)); await settle(h);
       await page.waitForFunction(menu=>!menu.editing.busy,{},menu);
@@ -689,11 +700,14 @@ try {
       await page.click(process.env.XR_EDITING_AR ? '[aria-label="View in your room"]' : '[aria-label="View in VR"]');
       await page.waitForFunction(()=>document.querySelector('.viewer-frame')?.dataset.immersive==='true'); await settle(h);
       if(process.env.XR_EDITING_AR) {
-        await page.evaluate(()=>{const c=window.xrDevice.controllers.right;c.position.set(.3,1.3,-.5);c.quaternion.set(-Math.sin(7*Math.PI/36),0,0,Math.cos(7*Math.PI/36));});
+        await page.evaluate(()=>{const c=window.xrDevice.controllers.left;c.position.set(.3,1.3,-.5);c.quaternion.set(-Math.sin(7*Math.PI/36),0,0,Math.cos(7*Math.PI/36));});
         await page.waitForFunction(h=>h.app.root.findByName('AR placement target')?.enabled,{timeout:15000},h);
-        await page.evaluate(()=>window.xrDevice.controllers.right.updateButtonValue('trigger',1));
-        await page.waitForFunction(h=>h.app.root.findByName('Immersive artifact')?.enabled,{timeout:15000},h);
+        await page.evaluate(()=>window.xrDevice.controllers.right.updateButtonValue('trigger',1)); await settle(h);
+        check(await h.evaluate(h=>!h.app.root.findByName('Immersive artifact')?.enabled),'Right trigger placed the AR asset');
         await page.evaluate(()=>window.xrDevice.controllers.right.updateButtonValue('trigger',0)); await settle(h);
+        await page.evaluate(()=>window.xrDevice.controllers.left.updateButtonValue('trigger',1));
+        await page.waitForFunction(h=>h.app.root.findByName('Immersive artifact')?.enabled,{timeout:15000},h);
+        await page.evaluate(()=>window.xrDevice.controllers.left.updateButtonValue('trigger',0)); await settle(h);
         // Simulate the user's grip move after floor placement, bringing the model
         // into the visible editing workspace before testing surface gestures.
         await h.evaluate(h=>{
@@ -719,6 +733,15 @@ try {
     await page.mouse.move(x + 70, y + 30, { steps: 8 }); await page.mouse.up(); await page.keyboard.up("Shift"); await settle(h);
     const desktopPan = await desktopCamera();
     check(desktopPan.focus.some((value, index) => Math.abs(value - desktopOrbit.focus[index]) > .001), "Desktop pan stopped working");
+    await page.click('[aria-label="Pan mode"]');
+    const panModeBefore = await desktopCamera();
+    await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x + 80, y + 25, { steps: 8 }); await page.mouse.up(); await settle(h);
+    const panModeAfter = await desktopCamera();
+    check(panModeAfter.focus.some((value, index) => Math.abs(value - panModeBefore.focus[index]) > .001),
+      'Primary-pointer Pan mode did not move the camera target');
+    check(panModeAfter.rotation.every((value, index) => Math.abs(value - panModeBefore.rotation[index]) < .001),
+      'Primary-pointer Pan mode rotated the camera');
+    await page.click('[aria-label="Pan mode"]');
     await page.mouse.wheel({ deltaY: -250 }); await settle(h);
     const desktopZoom = await desktopCamera();
     check(desktopZoom.position.some((value, index) => Math.abs(value - desktopPan.position[index]) > .001), "Desktop zoom stopped working");
@@ -755,14 +778,14 @@ try {
         if (type === "immersive-ar") {
           check(await h.evaluate(h => !h.app.root.findByName("Immersive artifact").enabled), "AR artifact appeared before surface placement");
           await page.evaluate(() => {
-            const c=window.xrDevice.controllers.right;
+            const c=window.xrDevice.controllers.left;
             c.position.set(.3,1.3,-.5);
             c.quaternion.set(-Math.sin(7*Math.PI/36),0,0,Math.cos(7*Math.PI/36));
           });
           await page.waitForFunction(h => h.app.root.findByName("AR placement target")?.enabled, {timeout:15000}, h);
-          await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("trigger",1));
+          await page.evaluate(() => window.xrDevice.controllers.left.updateButtonValue("trigger",1));
           await page.waitForFunction(h => h.app.root.findByName("Immersive artifact")?.enabled, {timeout:15000}, h);
-          await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("trigger",0));
+          await page.evaluate(() => window.xrDevice.controllers.left.updateButtonValue("trigger",0));
           const bottom = await h.evaluate((h, bounds) => {
             const root = h.app.root.findByName("Immersive artifact");
             const point = { x: bounds.center[0], y: bounds.center[1] - bounds.halfExtents[1], z: bounds.center[2] };
@@ -817,7 +840,7 @@ try {
         const moved = await canvas.asElement().screenshot();
         check(!first.equals(moved), "Tracked head movement did not change rendered image");
         if (!split) {
-          await page.evaluate(() => window.xrDevice.controllers.left.updateButtonValue("x-button", 1));
+          await page.evaluate(() => { window.xrDevice.controllers.left.updateButtonValue("trigger", 1); window.xrDevice.controllers.right.updateButtonValue("trigger", 1); });
           await settle(h);
           const framed = await h.evaluate((h, localCenter) => {
             const Vec3 = h.app.root.getPosition().constructor;
@@ -825,8 +848,8 @@ try {
             const camera = h.viewports.perspectivePanel.camera.entity;
             return center.clone().sub(camera.getPosition()).dot(camera.forward);
           }, initialBounds.center);
-          check(Math.abs(framed - 1.5) < .02, `Left X did not frame the artifact in front of the headset: ${framed}`);
-          await page.evaluate(() => window.xrDevice.controllers.left.updateButtonValue("x-button", 0));
+          check(Math.abs(framed - 1.5) < .02, `Trigger chord did not frame the artifact in front of the headset: ${framed}`);
+          await page.evaluate(() => { window.xrDevice.controllers.left.updateButtonValue("trigger", 0); window.xrDevice.controllers.right.updateButtonValue("trigger", 0); });
           await settle(h);
         }
         if (!split) {

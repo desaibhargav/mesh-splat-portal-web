@@ -30,7 +30,7 @@ export class ToolPanel {
   private readonly keyboard: SpatialPanel;
   private collapsed = false;
   private typing = false;
-  private textInput: { label: string; value: string; change(value: string): void } | null = null;
+  private textInput: { label: string; value: string; change(value: string): void; done?(): void } | null = null;
   private upper = false;
   private savedScroll = 0;
   private state: PanelState | null = null;
@@ -199,11 +199,13 @@ export class ToolPanel {
     this.centered(panel, "Shift", 8, 164, 55, 23, () => { this.upper = !this.upper; this.render(this.state!); });
     this.centered(panel, "Space", 68, 164, 100, 23, () => this.type(`${this.textInput!.value} `));
     this.centered(panel, "⌫", 173, 164, 55, 23, () => this.type(this.textInput!.value.slice(0, -1)));
-    this.centered(panel, "Done", 233, 164, 109, 23, () => { this.typing = false; this.render(this.state!); }, this.saveColor);
+    this.centered(panel, "Done", 233, 164, 109, 23, () => {
+      this.textInput?.done?.(); this.typing = false; this.render(this.state!);
+    }, this.saveColor);
     panel.finish();
   }
-  private editText(label: string, value: string, change: (value: string) => void) {
-    this.textInput = { label, value, change }; this.typing = true; this.render(this.state!);
+  private editText(label: string, value: string, change: (value: string) => void, done?: () => void) {
+    this.textInput = { label, value, change, done }; this.typing = true; this.render(this.state!);
   }
   private type(value: string) { if (this.textInput) { this.textInput.value = value; this.textInput.change(value); } }
   private drawEditing(editing: ImmersiveEditing) {
@@ -242,7 +244,7 @@ export class ToolPanel {
       const button = (label: string, callback: () => void, color?: string, disabled = false) => {
         this.centered(panel, label, 8, y, 254, 30, callback, color, disabled || editing.busy); y += 36;
       };
-      const field = (label: string, value: string, change: (value: string) => void) => {
+      const field = (label: string, value: string, change: (value: string) => void, done?: () => void) => {
         this.text(ctx, label, 8, y); y += 12;
         if (label === "Description") {
           this.box(ctx, 8, y, 254, 76, this.theme.input);
@@ -250,9 +252,9 @@ export class ToolPanel {
           const words = value.split(" "); let line = "", row = 0;
           for (const word of words) { if ((line + word).length > 36) { this.text(ctx, line, 14, y + 14 + row++ * 15); line = ""; } line += `${word} `; }
           this.text(ctx, line, 14, y + 14 + row * 15); ctx.restore();
-          panel.controls.push({ label, x: 8, y, width: 254, height: 76, activate: () => this.editText(label, value, change) }); y += 86;
+          panel.controls.push({ label, x: 8, y, width: 254, height: 76, activate: () => this.editText(label, value, change, done) }); y += 86;
         } else {
-          this.button(panel, label, 8, y, 254, 30, () => this.editText(label, value, change), { text: value, color: this.theme.input }); y += 40;
+          this.button(panel, label, 8, y, 254, 30, () => this.editText(label, value, change, done), { text: value, color: this.theme.input }); y += 40;
         }
       };
       if (selection) {
@@ -272,8 +274,9 @@ export class ToolPanel {
         this.text(ctx, "Color selection", 8, y); y += 12;
         selectionColors.forEach((color, i) => this.centered(panel, color.name, 8 + i % 4 * 64, y + Math.floor(i / 4) * 29, 60, 25,
           () => act("paint", encodeColor(color.hex)), color.hex, !editing.selection.summary.selected, "")); y += 64;
-        field("Hex color", editing.customColor, value => act("color", value));
-        button("Apply color", () => act("paint"), undefined, !editing.selection.summary.selected);
+        field("Hex color", editing.customColor, value => act("color", value), () => {
+          if (editing.selection.summary.selected && /^#[0-9a-f]{6}$/i.test(editing.customColor)) act("paint");
+        });
         button("Clear Selection", () => act("clear"), this.resetColor, !editing.selection.summary.selected);
       } else {
         const status = editing.message || ({ choose: "Choose an annotation type", selection: "Hover over a selection, then click it",

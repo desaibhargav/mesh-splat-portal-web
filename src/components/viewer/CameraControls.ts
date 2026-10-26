@@ -7,6 +7,8 @@ import { CameraControls as EngineCameraControls } from "playcanvas/scripts/esm/c
 export class CameraControls extends EngineCameraControls {
   static override get scriptName() { return "cameraControls"; }
 
+  capturePose() { return this._pose.clone(); }
+
   // The bundled controller zooms by changing orbit distance. Orthographic
   // projection needs the same ratio applied to its height; XR owns its cameras.
   override update(dt: number) {
