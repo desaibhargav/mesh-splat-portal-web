@@ -3,7 +3,7 @@ import { HexColorInput, HexColorPicker } from "react-colorful";
 import { selectionColors } from "./selectionColors";
 
 export function SelectionColorPicker({ onApply, onReset, disabled }: {
-  onApply(color: string): void; onReset(): void; disabled: boolean;
+  onApply(color: string): void; onReset?(): void; disabled: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [color, setColor] = useState("#e53935");
@@ -19,6 +19,6 @@ export function SelectionColorPicker({ onApply, onReset, disabled }: {
       <label>Hex color<HexColorInput color={color} onChange={setColor} prefixed /></label>
       <button type="button" disabled={!valid} onClick={() => onApply(color)} style={{ borderColor: valid ? color : undefined }}>Apply color</button>
     </div>}
-    <button type="button" title="Remove applied color from the current selection" aria-label="Remove Color" className="tool-action-reset" onClick={onReset}>Remove Color</button>
+    {onReset && <button type="button" title="Remove applied color" aria-label="Remove Color" className="tool-action-reset" onClick={onReset}>Remove Color</button>}
   </fieldset>;
 }

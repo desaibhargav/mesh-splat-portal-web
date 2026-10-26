@@ -293,8 +293,7 @@ function WorkspaceTools({ handle, tool, onToolChange, disabled, captureName, wor
           setEditingSelection(null); setSelectionName(""); setSummary(history!.perform(() => handle!.selection.clear())); documentChanged();
         }}>New selection</button>}
         <SelectionColorPicker disabled={unavailable || !summary?.selected}
-          onApply={applyColor}
-          onReset={() => paint(0)} />
+          onApply={applyColor} />
         <button className="tool-action-reset" disabled={unavailable || !summary?.selected} onClick={() => { setSummary(history!.perform(() => handle!.selection.clear())); documentChanged(); }}>Clear Selection</button>
       </div>
     </div>}

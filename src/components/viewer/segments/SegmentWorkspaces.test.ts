@@ -55,6 +55,18 @@ it("colors a segment scope without copying geometry and can restore its source a
   expect(segment.color).toBe(0); expect([...selection.colors[0]!]).toEqual([0, 0, 0, 0]);
 });
 
+it("deletes a saved selection's paint and linked note while preserving overlapping paint", () => {
+  const { selection, workspaces } = setup();
+  const first = { id: 1, name: "First", saved: true, visible: true, color: 4, snapshot: region([255, 255, 0, 0]) };
+  const second = { id: 2, name: "Second", saved: true, visible: true, color: 4, snapshot: region([0, 255, 255, 0]) };
+  selection.areas = [first, second]; selection.colors = [new Uint32Array([4, 4, 4, 0])];
+  workspaces.current.annotations.save({ title: "Linked", text: "", position: new Vec3(), region: first.snapshot, selectionId: first.id });
+  workspaces.removeSelection(first.id);
+  expect(selection.areas).toEqual([second]);
+  expect([...selection.colors[0]!]).toEqual([0, 4, 4, 0]);
+  expect(workspaces.current.annotations.records).toHaveLength(0);
+});
+
 it("hides only the active segment without changing its saved scope or opening another tool", () => {
   const { selection, workspaces, scope } = setup();
   const segment = workspaces.create("Part", region([255, 0, 0, 0]));

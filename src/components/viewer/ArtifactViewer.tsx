@@ -49,7 +49,6 @@ export function ArtifactViewer({ artifact }: { artifact: Artifact }) {
       }}>
       <div className="viewer-toolbar">
         <span>{artifact.type === "mesh" ? "Mesh" : "Gaussian splat"}</span>
-        <button onClick={() => void toggleFullscreen()}>{fullscreen ? "Exit fullscreen" : "Fullscreen"}</button>
       </div>
       <SelectionControls handle={selection} workspaces={workspaces} tool={tool} onToolChange={changeTool} disabled={immersive || status.loading || Boolean(status.error)} captureName={artifact.title} />
       <div className="viewer-canvas">
@@ -62,7 +61,15 @@ export function ArtifactViewer({ artifact }: { artifact: Artifact }) {
       {selection && <ViewportLayout handle={selection} />}
       {status.loading && <div className="viewer-loading" role="status"><span>Loading 3D asset</span><progress value={status.progress} max={1} /></div>}
       {status.error && <div className="viewer-error" role="alert">{status.error}</div>}
-      <div className="viewer-footer">{selection && workspaces && <ImmersiveControls handle={selection} workspaces={workspaces}
+      <div className="viewer-footer">
+        <button type="button" className="viewer-fullscreen-button" aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
+          title={fullscreen ? "Exit fullscreen" : "Fullscreen"} onClick={() => void toggleFullscreen()}>
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            {fullscreen ? <path d="M9 3v6H3m12-6v6h6M3 15h6v6m12-6h-6v6" /> :
+              <path d="M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6" />}
+          </svg>
+        </button>
+        {selection && workspaces && <ImmersiveControls handle={selection} workspaces={workspaces}
         tool={tool} onToolChange={changeTool} onActive={setImmersive} />}</div>
     </section>
   );

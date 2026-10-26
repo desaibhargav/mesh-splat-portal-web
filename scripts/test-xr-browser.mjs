@@ -259,6 +259,20 @@ try {
     await control('XR tool bar','Select');
     check(await menu.evaluate(m=>m.currentTool==='select'),'Selection toolbar did not activate');
     await control(options,'Brush');
+    await control(options,'Box',false);
+    await control(options,'Brush',false);
+    check(await h.evaluate(h=>{
+      const panel=h.app.root.findByName('XR measurement options');
+      const popup=panel.parent.findByName('XR hovered control');
+      return popup?.enabled && popup.getLocalPosition().z>0;
+    }), 'Hovered XR button did not rise in stereo');
+    const hoverScene=await h.evaluateHandle(h=>h.app.graphicsDevice.canvas);
+    const raised=await hoverScene.asElement().screenshot();
+    await h.evaluate(h=>{h.app.root.findByName('XR measurement options').parent.findByName('XR hovered control').enabled=false;h.app.renderNextFrame=true;});
+    await settle(h);
+    check(!raised.equals(await hoverScene.asElement().screenshot()),'Raised XR button produced no visible pixels');
+    await h.evaluate(h=>{h.app.root.findByName('XR measurement options').parent.findByName('XR hovered control').enabled=true;h.app.renderNextFrame=true;});
+    await settle(h);
     const toolbarBefore=await h.evaluate(h=>h.app.root.findByName('XR tool bar').element._callbacks.get('click')[0].scope.canvas.toDataURL());
     await control('XR tool bar','Select',false);
     const toolbarHovered=await h.evaluate(h=>h.app.root.findByName('XR tool bar').element._callbacks.get('click')[0].scope.canvas.toDataURL());
@@ -285,12 +299,23 @@ try {
     }
     check(aim,'No surface found for selection stroke');
     await page.waitForFunction(menu=>!!menu.editing.brush,{timeout:20000},menu);
+    check(await menu.evaluate(m=>{
+      const editing=m.editing,b=editing.selection.bounds(null),p=editing.brushPoints,center=editing.point;
+      const radius=Math.hypot(p[0]-center.x,p[1]-center.y,p[2]-center.z);
+      const expected=Math.max(.005,Math.max(b.halfExtents.x,b.halfExtents.y,b.halfExtents.z)*editing.brushSize/100);
+      return Math.abs(radius-expected)<.002;
+    }), 'XR brush radius did not match the displayed asset bounds');
     const renderCanvas=await h.evaluateHandle(h=>h.app.graphicsDevice.canvas);
     const brushImage=await renderCanvas.asElement().screenshot();
     await page.screenshot({path:path.join(output,`${id}-xr-brush-before.png`)});
     await menu.evaluate(m=>{m.editing.lines.remove(m.editing.brush);}); await settle(h);
     check(!brushImage.equals(await renderCanvas.asElement().screenshot()),'Brush has no visible scene pixels');
     await menu.evaluate(m=>{m.editing.lines.add(m.editing.brush);}); await settle(h);
+    await menu.evaluate(m=>m.editing.action('brush',50)); await settle(h);
+    const largestBrush=await renderCanvas.asElement().screenshot();
+    await menu.evaluate(m=>m.editing.lines.remove(m.editing.brush)); await settle(h);
+    check(!largestBrush.equals(await renderCanvas.asElement().screenshot()),'Largest XR brush vanished');
+    await menu.evaluate(m=>{m.editing.lines.add(m.editing.brush);m.editing.action('brush',10);}); await settle(h);
     check(await input.evaluate(i=>{
       const source=[...i.hits.keys()].find(s=>s.handedness==='right'),hit=i.hit(source),tip=i.pointers.get(source).positions;
       const world=i.handle.space.toWorld(hit.point);return Math.hypot(tip[3]-world.x,tip[4]-world.y,tip[5]-world.z)<.002;
@@ -315,6 +340,17 @@ try {
     await control(options,'Selection name'); await type('region'); await control(options,'Save selection');
     check(await h.evaluate(h=>h.selection.areas.some(a=>a.saved&&a.name==='region')),'XR selection not saved');
     await control(options,'Blue');
+    await control(options,'Yellow');
+    check(await h.evaluate(h=>h.selection.areas.find(a=>a.name==='region')?.color===0xfdd836),
+      'XR swatch did not replace the previous selection color');
+    await page.evaluate(()=>window.xrDevice.controllers.left.updateButtonValue('x-button',1)); await settle(h);
+    check(await h.evaluate(h=>h.selection.areas.find(a=>a.name==='region')?.color===0x1e88e6),
+      'Left X did not undo the XR color change');
+    await page.evaluate(()=>window.xrDevice.controllers.left.updateButtonValue('x-button',0)); await settle(h);
+    await page.evaluate(()=>window.xrDevice.controllers.left.updateButtonValue('y-button',1)); await settle(h);
+    check(await h.evaluate(h=>h.selection.areas.find(a=>a.name==='region')?.color===0xfdd836),
+      'Left Y did not redo the XR color change');
+    await page.evaluate(()=>window.xrDevice.controllers.left.updateButtonValue('y-button',0)); await settle(h);
     const saved=await h.evaluate(h=>h.selection.areas.filter(a=>a.saved).length);
     await control(options,'Isolate'); check(await h.evaluate(h=>h.selection.summary.isolated),'XR isolate failed');
     await control(options,'Show all');
@@ -434,14 +470,24 @@ try {
     check(await h.evaluate(h=>h.selection.areas.some(a=>!a.saved)),'XR selection draft was not created');
     await control('XR tool bar','Annotate');
     check(await h.evaluate(h=>h.selection.summary.selected===0&&h.selection.areas.every(a=>a.saved)),'XR tool switch retained an unsaved selection');
+    await control('XR tool bar','Select');
+    await control(options,'Delete selection region');
+    check(await h.evaluate(h=>h.selection.areas.every(a=>a.name!=='region')&&h.selection.summary.selected===0),
+      'XR saved-list deletion did not remove the selection');
+    check(await ws.evaluate(ws=>ws.current.annotations.records.length===1&&ws.current.annotations.records[0].title==='point'),
+      'XR deletion did not remove only the linked annotation');
+    await move(aim);
+    await page.evaluate(()=>{window.xrDevice.controllers.left.updateButtonValue('trigger',1);
+      window.xrDevice.controllers.right.updateButtonValue('trigger',1);}); await settle(h);
+    check(await h.evaluate(h=>h.selection.summary.selected===0),'Both-trigger frame gesture also selected the asset');
+    await page.evaluate(()=>{window.xrDevice.controllers.left.updateButtonValue('trigger',0);
+      window.xrDevice.controllers.right.updateButtonValue('trigger',0);}); await settle(h);
     await h.evaluate(h=>new Promise(resolve=>h.app.xr.end(resolve))); await settle(h);
+    await page.click('[aria-label="Annotate"]');
     await page.waitForSelector('.annotation-list');
     check(await page.$eval('.selection-toolbar [role="status"]',e=>e.textContent.startsWith('0 /')),'Desktop selection summary did not synchronize from XR');
-    check(await page.$eval('.annotation-list',e=>e.textContent.includes('notex')&&e.textContent.includes('point')),'XR notes missing on desktop');
+    check(await page.$eval('.annotation-list',e=>!e.textContent.includes('notex')&&e.textContent.includes('point')),'XR deletion did not synchronize to desktop');
     await page.screenshot({path:path.join(output,`${id}-xr-editing-back-on-desktop.png`)});
-    await page.click('[aria-label="Select"]'); await page.click('[aria-label="Delete region"]');
-    check(await ws.evaluate(ws=>ws.current.annotations.records.length===1&&ws.current.annotations.records[0].title==='point'),
-      'Deleting a saved selection did not delete only its linked annotations');
     console.log('PASS',id,'ray clipping, hover, select/save/paint/isolate → annotation, point annotation/edit/collapse, desktop sharing');
   }
 
@@ -545,10 +591,12 @@ try {
     check(await page.evaluate(() => {
       const footer = document.querySelector(".viewer-footer"), vr = footer?.querySelector('[aria-label="View in VR"]');
       const ar = footer?.querySelector('[aria-label="View in your room"]');
-      const bounds = footer?.getBoundingClientRect(), vrBounds = vr?.getBoundingClientRect();
-      return !!(vr && ar && bounds && vrBounds && vrBounds.width <= 35 && vrBounds.bottom <= bounds.bottom &&
+      const full = footer?.querySelector('[aria-label="Fullscreen"]');
+      const bounds = footer?.getBoundingClientRect(), vrBounds = vr?.getBoundingClientRect(), fullBounds=full?.getBoundingClientRect();
+      return !!(vr && ar && full && bounds && vrBounds && fullBounds && vrBounds.width >= 36 &&
+        fullBounds.width >= 36 && fullBounds.right < vrBounds.left && vrBounds.bottom <= bounds.bottom &&
         !document.querySelector(".viewer-help") && !document.querySelector('[aria-label="Four views"]'));
-    }), "Compact bottom VR/AR controls did not replace the instructions and four-view button");
+    }), "Bottom-right Fullscreen, VR and AR controls are missing or too small");
     await page.$eval(".viewer-frame", element => element.scrollIntoView());
     const h = await handle();
     console.log("LOAD",id,Math.round(performance.now()-loadStarted));

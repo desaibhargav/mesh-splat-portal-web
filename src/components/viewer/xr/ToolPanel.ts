@@ -274,7 +274,6 @@ export class ToolPanel {
           () => act("paint", encodeColor(color.hex)), color.hex, !editing.selection.summary.selected, "")); y += 64;
         field("Hex color", editing.customColor, value => act("color", value));
         button("Apply color", () => act("paint"), undefined, !editing.selection.summary.selected);
-        button("Remove Color", () => act("paint", 0), undefined, !editing.selection.summary.selected);
         button("Clear Selection", () => act("clear"), this.resetColor, !editing.selection.summary.selected);
       } else {
         const status = editing.message || ({ choose: "Choose an annotation type", selection: "Hover over a selection, then click it",

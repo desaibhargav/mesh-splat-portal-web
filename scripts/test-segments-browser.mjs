@@ -229,6 +229,11 @@ try {
     console.log("LOAD", slug, base);
     await page.goto(base + "/artifacts/" + slug);
     await page.waitForSelector("button[aria-label=\"Select\"]:not([disabled])", { timeout: 9e4 });
+    check(await page.$eval('.viewer-footer', footer=>{
+      const full=footer.querySelector('[aria-label="Fullscreen"]'), box=full?.getBoundingClientRect();
+      return !!(full?.querySelector('svg') && box && box.width>=36 && box.height>=36 &&
+        !document.querySelector('.viewer-toolbar button'));
+    }), 'Fullscreen icon is missing from the bottom viewer bar');
     await page.$eval(".viewer-frame", (e) => e.scrollIntoView());
     if (slug === "sakura-garden") {
       await page.$eval("[aria-label=\"Look from Front\"]", (e) => e.focus());
@@ -245,6 +250,12 @@ try {
     check((await doc()).selected > 0, "Select parent");
     await page.click("[aria-label=\"Color selection red\"]");
     await settle();
+    await page.click("[aria-label=\"Color selection yellow\"]");
+    await settle();
+    check(await (await appHandle()).evaluate(h=>h.selection.state.masks.every((mask,part)=>
+      mask.every((selected,index)=>!selected || h.selection.colors[part][index] === 0xfdd836))),
+      'Choosing a second swatch did not replace the active selection color');
+    await page.click('[aria-label="Color selection red"]'); await settle();
     await typeText('[aria-label="Selection name"]', "Parent region");
     await exact("Save selection");
     const parent = await doc();
@@ -332,18 +343,22 @@ try {
     await settle();
     await page.locator("[aria-label=\"Selection name\"]").fill("Local region");
     await exact("Save selection");
-    await exact("Remove Color");
-    check((await doc()).colors === 0, "Remove Color did not affect the segment");
+    await page.click('[aria-label="Color selection yellow"]');
+    await settle();
+    check(await (await appHandle()).evaluate(h=>h.selection.areas.find(area=>area.name==='Local region')?.color===0xfdd836),
+      "A second swatch did not recolor the saved segment selection");
     await page.keyboard.down("Control");
     await page.keyboard.press("z");
     await page.keyboard.up("Control");
-    check((await doc()).colors > 0, "Segment paint undo failed");
+    check(await (await appHandle()).evaluate(h=>h.selection.areas.find(area=>area.name==='Local region')?.color===0x1e88e6),
+      "Segment paint undo failed");
     await page.keyboard.down("Control");
     await page.keyboard.down("Shift");
     await page.keyboard.press("z");
     await page.keyboard.up("Shift");
     await page.keyboard.up("Control");
-    check((await doc()).colors === 0, "Segment paint redo failed");
+    check(await (await appHandle()).evaluate(h=>h.selection.areas.find(area=>area.name==='Local region')?.color===0xfdd836),
+      "Segment paint redo failed");
     await page.keyboard.down("Control");
     await page.keyboard.press("z");
     await page.keyboard.up("Control");

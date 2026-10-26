@@ -2,7 +2,6 @@ import { ASPECT_MANUAL, Color, Entity, Plane, Ray, Vec3, WideLine, WideLineRende
 import type { SelectionHandle, SelectionShape, SelectionTool, SurfaceHit } from "../selection/types";
 import type { SegmentWorkspaces, WorkspaceDocument } from "../segments/SegmentWorkspaces";
 import { rasterizeGesture } from "../selection/rasterizeGesture";
-import { brushDiameter } from "../selection/brushDiameter";
 import { unpackSelection } from "../selection/SelectionHistory";
 import { saveSelectionArea, decodeColor, encodeColor } from "../selection/selectionColors";
 import { snapshotContains } from "../selection/selectionSnapshot";
@@ -41,7 +40,6 @@ export class ImmersiveEditing {
   private readonly brushPoints = new Float32Array(49 * 3);
   private readonly tangent = new Vec3();
   private readonly bitangent = new Vec3();
-  private readonly worldScale = new Vec3();
   private gesture: { points: Point[]; diameter: number; depth: number; anchor: Vec3; document: WorkspaceDocument } | null = null;
   private readonly plane = new Plane();
   private readonly ray = new Ray();
@@ -87,7 +85,7 @@ export class ImmersiveEditing {
         history.perform(() => { this.selection.setAreaVisible(area.id, true); return this.selection.restore(unpackSelection(area.snapshot)); });
         this.selectionId = area.id; this.selectionName = area.name; break;
       }
-      case "remove": this.workspaces.removeSelection(Number(value)); this.selectionId = null; break;
+      case "remove": this.workspaces.removeSelection(Number(value)); this.selectionId = null; this.selectionName = ""; break;
       case "save": history.perform(() => {
         const areas = saveSelectionArea(this.selection.areas, this.selection.state, this.selectionName, this.selectionId);
         return this.selection.restore(unpackSelection(areas.at(-1)!.snapshot), this.selection.colors, areas);
@@ -134,8 +132,7 @@ export class ImmersiveEditing {
       if (!this.brushVisible) { this.lines.add(this.brush); this.brushVisible = true; }
       this.handle.space.toWorld(hit.point, this.point);
       const bounds = this.selection.bounds(null), diameter = bounds ? Math.max(bounds.halfExtents.x, bounds.halfExtents.y, bounds.halfExtents.z) * 2 * this.brushSize / 100 : .01;
-      this.handle.space.root.getWorldTransform().getScale(this.worldScale);
-      const radius = Math.max(.005, diameter * Math.max(this.worldScale.x, this.worldScale.y, this.worldScale.z) / 2);
+      const radius = Math.max(.005, diameter / 2);
       this.tangent.cross(source.getDirection(), Vec3.UP).normalize();
       if (this.tangent.lengthSq() < .01) this.tangent.cross(source.getDirection(), Vec3.RIGHT).normalize();
       this.bitangent.cross(source.getDirection(), this.tangent).normalize();
@@ -222,7 +219,8 @@ export class ImmersiveEditing {
     const anchor = this.handle.space.toWorld(hit.point);
     const depth = Math.max(camera.nearClip, this.point.sub2(anchor, origin).dot(this.cameraEntity.forward));
     this.plane.setFromPointNormal(this.point.copy(this.cameraEntity.forward).mulScalar(depth).add(origin), this.cameraEntity.forward);
-    this.gesture = { points: [], depth, anchor: hit.point.clone(), diameter: bounds ? brushDiameter(bounds, camera, this.brushSize) / rect.width * 512 : 10,
+    const worldDiameter = bounds ? Math.max(bounds.halfExtents.x, bounds.halfExtents.y, bounds.halfExtents.z) * 2 * this.brushSize / 100 : .01;
+    this.gesture = { points: [], depth, anchor: hit.point.clone(), diameter: worldDiameter * camera.projectionMatrix.data[5]! / depth * 256,
       document: this.workspaces.current };
     const rectStart = this.handle.app.graphicsDevice.clientRect;
     camera.worldToScreen(anchor, this.screen);

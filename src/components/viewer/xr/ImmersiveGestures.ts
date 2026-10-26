@@ -36,6 +36,7 @@ export class ImmersiveGestures {
     const sources = this.app.xr.input.inputSources;
     const left = sources.find(source => source.handedness === "left" && source.grip && !source.hand);
     const right = sources.find(source => source.handedness === "right" && source.grip && !source.hand);
+    if (left?.selecting && right?.selecting) { this.orbiting = this.panning = null; return; }
     if (left && !left.squeezing && !left.selecting) this.zoom(left, dt);
     // The menu hover flag is global: a right-hand ray over a menu button must
     // not stop the independent left-hand orbit gesture.

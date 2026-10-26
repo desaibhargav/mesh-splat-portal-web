@@ -40,7 +40,7 @@ export class ViewerAnnotationManager extends AnnotationManager {
     const camera = this.viewCamera.camera!;
     annotation.entity.setRotation(this.viewCamera.getRotation()); annotation.entity.rotateLocal(90, 0, 0);
     const height = this.app.graphicsDevice.clientRect.height * camera.rect.w;
-    const size = this.app.xr?.active ? .018 : this._hotspotSize * 2 * (camera.projection === PROJECTION_ORTHOGRAPHIC ? 1 : depth) / (height * camera.projectionMatrix.data[5]!);
+    const size = this.app.xr?.active ? .03 : this._hotspotSize * 2 * (camera.projection === PROJECTION_ORTHOGRAPHIC ? 1 : depth) / (height * camera.projectionMatrix.data[5]!);
     annotation.entity.parent!.getWorldTransform().getScale(this.parentScale);
     annotation.entity.setLocalScale(size / this.parentScale.x, size / this.parentScale.y, size / this.parentScale.z);
   }

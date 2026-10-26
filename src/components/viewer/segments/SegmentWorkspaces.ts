@@ -87,8 +87,14 @@ export class SegmentWorkspaces extends EventHandler {
   removeSelection(id: number) {
     const selection = this.handle.selection, area = selection.areas.find(area => area.id === id);
     if (!area) return selection.summary;
+    const colorMask = unpackSelection(area.snapshot).masks;
+    for (const other of selection.areas) if (other.id !== id && other.color === area.color)
+      unpackSelection(other.snapshot).masks.forEach((mask, part) => mask.forEach((selected, index) => {
+        if (selected) colorMask[part]![index] = 0;
+      }));
     const result = this.history.perform(() => selection.restore({ masks: selection.state.masks.map(mask => new Uint8Array(mask.length)), isolated: false },
-      selection.colors, selection.areas.filter(area => area.id !== id)));
+      area.color ? paintSelection(selection.colors, colorMask, 0, area.color) : selection.colors,
+      selection.areas.filter(item => item.id !== id)));
     this.current.annotations.removeForSelection(id, area.snapshot); this.fire("change"); return result;
   }
   setColor(color: number) {

@@ -30,7 +30,8 @@ export class ImmersiveTools {
   private message = "";
 
   constructor(private readonly handle: SelectionHandle, private readonly measurement: () => Measurement,
-    private readonly changed: () => void, private readonly ready: () => boolean, private readonly input: ImmersiveInput, workspaces: SegmentWorkspaces) {
+    private readonly changed: () => void, private readonly ready: () => boolean, private readonly input: ImmersiveInput,
+    private readonly workspaces: SegmentWorkspaces) {
     const app = handle.app, camera = handle.viewports.perspectivePanel.camera;
     this.releaseInput = spatialInput(app);
     this.editing = new ImmersiveEditing(handle, workspaces, input, () => this.commit());
@@ -52,6 +53,22 @@ export class ImmersiveTools {
   get isMenuTargeted() { return this.ui.targeted; }
   get blocksPan() { return this.ui.targeted || this.moving !== null || this.tool === "select" || this.editing.dragging; }
   get currentTool() { return this.tool; }
+  undo() {
+    if (this.tool === "select") { this.workspaces.history.undo(); this.editing.selectionId = null; this.input.invalidate(); }
+    else if (this.tool === "annotate") { this.workspaces.current.annotations.undo(); this.editing.annotate("cancel"); }
+    else if (this.tool === "measure") { this.measurement().undo(); if (!this.current()) this.selectedId = null; }
+    this.commit();
+  }
+  redo() {
+    if (this.tool === "select") { this.workspaces.history.redo(); this.editing.selectionId = null; this.input.invalidate(); }
+    else if (this.tool === "annotate") { this.workspaces.current.annotations.redo(); this.editing.annotate("cancel"); }
+    else if (this.tool === "measure") { this.measurement().redo(); if (!this.current()) this.selectedId = null; }
+    this.commit();
+  }
+  frameChord() {
+    this.editing.cancelGesture(); this.tapping = this.dragged = false; this.moving = null;
+    this.pointPreview.set(null);
+  }
   setTool(tool: SelectionTool) {
     this.revision++;
     if (tool !== "measure" && this.tool === "measure" && this.measurement().discardUnsaved()) this.changed();

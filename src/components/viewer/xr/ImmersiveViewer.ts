@@ -20,6 +20,8 @@ export class ImmersiveViewer extends EventHandler {
   private disposed = false;
   private exitPressed = false;
   private framePressed = false;
+  private undoPressed = false;
+  private redoPressed = false;
   private lastReset = 0;
   private activeScene: ImmersiveScene | null = null;
   private restore: (() => void) | null = null;
@@ -105,8 +107,14 @@ export class ImmersiveViewer extends EventHandler {
   private controllerExit() {
     const right = this.xr?.input.inputSources.find(source => source.handedness === "right" && !source.hand);
     const left = this.xr?.input.inputSources.find(source => source.handedness === "left" && !source.hand);
-    const frame = left?.gamepad?.mapping === "xr-standard" && !!left.gamepad.buttons[4]?.pressed;
-    if (frame && !this.framePressed) this.activeScene?.frame(this.camera.entity);
+    const gamepadLeft = left?.gamepad;
+    const undo = gamepadLeft?.mapping === "xr-standard" && !!gamepadLeft.buttons[4]?.pressed;
+    const redo = gamepadLeft?.mapping === "xr-standard" && !!gamepadLeft.buttons[5]?.pressed;
+    if (undo && !this.undoPressed) this.toolMenu?.undo();
+    if (redo && !this.redoPressed) this.toolMenu?.redo();
+    this.undoPressed = undo; this.redoPressed = redo;
+    const frame = !!left?.selecting && !!right?.selecting;
+    if (frame && !this.framePressed) { this.toolMenu?.frameChord(); this.activeScene?.frame(this.camera.entity); }
     this.framePressed = frame;
     const gamepad = right?.gamepad;
     const pressed = gamepad?.mapping === "xr-standard" && !!gamepad.buttons[5]?.pressed;
@@ -122,7 +130,7 @@ export class ImmersiveViewer extends EventHandler {
     if (this.disposed) { this.xr?.end(); return; }
     cameraControls(this.camera).enabled = false;
     this.exitPressed = false;
-    this.framePressed = false; this.lastReset = 0;
+    this.framePressed = this.undoPressed = this.redoPressed = false; this.lastReset = 0;
     this.handle.app.on("update", this.controllerExit, this);
     this.active = true; this.pending = false; this.changed();
     this.toolMenu?.open();
@@ -130,7 +138,7 @@ export class ImmersiveViewer extends EventHandler {
   private ended() {
     this.handle.app.off("update", this.controllerExit, this);
     this.exitPressed = false;
-    this.framePressed = false; this.lastReset = 0;
+    this.framePressed = this.undoPressed = this.redoPressed = false; this.lastReset = 0;
     const tool = this.toolMenu?.currentTool;
     this.restore?.(); this.restore = null;
     this.active = false; this.pending = false; this.changed();
