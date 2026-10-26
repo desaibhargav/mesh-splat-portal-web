@@ -30,6 +30,7 @@ export class ImmersiveInput {
   private readonly rotation = new Quat();
   private readonly scale = new Vec3();
   private readonly end = new Vec3();
+  private extraTarget: ((source: XrInputSource) => Vec3 | null) | null = null;
 
   constructor(private readonly app: AppBase, private readonly rig: Entity, private readonly target: Entity, private readonly handle: SelectionHandle) {
     this.rays = new WideLineRenderer(app); this.rays.depthTest = false; this.rays.depthWrite = false;
@@ -76,6 +77,7 @@ export class ImmersiveInput {
   }
 
   invalidate() { this.revision++; }
+  setExtraTarget(target: ((source: XrInputSource) => Vec3 | null) | null) { this.extraTarget = target; }
   hit(source: XrInputSource) { return this.hits.get(source)?.hit ?? null; }
   async pick(source: XrInputSource): Promise<SurfaceHit | null> {
     const inverse = new Mat4().invert(this.handle.space.root.getWorldTransform());
@@ -107,6 +109,8 @@ export class ImmersiveInput {
       const hit = this.target.enabled ? this.hits.get(source)?.hit : null;
       this.end.copy(direction).mulScalar(rayLength).add(origin);
       if (hit) this.handle.space.toWorld(hit.point, this.end);
+      const extra = this.extraTarget?.(source);
+      if (extra) this.end.copy(extra);
       // ElementInput owns targeting; intersect its winning element's plane,
       // rather than creating a second UI picker or extending through the control.
       const element = source.elementEntity as unknown as ElementComponent | null;
@@ -132,7 +136,7 @@ export class ImmersiveInput {
   }
 
   destroy() {
-    this.disposed = true; this.hits.clear();
+    this.disposed = true; this.hits.clear(); this.extraTarget = null;
     this.app.off("prerender", this.drawRays, this);
     this.app.off("update", this.update, this); this.app.off("xr:controller:add", this.showModel, this);
     this.app.xr?.input.off("remove", this.remove, this);

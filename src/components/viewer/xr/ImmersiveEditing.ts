@@ -10,6 +10,11 @@ import type { ImmersiveInput } from "./ImmersiveInput";
 import { SpatialPanel } from "./SpatialPanel";
 import { toolAppearance } from "../toolAppearance";
 import type { Point } from "../selection/rectangle";
+import { Matrix4, Vector3 } from "three";
+import type { SelectionArea, SelectionState } from "../selection/types";
+import type { PaintState } from "../selection/selectionColors";
+import type { SelectionVolume } from "../selection/volume/SelectionVolume";
+import { SelectionVolumeVisual } from "./SelectionVolumeVisual";
 
 export class ImmersiveEditing {
   tool: SelectionTool = "navigate";
@@ -41,6 +46,9 @@ export class ImmersiveEditing {
   private readonly tangent = new Vec3();
   private readonly bitangent = new Vec3();
   private gesture: { points: Point[]; diameter: number; depth: number; anchor: Vec3; document: WorkspaceDocument } | null = null;
+  private volumeVisual: SelectionVolumeVisual | null = null;
+  private volumeBaseline: { state: SelectionState; colors: PaintState; areas: readonly SelectionArea[] } | null = null;
+  private depthDrag: { origin: Vec3; depth: number; scale: number; axis: Vec3 } | null = null;
   private readonly plane = new Plane();
   private readonly ray = new Ray();
   private readonly point = new Vec3();
@@ -58,11 +66,15 @@ export class ImmersiveEditing {
   }
   get startPoint() { return this.gesture?.anchor ?? null; }
   get drawing() { return !!this.gesture; }
+  get depthDragging() { return !!this.depthDrag; }
+  depthHandleTarget(source: XrInputSource) {
+    return this.depthHandleNear(source) ? this.volumeVisual!.handleWorld(new Vec3()) : null;
+  }
   get annotations() { return this.workspaces.current.annotations; }
   get selection() { return this.handle.selection; }
   private commit() { this.changed(); }
   setTool(tool: SelectionTool) {
-    this.revision++; this.gesture = null; this.clearLine(); this.selection.previewArea(null);
+    this.revision++; this.gesture = null; this.clearLine(); this.clearVolume(); this.selection.previewArea(null);
     if (tool !== "select" && this.brush && this.brushVisible) { this.lines.remove(this.brush); this.brushVisible = false; }
     if (tool !== this.tool) { this.selectionName = ""; this.selectionId = null; this.workspaces.history.perform(() => this.selection.clear()); this.input.invalidate(); }
     this.tool = tool; this.dragging = false; this.draft = null; this.step = tool === "annotate" ? "choose" : null; this.message = "";
@@ -72,24 +84,25 @@ export class ImmersiveEditing {
     this.message = "";
     const history = this.workspaces.history;
     switch (action) {
-      case "shape": this.shape = value as SelectionShape; break;
+      case "shape": this.clearVolume(); this.shape = value as SelectionShape; break;
       case "brush": this.brushSize = Number(value); break;
       case "xray": this.xray = !this.xray; break;
       case "name": this.selectionName = String(value); break;
       case "color": this.customColor = String(value); break;
-      case "paint": history.perform(() => this.selection.paint(value === undefined ? encodeColor(this.customColor) : Number(value), this.workspaces.current.color)); break;
-      case "clear": this.revision++; history.perform(() => this.selection.clear()); this.selectionId = null; this.selectionName = ""; break;
-      case "isolate": history.perform(() => this.selection.toggleIsolation()); break;
+      case "paint": this.clearVolume(); history.perform(() => this.selection.paint(value === undefined ? encodeColor(this.customColor) : Number(value), this.workspaces.current.color)); break;
+      case "clear": this.revision++; this.clearVolume(); history.perform(() => this.selection.clear()); this.selectionId = null; this.selectionName = ""; break;
+      case "isolate": this.clearVolume(); history.perform(() => this.selection.toggleIsolation()); break;
       case "open": {
+        this.clearVolume();
         const area = this.selection.areas.find(item => item.id === value); if (!area) return;
         history.perform(() => { this.selection.setAreaVisible(area.id, true); return this.selection.restore(unpackSelection(area.snapshot)); });
         this.selectionId = area.id; this.selectionName = area.name; break;
       }
-      case "remove": this.workspaces.removeSelection(Number(value)); this.selectionId = null; this.selectionName = ""; break;
+      case "remove": this.clearVolume(); this.workspaces.removeSelection(Number(value)); this.selectionId = null; this.selectionName = ""; break;
       case "save": history.perform(() => {
         const areas = saveSelectionArea(this.selection.areas, this.selection.state, this.selectionName, this.selectionId);
         return this.selection.restore(unpackSelection(areas.at(-1)!.snapshot), this.selection.colors, areas);
-      }); this.selectionName = ""; this.selectionId = null; break;
+      }); this.clearVolume(); this.selectionName = ""; this.selectionId = null; break;
     }
     if (["paint", "clear", "isolate", "open", "remove", "save"].includes(action)) this.input.invalidate();
     this.commit();
@@ -200,7 +213,27 @@ export class ImmersiveEditing {
   }
   start(source: XrInputSource) {
     if (this.tool !== "select" || this.busy || this.starting) return;
+    if (this.beginDepthDrag(source)) return;
     this.starting = this.begin(source).finally(() => { this.starting = null; });
+  }
+  depthHandleNear(source: XrInputSource) {
+    const visual = this.volumeVisual;
+    if (!visual || this.shape === "brush") return false;
+    const handle = visual.handleWorld(this.point);
+    this.screen.sub2(handle, source.getOrigin());
+    const along = this.screen.dot(source.getDirection());
+    this.inverse.copy(source.getDirection()).mulScalar(along).add(source.getOrigin());
+    return along > 0 && this.inverse.distance(handle) <= .035;
+  }
+  private beginDepthDrag(source: XrInputSource) {
+    const visual = this.volumeVisual;
+    if (!visual || !this.depthHandleNear(source)) return false;
+    const axis = visual.axisWorld(new Vec3());
+    const scale = axis.length();
+    if (scale < 1e-8) return false;
+    this.depthDrag = { origin: (source.getPosition() ?? source.getOrigin()).clone(), depth: visual.volume.depth,
+      scale, axis: axis.mulScalar(1 / scale) };
+    return true;
   }
   private async begin(source: XrInputSource) {
     const token = this.revision, origin = source.getOrigin().clone(), direction = source.getDirection().clone();
@@ -211,6 +244,7 @@ export class ImmersiveEditing {
     finally { this.busy = false; }
     if (this.disposed || token !== this.revision) return;
     if (!hit) { this.message = "Point at the asset to begin selecting."; this.changed(); return; }
+    this.clearVolume();
     const camera = this.cameraEntity.camera!;
     this.cameraEntity.setPosition(origin);
     this.cameraEntity.lookAt(this.point.copy(direction).add(origin), this.handle.viewports.perspectivePanel.camera.entity.up);
@@ -228,6 +262,17 @@ export class ImmersiveEditing {
     this.track(source);
   }
   track(source: XrInputSource) {
+    if (this.depthDrag && this.volumeVisual) {
+      const drag = this.depthDrag;
+      const displacement = this.point.sub2(source.getPosition() ?? source.getOrigin(), drag.origin).dot(drag.axis);
+      const bounds = this.selection.bounds(null);
+      const max = bounds ? Math.max(bounds.halfExtents.x, bounds.halfExtents.y, bounds.halfExtents.z) * 4 : 100;
+      const depth = Math.max(.001, Math.min(max, drag.depth + displacement / drag.scale));
+      if (Math.abs(depth - this.volumeVisual.volume.depth) > 1e-4) {
+        this.volumeVisual.volume.depth = depth; this.volumeVisual.update();
+      }
+      return;
+    }
     if (!this.gesture) return;
     // A fixed controller-view projection per stroke makes box/lasso/brush
     // deterministic while the headset moves; native camera math maps the ray.
@@ -257,8 +302,26 @@ export class ImmersiveEditing {
   }
   async end() {
     await this.starting;
+    if (this.depthDrag) {
+      this.depthDrag = null;
+      if (this.volumeVisual) await this.commitVolume(this.volumeVisual.volume, true);
+      return;
+    }
     const gesture = this.gesture; this.gesture = null; this.clearLine();
     if (!gesture || gesture.points.length === 0) return;
+    if (this.shape !== "brush") {
+      try {
+        const volume = this.makeVolume(gesture);
+        if (!volume) { this.message = "Draw a larger selection volume."; this.commit(); return; }
+        this.volumeBaseline = { state: { masks: this.selection.state.masks.map(mask => mask.slice()), isolated: this.selection.state.isolated },
+          colors: this.selection.colors, areas: this.selection.areas };
+        const root = new Matrix4().fromArray(this.handle.space.root.getWorldTransform().data);
+        const localFrame = root.clone().invert().multiply(new Matrix4().fromArray(volume.matrix));
+        this.volumeVisual = new SelectionVolumeVisual(this.handle, volume, localFrame, this.theme.gold);
+        await this.commitVolume(volume, false);
+      } catch (error) { this.clearVolume(); this.message = String(error); this.commit(); }
+      return;
+    }
     const camera = this.cameraEntity.camera!, token = this.revision;
     const region = rasterizeGesture(this.shape, gesture.points, 512, 512, gesture.diameter);
     const view = { projectionMatrix: camera.projectionMatrix.clone(), viewMatrix: camera.viewMatrix.clone() };
@@ -270,7 +333,61 @@ export class ImmersiveEditing {
     } catch (error) { this.message = String(error); }
     finally { this.busy = false; this.input.invalidate(); if (!this.disposed) this.commit(); }
   }
-  cancelGesture() { this.dragging = false; this.revision++; this.gesture = null; this.clearLine(); }
+  private makeVolume(gesture: NonNullable<typeof this.gesture>): SelectionVolume | null {
+    const path = gesture.points;
+    if (path.length < 2) return null;
+    const anchor = this.handle.space.toWorld(gesture.anchor);
+    const camera = this.cameraEntity, rect = this.handle.app.graphicsDevice.clientRect;
+    const worldFrame = new Matrix4().makeBasis(
+      new Vector3(camera.right.x, camera.right.y, camera.right.z),
+      new Vector3(camera.up.x, camera.up.y, camera.up.z),
+      new Vector3(camera.forward.x, camera.forward.y, camera.forward.z));
+    worldFrame.setPosition(anchor.x, anchor.y, anchor.z);
+    const inverse = worldFrame.clone().invert();
+    const project = (point: Point): [number, number] => {
+      camera.camera!.screenToWorld(point.x / 512 * rect.width, point.y / 512 * rect.height, gesture.depth, this.inverse);
+      const local = new Vector3(this.inverse.x, this.inverse.y, this.inverse.z).applyMatrix4(inverse);
+      return [local.x, local.y];
+    };
+    let outline: [number, number][];
+    if (this.shape === "rectangle") {
+      const [x0, y0] = project(path[0]!), [x1, y1] = project(path.at(-1)!);
+      outline = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+    } else {
+      const stride = Math.max(1, Math.ceil(path.length / 128));
+      outline = path.filter((_, i) => i === 0 || i === path.length - 1 || i % stride === 0).map(project);
+    }
+    if (outline.length < 3) return null;
+    const bounds = this.selection.bounds(null);
+    const depth = bounds ? Math.max(bounds.halfExtents.x, bounds.halfExtents.y, bounds.halfExtents.z) * .6 : .1;
+    return { shape: this.shape as "rectangle" | "lasso", matrix: worldFrame.toArray(), outline, depth };
+  }
+  private async commitVolume(volume: SelectionVolume, adjustment: boolean) {
+    const baseline = this.volumeBaseline;
+    if (!baseline) return;
+    const token = ++this.revision, document = this.workspaces.current;
+    this.busy = true; this.changed();
+    try {
+      this.volumeVisual?.update();
+      const hits = await this.selection.selectVolume(volume);
+      if (this.disposed || token !== this.revision || document !== this.workspaces.current) return;
+      const camera = this.cameraEntity.camera!;
+      const view = { projectionMatrix: camera.projectionMatrix.clone(), viewMatrix: camera.viewMatrix.clone() };
+      const region = { pixels: new Uint8ClampedArray(1), width: 1, height: 1 };
+      this.workspaces.history.perform(() => {
+        if (adjustment) this.selection.restore({ masks: baseline.state.masks.map(mask => mask.slice()), isolated: baseline.state.isolated },
+          baseline.colors, baseline.areas);
+        return this.selection.select(region, "add", view, hits);
+      });
+    } catch (error) { this.message = String(error); if (!adjustment) this.clearVolume(); }
+    finally { this.busy = false; this.input.invalidate(); if (!this.disposed) this.commit(); }
+  }
+  clearVolume() { this.depthDrag = null; this.volumeVisual?.destroy(); this.volumeVisual = null; this.volumeBaseline = null; }
+  cancelGesture() {
+    this.dragging = false; this.revision++; this.gesture = null; this.clearLine();
+    if (this.depthDrag && this.volumeVisual) { this.volumeVisual.volume.depth = this.depthDrag.depth; this.volumeVisual.update(); }
+    this.depthDrag = null;
+  }
   private clearLine() { if (this.line) { this.lines.remove(this.line); this.line = null; } }
-  destroy() { this.disposed = true; this.revision++; this.selection.previewArea(null); this.clearLine(); this.lines.destroy(); this.cameraEntity.destroy(); this.tooltip.destroy(); this.tooltipRoot.destroy(); }
+  destroy() { this.disposed = true; this.revision++; this.selection.previewArea(null); this.clearLine(); this.clearVolume(); this.lines.destroy(); this.cameraEntity.destroy(); this.tooltip.destroy(); this.tooltipRoot.destroy(); }
 }

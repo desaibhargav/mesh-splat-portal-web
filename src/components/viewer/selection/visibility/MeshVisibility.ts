@@ -1,6 +1,7 @@
 import { CULLFACE_BACK, CULLFACE_FRONT, Vec3, type AppBase, type CameraComponent, type MeshInstance } from "playcanvas";
 import type { SelectionRegion, SurfaceHit } from "../types";
 import type { VisibilityGeometry, VisibilityPart, VisibilityQuery } from "./visibilityTypes";
+import type { SelectionVolume } from "../volume/SelectionVolume";
 import { regionAlpha, type PickImage } from "../pickImage";
 
 interface Part { source: MeshInstance; positions: Float32Array; indices: number[]; mask: Uint8Array; scope: Uint8Array | null }
@@ -48,6 +49,22 @@ export class MeshVisibility {
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve: data => resolve(data.result!), reject });
       this.worker.postMessage({ id, query: snapshot, image }, [snapshot.alpha.buffer, ...(image ? [image.pixels.buffer] : [])]);
+    });
+  }
+
+  selectVolume(volume: SelectionVolume, isolated: boolean): Promise<Uint8Array[]> {
+    if (this.disposed || this.failure) return Promise.reject(this.failure ?? new Error("Viewer closed during selection."));
+    const enabled = !!this.app.graphicsDevice.scope.resolve("portalSectionEnabled").getValue();
+    const plane = this.app.graphicsDevice.scope.resolve("portalSectionPlane").getValue() as ArrayLike<number> | undefined;
+    const parts: VisibilityPart[] = this.parts.map(part => ({
+      model: Array.from(part.source.node.getWorldTransform().data), side: 2,
+      visible: isolated || part.scope ? Uint8Array.from(part.mask, (selected, face) =>
+        Number((!isolated || !!selected) && (!part.scope || !!part.scope[face]))) : null
+    }));
+    const id = ++this.serial;
+    return new Promise((resolve, reject) => {
+      this.pending.set(id, { resolve: data => resolve(data.result!), reject });
+      this.worker.postMessage({ id, volume: { volume, parts, section: enabled && plane ? Array.from(plane) : null } });
     });
   }
 

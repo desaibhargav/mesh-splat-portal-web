@@ -1,6 +1,7 @@
-import { BufferAttribute, BufferGeometry, Points, Raycaster, Vector3 } from "three";
-import { PointsBVH } from "three-mesh-bvh";
-import type { SurfaceRayQuery } from "./visibilityTypes";
+import { Box3, BufferAttribute, BufferGeometry, Matrix4, Points, Raycaster, Vector3 } from "three";
+import { CONTAINED, PointsBVH } from "three-mesh-bvh";
+import type { SurfaceRayQuery, VolumeQuery } from "./visibilityTypes";
+import { VolumeGeometry } from "../volume/VolumeGeometry";
 
 // The library owns point indexing, BVH traversal and ray/point intersections.
 // Application policy filters the scope/cut and returns a stable source-center ID.
@@ -14,7 +15,7 @@ export class PointSurfaceQuery {
   constructor(positions: Float32Array) {
     const geometry = new BufferGeometry().setAttribute("position", new BufferAttribute(positions, 3));
     geometry.computeBoundingBox();
-    this.object = new Points(geometry); this.tree = new PointsBVH(geometry, { indirect: true });
+    this.object = new Points(geometry); this.tree = new PointsBVH(geometry);
     this.spacing = geometry.boundingBox!.getSize(new Vector3()).length() / Math.sqrt(positions.length / 3);
   }
   surfaceHit(query: SurfaceRayQuery, visible: (Uint8Array | null)[]) {
@@ -36,5 +37,44 @@ export class PointSurfaceQuery {
       return { point: this.point.toArray(), part: 0, index };
     }
     return null;
+  }
+  selectVolume(query: VolumeQuery): Uint8Array[] {
+    const volume = new VolumeGeometry(query.volume);
+    try {
+      const state = query.parts[0]!;
+      const model = new Matrix4().fromArray(state.model);
+      const transform = volume.inverse.clone().multiply(model);
+      const mask = new Uint8Array(this.object.geometry.attributes.position!.count);
+      if (!state.visible && !query.section && volume.containsBounds(this.tree.getBoundingBox(new Box3()).applyMatrix4(transform))) {
+        mask.fill(255);
+        return [mask];
+      }
+      const point = new Vector3(), world = new Vector3();
+      this.tree.shapecast({
+        intersectsBounds: box => {
+          const bounds = box.clone().applyMatrix4(transform);
+          if (!bounds.intersectsBox(volume.bounds)) return false;
+          return volume.containsBounds(bounds) ? CONTAINED : true;
+        },
+        // v0.9.15 types list the first argument as an index, but the installed
+        // iterator calls (point, orderedIndex, contained, depth).
+        intersectsPoint: ((_candidate: Vector3, orderedIndex: number, contained: boolean) => {
+          const index = this.object.geometry.index!.getX(orderedIndex);
+          if (state.visible && !state.visible[index]) return false;
+          if (!contained) {
+            point.fromBufferAttribute(this.object.geometry.attributes.position!, index);
+            if (!volume.contains(point.applyMatrix4(transform))) return false;
+          }
+          if (query.section) {
+            world.fromBufferAttribute(this.object.geometry.attributes.position!, index).applyMatrix4(model);
+            const plane = query.section;
+            if (world.x * plane[0]! + world.y * plane[1]! + world.z * plane[2]! + plane[3]! < 0) return false;
+          }
+          mask[index] = 255;
+          return false;
+        }) as never
+      });
+      return [mask];
+    } finally { volume.destroy(); }
   }
 }

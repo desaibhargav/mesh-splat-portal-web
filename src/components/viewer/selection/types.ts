@@ -4,6 +4,7 @@ import type { ViewerViewports } from "../viewports/ViewerViewports";
 import type { ViewerSpace } from "../ViewerSpace";
 import type { PaintState } from "./selectionColors";
 import type { SelectionOperation } from "./rectangle";
+import type { SelectionVolume } from "./volume/SelectionVolume";
 
 export type SelectionTool = "navigate" | "select" | "segment" | "measure" | "annotate" | "views" | "section" | "capture";
 export type SelectionShape = "rectangle" | "lasso" | "brush";
@@ -25,6 +26,7 @@ export interface SelectionController {
   surfaceHit(origin: Vec3, direction: Vec3): SurfaceHit | null | Promise<SurfaceHit | null>;
   pickRay(origin: Vec3, direction: Vec3): Vec3 | null | Promise<Vec3 | null>;
   hitTest(app: AppBase, camera: CameraComponent, region: SelectionRegion): Promise<Uint8Array[]>;
+  selectVolume(volume: SelectionVolume): Promise<Uint8Array[]>;
   readonly state: SelectionState;
   readonly colors: PaintState;
   readonly areas: readonly SelectionArea[];

@@ -7,3 +7,8 @@ export interface VisibilityQuery {
 export interface SurfaceRayQuery {
   origin: number[]; direction: number[]; parts: Omit<VisibilityPart, "visible">[]; section: number[] | null;
 }
+export interface VolumeQuery {
+  volume: import("../volume/SelectionVolume").SelectionVolume;
+  parts: VisibilityPart[];
+  section: number[] | null;
+}

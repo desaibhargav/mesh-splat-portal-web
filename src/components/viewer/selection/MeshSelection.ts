@@ -9,6 +9,7 @@ import { applySelection, projectSelection } from "./projectSelection";
 import type { SelectionOperation } from "./rectangle";
 import { MeshPicker } from "./MeshPicker";
 import { MeshVisibility } from "./visibility/MeshVisibility";
+import type { SelectionVolume } from "./volume/SelectionVolume";
 import { SelectionBounds } from "./selectionBounds";
 import { snapshotContains } from "./selectionSnapshot";
 import { configureSectionMaterial, reverseFaceColor } from "../section/sectionShaders";
@@ -129,6 +130,10 @@ export class MeshSelection {
     this.visibility ??= new MeshVisibility(app, this.parts);
     const snapshot = this.visibility.snapshot(camera, region, this.isolated);
     return this.visibility.complete(snapshot, await this.picker.captureImage(camera, region, this.isolated));
+  }
+  selectVolume(volume: SelectionVolume) {
+    this.visibility ??= new MeshVisibility(this.app, this.parts);
+    return this.visibility.selectVolume(volume, this.isolated);
   }
   async primitiveAt(app: AppBase, camera: CameraComponent, u: number, v: number) {
     this.picker ??= new MeshPicker(app, this.parts);

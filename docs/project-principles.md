@@ -12,6 +12,8 @@ WebXR is a first-class portal experience and a design requirement for every new 
 
 Keep XR history on controller shortcuts: left X undoes, left Y redoes the active tool's edits; both triggers together frame the asset without starting a tool gesture. Keep Fullscreen, VR and AR together as large icons at the bottom right of the viewer. Hovered controls need visible emphasis on desktop and a real depth lift in XR, without per-frame texture uploads.
 
+XR Box and Lasso select adjustable 3D volumes, including occluded geometry inside them. Show a translucent selection-coloured volume and a draggable depth handle; commit a draft on trigger release and update it when the handle is released. Keep Save and tool-exit discard semantics shared with desktop. Do not add a separate depth slider or Apply/Cancel step. Bound volume queries to edits and reuse the existing spatial indexes.
+
 ## Reuse the engine and keep code small
 
 Prefer PlayCanvas APIs, bundled scripts, official React integration, and suitable maintained React/open-source libraries whenever they provide the required function. Inspect installed versions and official examples/source before claiming support. Reuse focused capabilities rather than importing an entire editor or forking SuperSplat for a small tool. Document real gaps and keep necessary custom code small.

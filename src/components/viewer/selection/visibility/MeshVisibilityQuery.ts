@@ -1,6 +1,7 @@
-import { BufferAttribute, BufferGeometry, Frustum, Matrix4, Ray, Vector3, type Side } from "three";
-import { MeshBVH } from "three-mesh-bvh";
-import type { SurfaceRayQuery, VisibilityGeometry, VisibilityQuery } from "./visibilityTypes";
+import { Box3, BufferAttribute, BufferGeometry, Frustum, Matrix4, Ray, Vector3, type Side } from "three";
+import { CONTAINED, MeshBVH } from "three-mesh-bvh";
+import type { SurfaceRayQuery, VisibilityGeometry, VisibilityQuery, VolumeQuery } from "./visibilityTypes";
+import { VolumeGeometry } from "../volume/VolumeGeometry";
 
 // The upstream selection example combines shapecast pruning with raycastFirst
 // for centroid visibility. Use those public library queries, retaining native
@@ -38,6 +39,45 @@ export class MeshVisibilityQuery {
       }
     });
     return result;
+  }
+
+  selectVolume(query: VolumeQuery): Uint8Array[] {
+    const volume = new VolumeGeometry(query.volume);
+    try {
+      const result = this.trees.map((tree, index) => {
+        const state = query.parts[index]!;
+        const transform = volume.inverse.clone().multiply(new Matrix4().fromArray(state.model));
+        const model = new Matrix4().fromArray(state.model);
+        const mask = new Uint8Array(tree.geometry.index!.count / 3);
+        if (!state.visible && !query.section && volume.containsBounds(tree.getBoundingBox(new Box3()).applyMatrix4(transform))) {
+          mask.fill(255);
+          return mask;
+        }
+        tree.shapecast({
+          intersectsBounds: box => {
+            const bounds = box.clone().applyMatrix4(transform);
+            if (!bounds.intersectsBox(volume.bounds)) return false;
+            return volume.containsBounds(bounds) ? CONTAINED : true;
+          },
+          intersectsTriangle: (triangle, face, contained) => {
+            if (state.visible && !state.visible[face]) return false;
+            if (!contained && !volume.intersectsTriangle(triangle, transform)) return false;
+            if (query.section) {
+              const plane = query.section;
+              const retained = [triangle.a, triangle.b, triangle.c].some(vertex => {
+                const world = vertex.clone().applyMatrix4(model);
+                return world.x * plane[0]! + world.y * plane[1]! + world.z * plane[2]! + plane[3]! >= 0;
+              });
+              if (!retained) return false;
+            }
+            mask[face] = 255;
+            return false;
+          }
+        });
+        return mask;
+      });
+      return result;
+    } finally { volume.destroy(); }
   }
 
   select(query: VisibilityQuery): Uint8Array[] {

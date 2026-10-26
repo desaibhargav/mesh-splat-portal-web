@@ -29,6 +29,8 @@ A spherical brush affects Gaussian centers within a 3D radius around a picked su
 
 ## Desktop and XR
 
+XR Box and Lasso create a translucent, editable 3D volume from the controller footprint. A depth handle changes the volume without scanning the asset during hand movement; the shared selection controller commits the new mask when the trigger is released. Mesh faces use the existing worker BVH with triangle-volume intersection; splat centers use its point BVH. BVH nodes wholly inside a convex volume are accepted together, and a volume enclosing the asset uses a direct mask fill. Queries honor workspace visibility and section cuts, select hidden surfaces inside the volume, and run only on edits. The visual uses one small PlayCanvas mesh under the artifact transform and is cleared on Save or tool exit. Desktop selection remains camera-based.
+
 Measurement state and visuals use one implementation for both asset formats and camera modes. White wide lines, sphere endpoints, and text are ordinary scene elements; projection and stereo rendering belong to the engine. The browser tool panels and annotation tooltip still require XR presentation and controller bindings when XR sessions are implemented. Those bindings should call the existing shared operations.
 
 The runtime engine remains pinned in `package.json`. Embedded annotation layout has a small container adapter around the bundled manager; recheck it when upgrading the engine. Annotation markers use each visible viewport camera and the manager's native layers, without a dedicated annotation camera or render pass. Camera-facing visuals are replicated per visible panel; records and region masks stay shared. No editor framework or additional runtime dependency is imported.

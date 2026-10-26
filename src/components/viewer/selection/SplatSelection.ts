@@ -1,4 +1,5 @@
 import { SplatSurfacePicker } from "./visibility/SplatSurfacePicker";
+import type { SelectionVolume } from "./volume/SelectionVolume";
 import { constrainMask, type SelectionScope } from "./selectionScope";
 import {
   BoundingBox, Color, FILTER_NEAREST, Mat4, PIXELFORMAT_R8, PIXELFORMAT_RGBA8, Texture, Vec3, WORKBUFFER_UPDATE_ONCE,
@@ -135,6 +136,10 @@ export class SplatSelection {
       (id, u, v, w, z) => (!retained || retained(id)) && visible(id, u, v, w, z));
     constrainMask(hits, this.scope?.[0]);
     return [hits];
+  }
+  selectVolume(volume: SelectionVolume) {
+    this.surfacePicker ??= new SplatSurfacePicker(this.component.system.app, this.centers, this.component.entity);
+    return this.surfacePicker.selectVolume(volume, this.mask, this.isolated, this.scope?.[0] ?? null);
   }
 
   async primitiveAt(app: AppBase, camera: CameraComponent, u: number, v: number) {

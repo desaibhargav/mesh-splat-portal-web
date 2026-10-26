@@ -430,7 +430,15 @@ try {
     await control('XR tool bar','Select'); await control(options,'region');
     await control(options,'Clear Selection');
     check(await h.evaluate(h=>h.selection.summary.selected===0),'XR clear selection failed');
-    // Other selection shapes use the same rasterizer and shared controller.
+    await h.evaluate(h=>{
+      h.app.__volumeTimings=[];
+      const select=h.selection.selectVolume.bind(h.selection);
+      h.selection.selectVolume=async volume=>{
+        const started=performance.now();
+        try{return await select(volume);}finally{h.app.__volumeTimings.push(performance.now()-started);}
+      };
+    });
+    // Volumes commit on release and share the existing selection document.
     for (const shape of ['Box','Lasso']) {
       await control(options,shape);
       await control(options,'Collapse tool options');
@@ -439,11 +447,80 @@ try {
       for(const [x,y] of (shape==='Box' ? [[.08,-.08]] : [[.08,0],[0,-.08],[-.08,0]])) {
         await page.evaluate(([x,y])=>{window.xrDevice.controllers.right.position.x+=x;window.xrDevice.controllers.right.position.y+=y;},[x,y]); await settle(h);
       }
+      const committedAt=performance.now();
       await page.evaluate(()=>window.xrDevice.controllers.right.updateButtonValue('trigger',0)); await settle(h);
       await page.waitForFunction(menu=>!menu.editing.busy,{},menu);
-      check(await h.evaluate(h=>h.selection.summary.selected>0),shape+' XR gesture selected nothing');
-      await control(options,'Expand tool options'); await control(options,'Clear Selection');
+      const volumeResult=await h.evaluate(h=>({selected:h.selection.summary.selected,
+        visual:h.app.root.findByName('XR selection volume')?.enabled,
+        message:h.app.xr.input._callbacks.get('selectstart').find(c=>c.scope?.editing)?.scope.editing.message,
+        volume:h.app.xr.input._callbacks.get('selectstart').find(c=>c.scope?.editing)?.scope.editing.volumeVisual?.volume}));
+      check(volumeResult.selected>0,shape+' XR gesture selected nothing '+JSON.stringify(volumeResult));
+      check(volumeResult.visual,'XR '+shape+' volume was not visible');
+      console.log('XR VOLUME',id,shape,'selected',volumeResult.selected,'commit ms',Math.round(performance.now()-committedAt));
+      if(shape==='Box') {
+        check(await h.evaluate(h=>{
+          const root=h.app.root.findByName('Immersive artifact'),handle=h.app.root.findByName('XR volume depth handle');
+          const before=handle.getPosition().clone(),origin=root.getPosition().clone();
+          root.setPosition(origin.clone().add({x:.02,y:0,z:0}));
+          const delta=handle.getPosition().x-before.x;
+          root.setPosition(origin);
+          return Math.abs(delta-.02)<.002;
+        }),'The selection volume did not follow artifact navigation');
+      }
+      const volumeCanvas=await h.evaluateHandle(h=>h.app.graphicsDevice.canvas);
+      const withVolume=await volumeCanvas.asElement().screenshot();
+      await menu.evaluate(m=>{m.editing.volumeVisual.entity.enabled=false;});
+      await settle(h);
+      check(!withVolume.equals(await volumeCanvas.asElement().screenshot()),'XR '+shape+' translucent mesh had no visible pixels');
+      await menu.evaluate(m=>{m.editing.volumeVisual.entity.enabled=true;m.editing.volumeVisual.handleEntity.enabled=false;});
+      await settle(h);
+      check(!withVolume.equals(await volumeCanvas.asElement().screenshot()),'XR '+shape+' depth handle had no visible pixels');
+      await menu.evaluate(m=>{m.editing.volumeVisual.handleEntity.enabled=true;});
+      await settle(h);
+      await page.screenshot({path:path.join(output,`${id}-xr-${shape.toLowerCase()}-volume.png`)});
+      if(shape==='Box') {
+        const handle=await menu.evaluate(m=>m.editing.volumeVisual.handleWorld().toArray());
+        await move([handle[0],handle[1],handle[2]+.2]);
+        check(await input.evaluate((i,target)=>{
+          const source=[...i.pointers.keys()].find(s=>s.handedness==='right');
+          const tip=i.pointers.get(source).positions;
+          return Math.hypot(tip[3]-target[0],tip[4]-target[1],tip[5]-target[2])<.003;
+        },handle),'Controller ray did not stop at the depth handle');
+        await page.evaluate(()=>window.xrDevice.controllers.right.updateButtonValue('trigger',1)); await settle(h);
+        check(await menu.evaluate(m=>m.editing.depthDragging),'Box depth handle did not grab');
+        const before=await menu.evaluate(m=>m.editing.volumeVisual.volume.depth);
+        const axis=await menu.evaluate(m=>m.editing.volumeVisual.axisWorld().normalize().toArray());
+        await page.evaluate(axis=>{const c=window.xrDevice.controllers.right;c.position.x+=axis[0]*.05;
+          c.position.y+=axis[1]*.05;c.position.z+=axis[2]*.05;},axis); await settle(h);
+        check(await menu.evaluate((m,previous)=>Math.abs(m.editing.volumeVisual.volume.depth-previous)>1e-4,before),
+          'Dragging the 3D box handle did not adjust depth');
+        await page.evaluate(()=>window.xrDevice.controllers.right.updateButtonValue('trigger',0)); await settle(h);
+        await page.waitForFunction(menu=>!menu.editing.busy,{},menu);
+        check(await h.evaluate(h=>h.selection.summary.selected>0),'Changing volume depth removed the entire draft');
+      }
+      await control(options,'Expand tool options');
+      if(shape==='Lasso') {
+        await control('XR tool bar','Navigate (Q)');
+        check(await h.evaluate(h=>h.selection.summary.selected===0 && !h.app.root.findByName('XR selection volume')),
+          'Leaving Selection kept the unsaved volume or its draft');
+        await control('XR tool bar','Select');
+      } else await control(options,'Clear Selection');
     }
+    console.log('XR VOLUME QUERIES',id,await h.evaluate(h=>h.app.__volumeTimings.map(ms=>Math.round(ms))));
+    if(process.env.XR_VOLUME_PROFILE) console.log('XR VOLUME FULL-ASSET',id,await h.evaluate(async h=>{
+      const b=h.selection.bounds(null),min=b.getMin(),max=b.getMax();
+      const matrix=[1,0,0,0,0,1,0,0,0,0,1,0,0,0,min.z-.01,1];
+      const x0=min.x-.01,x1=max.x+.01,y0=min.y-.01,y1=max.y+.01;
+      const rectangle=[[x0,y0],[x1,y0],[x1,y1],[x0,y1]];
+      const radius=Math.hypot(x1-x0,y1-y0),cx=(x0+x1)/2,cy=(y0+y1)/2;
+      const lasso=Array.from({length:128},(_,i)=>[cx+radius*Math.cos(i*Math.PI/64),cy+radius*Math.sin(i*Math.PI/64)]);
+      const result=[];
+      for(const [shape,outline] of [['rectangle',rectangle],['lasso',lasso]]){
+        const start=performance.now(), masks=await h.selection.selectVolume({shape,matrix,outline,depth:max.z-min.z+.02});
+        result.push({shape,ms:Math.round(performance.now()-start),selected:masks.reduce((n,m)=>n+m.reduce((s,v)=>s+Number(!!v),0),0)});
+      }
+      return result;
+    }));
     const idle=await input.evaluate(i=>[...i.hits.values()].map(s=>s.time));
     for(let i=0;i<5;i++)await settle(h);
     check(await input.evaluate((i,times)=>[...i.hits.values()].every((s,j)=>s.time===times[j]),idle),'Stationary controllers kept issuing surface queries');

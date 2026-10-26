@@ -35,6 +35,7 @@ export class ImmersiveTools {
     const app = handle.app, camera = handle.viewports.perspectivePanel.camera;
     this.releaseInput = spatialInput(app);
     this.editing = new ImmersiveEditing(handle, workspaces, input, () => this.commit());
+    input.setExtraTarget(source => this.tool === "select" ? this.editing.depthHandleTarget(source) : null);
     this.ui = new ToolPanel(app, camera.entity, {
       tool: tool => this.setTool(tool),
       open: id => { this.revision++; this.selectedId = id; this.name = this.current()!.name; this.armed = false; this.refresh(); },
@@ -51,16 +52,17 @@ export class ImmersiveTools {
   }
   get isArmed() { return this.tool === "measure" && this.armed; }
   get isMenuTargeted() { return this.ui.targeted; }
-  get blocksPan() { return this.ui.targeted || this.moving !== null || this.tool === "select" || this.editing.dragging; }
+  get blocksPan() { return this.ui.targeted || this.moving !== null || this.editing.drawing ||
+    this.editing.starting !== null || this.editing.depthDragging || this.editing.dragging; }
   get currentTool() { return this.tool; }
   undo() {
-    if (this.tool === "select") { this.workspaces.history.undo(); this.editing.selectionId = null; this.input.invalidate(); }
+    if (this.tool === "select") { this.editing.clearVolume(); this.workspaces.history.undo(); this.editing.selectionId = null; this.input.invalidate(); }
     else if (this.tool === "annotate") { this.workspaces.current.annotations.undo(); this.editing.annotate("cancel"); }
     else if (this.tool === "measure") { this.measurement().undo(); if (!this.current()) this.selectedId = null; }
     this.commit();
   }
   redo() {
-    if (this.tool === "select") { this.workspaces.history.redo(); this.editing.selectionId = null; this.input.invalidate(); }
+    if (this.tool === "select") { this.editing.clearVolume(); this.workspaces.history.redo(); this.editing.selectionId = null; this.input.invalidate(); }
     else if (this.tool === "annotate") { this.workspaces.current.annotations.redo(); this.editing.annotate("cancel"); }
     else if (this.tool === "measure") { this.measurement().redo(); if (!this.current()) this.selectedId = null; }
     this.commit();
@@ -91,7 +93,8 @@ export class ImmersiveTools {
   // so a pan release cannot also create a measurement.
   private selectStart(source: XrInputSource) {
     if (source.handedness !== "right") return;
-    if (this.tool === "select" && !this.isMenuTargeted && this.ready()) { this.editing.start(source); return; }
+    if (this.tool === "select" && !this.isMenuTargeted && this.ready() &&
+      (this.input.hit(source) || this.editing.depthHandleNear(source))) { this.editing.start(source); return; }
     if (!this.isMenuTargeted && this.editing.beginAnnotationDrag(source)) return;
     this.tapping = (this.tool === "measure" || this.tool === "annotate") && !this.isMenuTargeted;
     this.dragged = false;
@@ -110,7 +113,7 @@ export class ImmersiveTools {
   }
   private trackTap() {
     const source = this.handle.app.xr?.input.inputSources.find(input => input.handedness === "right");
-    if (source && this.editing.drawing) this.editing.track(source);
+    if (source && (this.editing.drawing || this.editing.depthDragging)) this.editing.track(source);
     if (!this.tapping || this.dragged) return;
     const right = this.handle.app.xr?.input.inputSources.find(source => source.handedness === "right");
     if (right && this.tapOrigin.distance(right.getPosition() ?? right.getOrigin()) >= .02) this.dragged = true;
@@ -138,7 +141,7 @@ export class ImmersiveTools {
   }
   private async selectEnd(source: XrInputSource) {
     if (source.handedness !== "right") return;
-    if (this.editing.drawing || this.editing.starting) { await this.editing.end(); return; }
+    if (this.editing.drawing || this.editing.starting || this.editing.depthDragging) { await this.editing.end(); return; }
     const tapped = this.tapping && !this.dragged && this.tapOrigin.distance(source.getPosition() ?? source.getOrigin()) < .02;
     this.tapping = false; this.dragged = false;
     if (this.tool === "annotate") {
@@ -197,6 +200,7 @@ export class ImmersiveTools {
       name: this.name, message: this.message, style: model.style, busy: this.busy });
   }
   destroy() {
+    this.input.setExtraTarget(null);
     if (this.disposed) return;
     this.disposed = true;
     const app = this.handle.app;
