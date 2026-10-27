@@ -24,6 +24,14 @@ export class SpatialUiAnchor {
     this.target.setFromEulerAngles(0, Math.atan2(-this.heading.x, -this.heading.z) * 180 / Math.PI, 0);
     this.root.setPosition(this.camera.getPosition()); this.root.setRotation(this.target); this.initialized = true;
   }
+  frame() {
+    this.heading.copy(this.camera.forward); this.heading.y = 0;
+    if (this.heading.lengthSq() < .01) this.heading.copy(Vec3.FORWARD);
+    this.heading.normalize();
+    this.target.setFromEulerAngles(0, Math.atan2(-this.heading.x, -this.heading.z) * 180 / Math.PI, 0);
+    this.root.setPosition(this.camera.getPosition()); this.root.setRotation(this.target);
+    this.initialized = true; this.following = false;
+  }
   private update(dt: number) {
     if (!this.app.xr?.active || !this.initialized) return;
     const head = this.camera.getPosition();

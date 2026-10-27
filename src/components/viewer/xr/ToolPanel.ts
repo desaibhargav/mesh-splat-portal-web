@@ -47,12 +47,13 @@ export class ToolPanel {
     this.anchor = new SpatialUiAnchor(app, camera, () => this.targeted ||
       !!app.xr?.input.inputSources.some(source => source.selecting || source.squeezing));
     const redraw = () => { if (this.state) this.render(this.state); };
-    this.toolbar = new SpatialPanel(app, "XR tool bar", 214, new Vec3(-.13, .25, -.8), this.anchor.root, redraw);
-    this.options = new SpatialPanel(app, "XR measurement options", 270, new Vec3(.10, -.35, -.8), this.anchor.root, redraw, true, 1);
+    this.toolbar = new SpatialPanel(app, "XR tool bar", 214, new Vec3(-.13, .25, -.8), this.anchor.root, redraw, false, 0, true);
+    this.options = new SpatialPanel(app, "XR measurement options", 270, new Vec3(.10, -.35, -.8), this.anchor.root, redraw, true, 1, true);
     this.keyboard = new SpatialPanel(app, "XR text keyboard", 350, new Vec3(-.23, -.19, -.65), this.anchor.root, redraw, false, 2);
     this.options.enabled = this.keyboard.enabled = false;
   }
   get targeted() { return this.toolbar.isTargeted || this.options.isTargeted || this.keyboard.isTargeted; }
+  frame() { this.anchor.frame(); this.toolbar.resetPosition(); this.options.resetPosition(); this.keyboard.resetPosition(); }
 
   private text(ctx: CanvasRenderingContext2D, value: string, x: number, y: number, size = 12, color = this.theme.text) {
     ctx.font = `${size}px ${this.font}`; ctx.fillStyle = color;

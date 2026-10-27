@@ -6,7 +6,7 @@ import type { SelectionVolume } from "../volume/SelectionVolume";
 // Transfer centers once and scope only after edits, never scan the cloud per frame.
 export class SplatSurfacePicker {
   private readonly worker = new Worker(new URL("./visibility.worker.ts", import.meta.url), { type: "module" });
-  private readonly pending = new Map<number, { resolve(data: { hit?: { point: number[]; part: number; index: number } | null; result?: Uint8Array[] }): void; reject(error: Error): void }>();
+  private readonly pending = new Map<number, { resolve(data: { hit?: { point: number[]; normal?: number[]; part: number; index: number } | null; result?: Uint8Array[] }): void; reject(error: Error): void }>();
   private serial = 0;
   private dirty = true;
   private failure: Error | null = null;
@@ -24,7 +24,7 @@ export class SplatSurfacePicker {
     this.worker.onerror = error => this.fail(new Error(error.message));
   }
   invalidate() { this.dirty = true; }
-  pick(origin: Vec3, direction: Vec3, mask: Uint8Array, isolated: boolean, scope: Uint8Array | null): Promise<SurfaceHit | null> {
+  pick(origin: Vec3, direction: Vec3, mask: Uint8Array, isolated: boolean, scope: Uint8Array | null, normal = false): Promise<SurfaceHit | null> {
     if (this.failure) return Promise.reject(this.failure);
     const enabled = this.app.graphicsDevice.scope.resolve("portalSectionEnabled").getValue();
     const plane = this.app.graphicsDevice.scope.resolve("portalSectionPlane").getValue() as number[];
@@ -32,9 +32,10 @@ export class SplatSurfacePicker {
     this.dirty = false;
     const id = ++this.serial;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve: data => resolve(data.hit ? { ...data.hit, point: new Vec3(...data.hit.point as [number, number, number]) } : null), reject });
+      this.pending.set(id, { resolve: data => resolve(data.hit ? { ...data.hit, point: new Vec3(...data.hit.point as [number, number, number]),
+        normal: data.hit.normal ? new Vec3(...data.hit.normal as [number, number, number]) : undefined } : null), reject });
       this.worker.postMessage({ id, ray: { origin: origin.toArray(), direction: direction.toArray(), section: enabled ? Array.from(plane) : null,
-        parts: [{ model: Array.from(this.entity.getWorldTransform().data), side: 2 }] }, visible });
+        parts: [{ model: Array.from(this.entity.getWorldTransform().data), side: 2 }], normal }, visible });
     });
   }
   selectVolume(volume: SelectionVolume, mask: Uint8Array, isolated: boolean, scope: Uint8Array | null): Promise<Uint8Array[]> {

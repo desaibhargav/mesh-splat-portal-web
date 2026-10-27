@@ -1,4 +1,4 @@
-import { Mat4, Plane, Quat, Ray, Vec3, WideLine, WideLineRenderer, type AppBase, type Entity, type ElementComponent, type XrInputSource } from "playcanvas";
+import { Layer, Mat4, Plane, Quat, Ray, Vec3, WideLine, WideLineRenderer, type AppBase, type Entity, type ElementComponent, type XrInputSource } from "playcanvas";
 import { XrControllers } from "playcanvas/scripts/esm/xr/xr-controllers.mjs";
 import { XrManipulation } from "playcanvas/scripts/esm/xr/xr-manipulation.mjs";
 
@@ -11,6 +11,8 @@ const rayLength = 1.5;
 // This adapter adds only pointer visuals and full-pose, one-controller grabbing.
 export class ImmersiveInput {
   private readonly rays: WideLineRenderer;
+  private readonly rayLayer = new Layer({ name: "XR pointer rays" });
+  private readonly releaseRayLayer: () => void;
   private readonly pointers = new Map<XrInputSource, { line: WideLine; positions: Float32Array }>();
   private readonly hits = new Map<XrInputSource, { origin: Vec3; direction: Vec3; transform: Mat4;
     hit: SurfaceHit | null; pending: boolean; time: number; revision: number }>();
@@ -31,10 +33,14 @@ export class ImmersiveInput {
   private readonly scale = new Vec3();
   private readonly end = new Vec3();
   private extraTarget: ((source: XrInputSource) => Vec3 | null) | null = null;
+  private needNormal = false;
 
   constructor(private readonly app: AppBase, private readonly rig: Entity, private readonly target: Entity, private readonly handle: SelectionHandle) {
-    this.rays = new WideLineRenderer(app); this.rays.depthTest = false; this.rays.depthWrite = false;
-    app.on("xr:controller:add", this.showModel, this);
+    app.scene.layers.push(this.rayLayer);
+    this.releaseRayLayer = handle.viewports.shareLayer(this.rayLayer.id);
+    this.rays = new WideLineRenderer(app); this.rays.layer = this.rayLayer;
+    this.rays.depthTest = false; this.rays.depthWrite = false;
+    app.on("xr:controller:add", this.nameModel, this);
     app.xr!.input.on("remove", this.remove, this);
     rig.addComponent("script");
     rig.script!.create(XrControllers, { properties: { basePath: profiles } });
@@ -43,17 +49,7 @@ export class ImmersiveInput {
     app.on("prerender", this.drawRays, this);
   }
 
-  private showModel(source: XrInputSource, entity: Entity) {
-    entity.name = `XR controller ${source.handedness}`;
-    // Splats have no scene lights. Controller models must remain visible there.
-    for (const component of entity.findComponents("render")) {
-      const render = component as import("playcanvas").RenderComponent;
-      for (const instance of render.meshInstances) {
-        const material = instance.material as import("playcanvas").StandardMaterial;
-        material.useLighting = false; material.update();
-      }
-    }
-  }
+  private nameModel(source: XrInputSource, entity: Entity) { entity.name = `XR controller ${source.handedness}`; }
 
   private update() {
     if (!this.app.xr?.active) return;
@@ -77,11 +73,12 @@ export class ImmersiveInput {
   }
 
   invalidate() { this.revision++; }
+  setNormalPicking(value: boolean) { if (this.needNormal !== value) { this.needNormal = value; this.invalidate(); } }
   setExtraTarget(target: ((source: XrInputSource) => Vec3 | null) | null) { this.extraTarget = target; }
   hit(source: XrInputSource) { return this.hits.get(source)?.hit ?? null; }
   async pick(source: XrInputSource): Promise<SurfaceHit | null> {
     const inverse = new Mat4().invert(this.handle.space.root.getWorldTransform());
-    const hit = await this.handle.selection.surfaceHit(source.getOrigin().clone(), source.getDirection().clone());
+    const hit = await this.handle.selection.surfaceHit(source.getOrigin().clone(), source.getDirection().clone(), this.needNormal);
     return hit ? { ...hit, point: inverse.transformPoint(hit.point) } : null;
   }
   private drawRays() {
@@ -91,7 +88,7 @@ export class ImmersiveInput {
       let pointer = this.pointers.get(source);
       if (!pointer) {
         const positions = new Float32Array(6);
-        const line = new WideLine().set(positions, [1, 1, 1, 1, 1, 1], 3);
+        const line = new WideLine().set(positions, [1, 1, 1, 1, 1, 1], 5);
         this.rays.add(line); pointer = { line, positions }; this.pointers.set(source, pointer);
       }
       const origin = source.getOrigin(), direction = source.getDirection();
@@ -119,7 +116,8 @@ export class ImmersiveInput {
         this.normal.sub2(corners[1]!, corners[0]!); this.edge.sub2(corners[3]!, corners[0]!);
         this.normal.cross(this.normal, this.edge).normalize();
         this.plane.setFromPointNormal(corners[0]!, this.normal); this.ray.set(origin, direction);
-        if (this.plane.intersectsRay(this.ray, this.uiPoint) && (!hit || origin.distance(this.uiPoint) < origin.distance(this.end))) this.end.copy(this.uiPoint);
+        if (this.plane.intersectsRay(this.ray, this.uiPoint) && (!hit || origin.distance(this.uiPoint) < origin.distance(this.end)))
+          this.end.copy(this.uiPoint).addScaled(direction, -.008);
       }
       const positions = pointer.positions;
       positions[0] = origin.x; positions[1] = origin.y; positions[2] = origin.z;
@@ -138,9 +136,10 @@ export class ImmersiveInput {
   destroy() {
     this.disposed = true; this.hits.clear(); this.extraTarget = null;
     this.app.off("prerender", this.drawRays, this);
-    this.app.off("update", this.update, this); this.app.off("xr:controller:add", this.showModel, this);
+    this.app.off("update", this.update, this); this.app.off("xr:controller:add", this.nameModel, this);
     this.app.xr?.input.off("remove", this.remove, this);
     this.rig.script?.destroy("xrControllers"); this.rig.script?.destroy("xrManipulation");
-    this.rays.destroy(); this.pointers.clear(); this.grabbing = null;
+    this.rays.destroy(); this.releaseRayLayer(); this.app.scene.layers.remove(this.rayLayer);
+    this.pointers.clear(); this.grabbing = null;
   }
 }

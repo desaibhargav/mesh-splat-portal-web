@@ -5,7 +5,7 @@ export interface VisibilityQuery {
   width: number; height: number; alpha: Uint8Array; hits: Uint8Array[];
 }
 export interface SurfaceRayQuery {
-  origin: number[]; direction: number[]; parts: Omit<VisibilityPart, "visible">[]; section: number[] | null;
+  origin: number[]; direction: number[]; parts: Omit<VisibilityPart, "visible">[]; section: number[] | null; normal?: boolean;
 }
 export interface VolumeQuery {
   volume: import("../volume/SelectionVolume").SelectionVolume;

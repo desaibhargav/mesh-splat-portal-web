@@ -1,7 +1,7 @@
 import { BLEND_NORMAL, CULLFACE_NONE, Color, Entity, Layer, Mesh, MeshInstance, PRIMITIVE_TRIANGLES, StandardMaterial, Vec3 } from "playcanvas";
 import { Matrix4, ShapeUtils, Vector2, Vector3 } from "three";
 import type { SelectionHandle } from "../selection/types";
-import type { SelectionVolume } from "../selection/volume/SelectionVolume";
+import type { ExtrudedSelectionVolume } from "../selection/volume/SelectionVolume";
 
 // Small transient editor geometry. It follows the artifact's presentation
 // transform, but is never included in picking or saved with the selection.
@@ -19,7 +19,7 @@ export class SelectionVolumeVisual {
   private readonly vertex = new Vector3();
   private disposed = false;
 
-  constructor(private readonly viewer: SelectionHandle, readonly volume: SelectionVolume,
+  constructor(private readonly viewer: SelectionHandle, readonly volume: ExtrudedSelectionVolume,
     private readonly localFrame: Matrix4, goldHex: string) {
     const { app } = viewer;
     app.scene.layers.push(this.layer);

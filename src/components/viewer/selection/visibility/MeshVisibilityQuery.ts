@@ -1,4 +1,4 @@
-import { Box3, BufferAttribute, BufferGeometry, Frustum, Matrix4, Ray, Vector3, type Side } from "three";
+import { Box3, BufferAttribute, BufferGeometry, Frustum, Matrix3, Matrix4, Ray, Vector3, type Side } from "three";
 import { CONTAINED, MeshBVH } from "three-mesh-bvh";
 import type { SurfaceRayQuery, VisibilityGeometry, VisibilityQuery, VolumeQuery } from "./visibilityTypes";
 import { VolumeGeometry } from "../volume/VolumeGeometry";
@@ -22,9 +22,9 @@ export class MeshVisibilityQuery {
   raycast(query: SurfaceRayQuery, visible: (Uint8Array | null)[]): number[] | null {
     return this.surfaceHit(query, visible)?.point ?? null;
   }
-  surfaceHit(query: SurfaceRayQuery, visible: (Uint8Array | null)[]): { point: number[]; part: number; index: number } | null {
+  surfaceHit(query: SurfaceRayQuery, visible: (Uint8Array | null)[]): { point: number[]; normal?: number[]; part: number; index: number } | null {
     const origin = new Vector3().fromArray(query.origin), direction = new Vector3().fromArray(query.direction);
-    let distance = Infinity, result: { point: number[]; part: number; index: number } | null = null;
+    let distance = Infinity, result: { point: number[]; normal?: number[]; part: number; index: number } | null = null;
     this.trees.forEach((tree, index) => {
       const part = query.parts[index]!, model = new Matrix4().fromArray(part.model), inverse = model.clone().invert();
       const ray = new Ray(origin, direction).clone().applyMatrix4(inverse);
@@ -35,7 +35,12 @@ export class MeshVisibilityQuery {
         const world = hit.point.applyMatrix4(model), plane = query.section;
         if (plane && world.x * plane[0]! + world.y * plane[1]! + world.z * plane[2]! + plane[3]! < 0) continue;
         const candidate = origin.distanceToSquared(world);
-        if (candidate < distance) { distance = candidate; result = { point: world.toArray(), part: index, index: hit.faceIndex }; }
+        if (candidate < distance) {
+          distance = candidate;
+          const normal = query.normal && hit.face?.normal ? hit.face.normal.clone().applyMatrix3(new Matrix3().getNormalMatrix(model)).normalize() : null;
+          if (normal && normal.dot(direction) > 0) normal.negate();
+          result = { point: world.toArray(), normal: normal?.toArray(), part: index, index: hit.faceIndex };
+        }
       }
     });
     return result;

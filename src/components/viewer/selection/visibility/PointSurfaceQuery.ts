@@ -1,4 +1,4 @@
-import { Box3, BufferAttribute, BufferGeometry, Matrix4, Points, Raycaster, Vector3 } from "three";
+import { Box3, BufferAttribute, BufferGeometry, Matrix3, Matrix4, Points, Raycaster, Vector3 } from "three";
 import { CONTAINED, PointsBVH } from "three-mesh-bvh";
 import type { SurfaceRayQuery, VolumeQuery } from "./visibilityTypes";
 import { VolumeGeometry } from "../volume/VolumeGeometry";
@@ -12,6 +12,7 @@ export class PointSurfaceQuery {
   private readonly point = new Vector3();
   private readonly center = new Vector3();
   private readonly spacing: number;
+  private readonly normals = new Map<number, Vector3>();
   constructor(positions: Float32Array) {
     const geometry = new BufferGeometry().setAttribute("position", new BufferAttribute(positions, 3));
     geometry.computeBoundingBox();
@@ -34,9 +35,44 @@ export class PointSurfaceQuery {
       this.point.fromBufferAttribute(object.geometry.attributes.position!, index).applyMatrix4(object.matrixWorld);
       const plane = query.section;
       if (plane && this.point.x * plane[0]! + this.point.y * plane[1]! + this.point.z * plane[2]! + plane[3]! < 0) continue;
-      return { point: this.point.toArray(), part: 0, index };
+      const localNormal = query.normal ? this.normalAt(index) : null;
+      const normal = localNormal?.clone().applyMatrix3(new Matrix3().getNormalMatrix(object.matrixWorld)).normalize();
+      if (normal && normal.dot(raycaster.ray.direction) > 0) normal.negate();
+      return { point: this.point.toArray(), normal: normal?.toArray(), part: 0, index };
     }
     return null;
+  }
+  private normalAt(index: number) {
+    const cached = this.normals.get(index);
+    if (cached) return cached;
+    const attribute = this.object.geometry.attributes.position!;
+    const center = new Vector3().fromBufferAttribute(attribute, index);
+    const neighbors: Vector3[] = [];
+    for (const distance of [3, 6]) {
+      const radius = Math.max(this.spacing * distance, 1e-5);
+      const box = new Box3().setFromCenterAndSize(center, new Vector3(radius * 2, radius * 2, radius * 2));
+      this.tree.shapecast({
+        intersectsBounds: bounds => neighbors.length < 32 && bounds.intersectsBox(box),
+        intersectsPoint: ((candidate: Vector3, orderedIndex: number) => {
+          const candidateIndex = this.object.geometry.index!.getX(orderedIndex);
+          if (candidateIndex !== index && neighbors.length < 32 && candidate.distanceToSquared(center) <= radius * radius)
+            neighbors.push(candidate.clone().sub(center));
+          return false;
+        }) as never
+      });
+      if (neighbors.length >= 3) break;
+    }
+    let best = 0, normal = new Vector3();
+    for (let i = 0; i < neighbors.length; i++) for (let j = i + 1; j < neighbors.length; j++) {
+      const cross = new Vector3().crossVectors(neighbors[i]!, neighbors[j]!);
+      const area = cross.lengthSq();
+      if (area > best) { best = area; normal = cross; }
+    }
+    if (best < 1e-12) return null;
+    normal.normalize();
+    if (this.normals.size >= 4096) this.normals.delete(this.normals.keys().next().value!);
+    this.normals.set(index, normal);
+    return normal;
   }
   selectVolume(query: VolumeQuery): Uint8Array[] {
     const volume = new VolumeGeometry(query.volume);

@@ -47,4 +47,28 @@ describe("3D selection volumes", () => {
       outline: [[0, 0], [1, 1], [0, 1], [1, 0]], depth: 1 };
     expect(() => query.selectVolume({ volume, parts: [state], section: null })).toThrow(/crosses itself/);
   });
+
+  it("uses the same 3D brush stroke for splat centers and partially intersected mesh faces", () => {
+    const volume: SelectionVolume = { shape: "brush", centers: [[0, 0, 0], [1, 0, 0]], radius: .2 };
+    const splats = new PointSurfaceQuery(new Float32Array([0, 0, .1, .5, 0, .1, 1, 0, .1, .5, 0, .4]));
+    expect(Array.from(splats.selectVolume({ volume, parts: [state], section: null })[0]!)).toEqual([255, 0, 255, 0]);
+    const mesh = new MeshVisibilityQuery([{ positions: new Float32Array([
+      .1, .1, 0, .4, .1, 0, .1, .4, 0,
+      .4, .1, 0, .6, .1, 0, .4, .4, 0,
+      .9, .1, 0, 1.2, .1, 0, .9, .4, 0
+    ]), indices: new Uint32Array([0, 1, 2, 3, 4, 5, 6, 7, 8]) }]);
+    expect(Array.from(mesh.selectVolume({ volume, parts: [state], section: null })[0]!)).toEqual([255, 0, 255]);
+  });
+
+  it("indexes a long brush stroke without changing point or face selection", () => {
+    const volume: SelectionVolume = { shape: "brush",
+      centers: Array.from({ length: 24 }, (_, i) => [i * .1, 0, 0] as [number, number, number]), radius: .12 };
+    const splats = new PointSurfaceQuery(new Float32Array([1.1, .08, 0, 1.1, .25, 0]));
+    expect(Array.from(splats.selectVolume({ volume, parts: [state], section: null })[0]!)).toEqual([255, 0]);
+    const mesh = new MeshVisibilityQuery([{ positions: new Float32Array([
+      1, .08, 0, 1.2, .08, 0, 1, .2, 0,
+      1, .35, 0, 1.2, .35, 0, 1, .5, 0
+    ]), indices: new Uint32Array([0, 1, 2, 3, 4, 5]) }]);
+    expect(Array.from(mesh.selectVolume({ volume, parts: [state], section: null })[0]!)).toEqual([255, 0]);
+  });
 });

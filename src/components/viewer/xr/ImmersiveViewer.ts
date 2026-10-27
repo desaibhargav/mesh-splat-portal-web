@@ -1,4 +1,4 @@
-import { Entity, EventHandler, PROJECTION_PERSPECTIVE, Quat, XRTYPE_AR, XRTYPE_VR, XRSPACE_LOCALFLOOR } from "playcanvas";
+import { Color, Entity, EventHandler, PROJECTION_PERSPECTIVE, Quat, XRTYPE_AR, XRTYPE_VR, XRSPACE_LOCALFLOOR } from "playcanvas";
 import { cameraControls } from "../CameraControls";
 import { captureFrame, recallFrame } from "../views/viewFrame";
 import type { SelectionHandle, SelectionTool } from "../selection/types";
@@ -62,8 +62,18 @@ export class ImmersiveViewer extends EventHandler {
     const clearColor = camera.clearColor.clone(), near = camera.nearClip, far = camera.farClip;
     const cameraLayers = [...camera.layers];
     const width = app.graphicsDevice.width, height = app.graphicsDevice.height;
+    const ambient = app.scene.ambientLight.clone();
     const rig = new Entity("Immersive viewing space");
     app.root.addChild(rig);
+    if (this.isSplat) {
+      // Splat scenes have no lights, but tracked controller models use lit glTF
+      // materials. Light the models instead of disabling their material lighting.
+      app.scene.ambientLight = new Color(.45, .45, .45);
+      const controllerLight = new Entity("XR controller light");
+      controllerLight.addComponent("light", { type: "directional", intensity: 1, castShadows: false });
+      controllerLight.setEulerAngles(35, -25, 0);
+      rig.addChild(controllerLight);
+    }
     // Keep the source-space bounds fixed while the asset is reparented and
     // manipulated in XR; SelectionHandle.bounds() reflects its live transform.
     const scene = new ImmersiveScene(this.handle, bounds.clone());
@@ -85,6 +95,7 @@ export class ImmersiveViewer extends EventHandler {
       app.graphicsDevice.setResolution(width, height);
       gestures.destroy(); menu.destroy(); this.toolMenu = null;
       placement?.destroy(); input.destroy(); scene.destroy(); rig.destroy(); this.activeScene = null;
+      app.scene.ambientLight = ambient;
     };
     // Keep tracked poses and controller models in metres; only the artifact
     // presentation is normalized. Source geometry and records stay untouched.
@@ -98,7 +109,7 @@ export class ImmersiveViewer extends EventHandler {
     xr.once("update", place);
     this.pending = true; this.error = null; this.changed();
     try {
-      xr.start(camera, type, XRSPACE_LOCALFLOOR, { framebufferScaleFactor: this.isSplat ? .75 : 1, callback: error => {
+      xr.start(camera, type, XRSPACE_LOCALFLOOR, { callback: error => {
         if (error) { this.error = error.message; this.ended(); }
         else if (this.disposed) xr.end();
       } });
@@ -133,9 +144,6 @@ export class ImmersiveViewer extends EventHandler {
   private entered() {
     if (this.disposed) { this.xr?.end(); return; }
     cameraControls(this.camera).enabled = false;
-    // Native fixed foveation is applied only when the headset's XR layer
-    // supports it. A lower splat framebuffer scale bounds stereo fill cost.
-    if (this.isSplat && this.xr?.fixedFoveation !== null) this.xr!.fixedFoveation = .5;
     this.exitPressed = false;
     this.framePressed = this.undoPressed = this.redoPressed = false; this.lastReset = 0;
     this.handle.app.on("update", this.controllerExit, this);

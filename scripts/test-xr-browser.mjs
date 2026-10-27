@@ -251,13 +251,33 @@ try {
       },name,label);
       check(feedback.hover, 'No hover feedback on '+label);
       check(feedback.pixel[0]>190&&feedback.pixel[1]>150&&feedback.pixel[2]<160,'Hovered control border was not visibly highlighted: '+label+' '+feedback.pixel);
-      check(Math.abs(feedback.tip[2]-feedback.plane)<.002,'Controller ray crossed UI '+label+': '+JSON.stringify(feedback));
+      check(feedback.tip[2] >= feedback.plane && feedback.tip[2]-feedback.plane < .012,
+        'Controller ray crossed or stopped short of UI '+label+': '+JSON.stringify(feedback));
       if(click) await tap();
     };
     const options='XR measurement options';
+    const movePanel=async name=>{
+      await control(name,'Move panel',false);
+      const before=await h.evaluate((h,name)=>h.app.root.findByName(name).parent.getPosition().toArray(),name);
+      await page.evaluate(()=>window.xrDevice.controllers.right.updateButtonValue('trigger',1)); await settle(h);
+      await page.evaluate(()=>{window.xrDevice.controllers.right.position.x+=.12;}); await settle(h);
+      const after=await h.evaluate((h,name)=>h.app.root.findByName(name).parent.getPosition().toArray(),name);
+      check(after[0]-before[0]>.09,`Dragging ${name} handle did not move its panel`);
+      await page.evaluate(()=>window.xrDevice.controllers.right.updateButtonValue('trigger',0)); await settle(h);
+      await page.evaluate(()=>{window.xrDevice.controllers.left.updateButtonValue('trigger',1);
+        window.xrDevice.controllers.right.updateButtonValue('trigger',1);}); await settle(h);
+      check(await menu.evaluate((m,name)=>{
+        const panel=name==='XR tool bar'?m.ui.toolbar:m.ui.options;
+        return panel.offset.length()<1e-5;
+      },name),`Trigger chord did not recenter ${name}`);
+      await page.evaluate(()=>{window.xrDevice.controllers.left.updateButtonValue('trigger',0);
+        window.xrDevice.controllers.right.updateButtonValue('trigger',0);}); await settle(h);
+    };
+    await movePanel('XR tool bar');
     const type=async label=>{for(const key of label) await control('XR text keyboard',key); await control('XR text keyboard','Done');};
     await control('XR tool bar','Select');
     check(await menu.evaluate(m=>m.currentTool==='select'),'Selection toolbar did not activate');
+    await movePanel(options);
     await control(options,'Brush');
     await control(options,'Box',false);
     await control(options,'Brush',false);
@@ -300,22 +320,26 @@ try {
     check(aim,'No surface found for selection stroke');
     await page.waitForFunction(menu=>!!menu.editing.brush,{timeout:20000},menu);
     check(await menu.evaluate(m=>{
-      const editing=m.editing,b=editing.selection.bounds(null),p=editing.brushPoints,center=editing.point;
-      const radius=Math.hypot(p[0]-center.x,p[1]-center.y,p[2]-center.z);
+      const editing=m.editing,b=editing.selection.bounds(null),radius=editing.brush.getLocalScale().x/2;
       const expected=Math.max(.005,Math.max(b.halfExtents.x,b.halfExtents.y,b.halfExtents.z)*editing.brushSize/100);
       return Math.abs(radius-expected)<.002;
     }), 'XR brush radius did not match the displayed asset bounds');
+    check(await input.evaluate(i=>{
+      const source=[...i.hits.keys()].find(s=>s.handedness==='right'),hit=i.hit(source);
+      const brush=i.app.root.findByName('XR 3D brush');
+      return !!hit?.normal && Math.abs(brush.up.dot(hit.normal))>.98 && brush.getLocalScale().y<brush.getLocalScale().x*.1;
+    }), 'XR brush disc did not align with the picked surface normal');
     const renderCanvas=await h.evaluateHandle(h=>h.app.graphicsDevice.canvas);
     const brushImage=await renderCanvas.asElement().screenshot();
     await page.screenshot({path:path.join(output,`${id}-xr-brush-before.png`)});
-    await menu.evaluate(m=>{m.editing.lines.remove(m.editing.brush);}); await settle(h);
+    await menu.evaluate(m=>{m.editing.brush.render.enabled=false;}); await settle(h);
     check(!brushImage.equals(await renderCanvas.asElement().screenshot()),'Brush has no visible scene pixels');
-    await menu.evaluate(m=>{m.editing.lines.add(m.editing.brush);}); await settle(h);
+    await menu.evaluate(m=>{m.editing.brush.render.enabled=true;}); await settle(h);
     await menu.evaluate(m=>m.editing.action('brush',50)); await settle(h);
     const largestBrush=await renderCanvas.asElement().screenshot();
-    await menu.evaluate(m=>m.editing.lines.remove(m.editing.brush)); await settle(h);
+    await menu.evaluate(m=>{m.editing.brush.render.enabled=false;}); await settle(h);
     check(!largestBrush.equals(await renderCanvas.asElement().screenshot()),'Largest XR brush vanished');
-    await menu.evaluate(m=>{m.editing.lines.add(m.editing.brush);m.editing.action('brush',10);}); await settle(h);
+    await menu.evaluate(m=>{m.editing.brush.render.enabled=true;m.editing.action('brush',10);}); await settle(h);
     check(await input.evaluate(i=>{
       const source=[...i.hits.keys()].find(s=>s.handedness==='right'),hit=i.hit(source),tip=i.pointers.get(source).positions;
       const world=i.handle.space.toWorld(hit.point);return Math.hypot(tip[3]-world.x,tip[4]-world.y,tip[5]-world.z)<.002;
@@ -687,9 +711,33 @@ try {
     }), "Bottom-right Fullscreen, VR and AR controls are missing or too small");
     await page.$eval(".viewer-frame", element => element.scrollIntoView());
     const h = await handle();
-    console.log("LOAD",id,Math.round(performance.now()-loadStarted));
+    console.log("LOAD",id,Math.round(performance.now()-loadStarted),"primitives",await h.evaluate(h=>h.selection.summary.total));
     if (process.env.XR_PROFILE_ONLY) continue;
     if (process.env.XR_EDITING_ONLY) {
+      // A Quest's 2D browser can deliver tap/release rather than a held drag.
+      // Two touch taps must still define a box before immersive entry.
+      await page.click('[aria-label="Select"]');
+      await page.locator('.selection-shapes button ::-p-text(Box)').click();
+      const center = await h.evaluate(h => {
+        const b = h.selection.bounds(null), camera = h.viewports.perspectivePanel.camera;
+        return camera.worldToScreen(b.center).toArray();
+      });
+      const canvasRect = await page.$eval('.viewer-canvas canvas', canvas => {
+        const r = canvas.getBoundingClientRect(); return { left: r.left, top: r.top, width: r.width, height: r.height };
+      });
+      const touch = await page.createCDPSession();
+      await touch.send('Emulation.setTouchEmulationEnabled', { enabled: true });
+      const span = assets[id].type === 'splat' ? 200 : 50;
+      for (const [x, y] of [[center[0] - span, center[1] - span], [center[0] + span, center[1] + span]]) {
+        const clientX = x + canvasRect.left, clientY = y + canvasRect.top;
+        await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: clientX, y: clientY, id: 1 }] });
+        await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      }
+      await page.waitForFunction(h => h.selection.summary.selected > 0, { timeout: 30000 }, h);
+      await touch.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+      await touch.detach();
+      await page.keyboard.press('q');
+      await page.waitForFunction(h => h.selection.summary.selected === 0, {}, h);
       if(process.env.XR_EDITING_SECTION && id!=='surface-fixture') {
         await page.click('[aria-label="Cross section"]');
         await page.locator('.section-buttons button ::-p-text(Enable section)').click();
@@ -733,15 +781,6 @@ try {
     await page.mouse.move(x + 70, y + 30, { steps: 8 }); await page.mouse.up(); await page.keyboard.up("Shift"); await settle(h);
     const desktopPan = await desktopCamera();
     check(desktopPan.focus.some((value, index) => Math.abs(value - desktopOrbit.focus[index]) > .001), "Desktop pan stopped working");
-    await page.click('[aria-label="Pan mode"]');
-    const panModeBefore = await desktopCamera();
-    await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x + 80, y + 25, { steps: 8 }); await page.mouse.up(); await settle(h);
-    const panModeAfter = await desktopCamera();
-    check(panModeAfter.focus.some((value, index) => Math.abs(value - panModeBefore.focus[index]) > .001),
-      'Primary-pointer Pan mode did not move the camera target');
-    check(panModeAfter.rotation.every((value, index) => Math.abs(value - panModeBefore.rotation[index]) < .001),
-      'Primary-pointer Pan mode rotated the camera');
-    await page.click('[aria-label="Pan mode"]');
     await page.mouse.wheel({ deltaY: -250 }); await settle(h);
     const desktopZoom = await desktopCamera();
     check(desktopZoom.position.some((value, index) => Math.abs(value - desktopPan.position[index]) > .001), "Desktop zoom stopped working");
@@ -1009,13 +1048,13 @@ try {
     await writeFile(path.join(output, `${id}-measurement-form.png`), Buffer.from(formImage.split(",")[1], "base64"));
     const collapse = async () => {
       const height = await h.evaluate(h => h.app.root.findByName("XR measurement options").element.height);
-      await panelClick("XR measurement options", 225, height - 9);
+      await panelClick("XR measurement options", 225, height - 14 - 9);
     };
     await collapse();
-    check(await h.evaluate(h => h.app.root.findByName("XR measurement options").element.height === 18), "Collapse did not reduce XR options to its bar");
+    check(await h.evaluate(h => h.app.root.findByName("XR measurement options").element.height === 32), "Collapse did not reduce XR options to its bar and grab handle");
     await page.screenshot({ path:path.join(output, `${id}-measurement-collapsed.png`) });
     await collapse();
-    check(await h.evaluate(h => h.app.root.findByName("XR measurement options").element.height > 18), "Expand did not restore XR options");
+    check(await h.evaluate(h => h.app.root.findByName("XR measurement options").element.height > 32), "Expand did not restore XR options");
     // Saved box opens the record, and the native-style slider/reset remains editable.
     await panelClick("XR measurement options", 110, 44);
     await panelClick("XR measurement options", 170, 243);

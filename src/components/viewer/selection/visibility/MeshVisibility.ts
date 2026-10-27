@@ -5,7 +5,7 @@ import type { SelectionVolume } from "../volume/SelectionVolume";
 import { regionAlpha, type PickImage } from "../pickImage";
 
 interface Part { source: MeshInstance; positions: Float32Array; indices: number[]; mask: Uint8Array; scope: Uint8Array | null }
-interface Reply { id: number; result?: Uint8Array[]; hit?: { point: number[]; part: number; index: number } | null; error?: string }
+interface Reply { id: number; result?: Uint8Array[]; hit?: { point: number[]; normal?: number[]; part: number; index: number } | null; error?: string }
 
 // One lazily-created worker per mesh controller. Geometry is copied/transferred
 // once, never on animation frames; visibility and camera snapshots belong to
@@ -72,7 +72,7 @@ export class MeshVisibility {
   async raycast(origin: Vec3, direction: Vec3, isolated: boolean): Promise<Vec3 | null> {
     return (await this.surfaceHit(origin, direction, isolated))?.point ?? null;
   }
-  surfaceHit(origin: Vec3, direction: Vec3, isolated: boolean): Promise<SurfaceHit | null> {
+  surfaceHit(origin: Vec3, direction: Vec3, isolated: boolean, normal = false): Promise<SurfaceHit | null> {
     if (this.disposed || this.failure) return Promise.reject(this.failure ?? new Error("Viewer closed during surface picking."));
     const enabled = !!this.app.graphicsDevice.scope.resolve("portalSectionEnabled").getValue();
     const plane = this.app.graphicsDevice.scope.resolve("portalSectionPlane").getValue() as ArrayLike<number> | undefined;
@@ -86,8 +86,10 @@ export class MeshVisibility {
     this.rayDirty = false;
     const id = ++this.serial;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve: data => resolve(data.hit ? { ...data.hit, point: new Vec3(...data.hit.point as [number, number, number]) } : null), reject });
-      this.worker.postMessage({ id, ray: { origin: origin.toArray(), direction: direction.toArray(), parts, section: enabled && plane ? Array.from(plane) : null }, visible });
+      this.pending.set(id, { resolve: data => resolve(data.hit ? { ...data.hit, point: new Vec3(...data.hit.point as [number, number, number]),
+        normal: data.hit.normal ? new Vec3(...data.hit.normal as [number, number, number]) : undefined } : null), reject });
+      this.worker.postMessage({ id, ray: { origin: origin.toArray(), direction: direction.toArray(), parts,
+        section: enabled && plane ? Array.from(plane) : null, normal }, visible });
     });
   }
 

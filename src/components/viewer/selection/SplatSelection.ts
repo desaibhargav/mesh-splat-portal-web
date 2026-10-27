@@ -149,9 +149,9 @@ export class SplatSelection {
   }
 
   async pickRay(origin: Vec3, direction: Vec3) { return (await this.surfaceHit(origin, direction))?.point ?? null; }
-  surfaceHit(origin: Vec3, direction: Vec3) {
+  surfaceHit(origin: Vec3, direction: Vec3, normal = false) {
     this.surfacePicker ??= new SplatSurfacePicker(this.component.system.app, this.centers, this.component.entity);
-    return this.surfacePicker.pick(origin, direction, this.mask, this.isolated, this.scope?.[0] ?? null);
+    return this.surfacePicker.pick(origin, direction, this.mask, this.isolated, this.scope?.[0] ?? null, normal);
   }
 
   select(region: SelectionRegion, operation: SelectionOperation, camera: SelectionCamera, hits?: Uint8Array[]): SelectionSummary {

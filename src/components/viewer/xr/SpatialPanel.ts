@@ -27,13 +27,18 @@ export class SpatialPanel {
   private readonly heightAxis = new Vec3();
   private readonly normal = new Vec3();
   private readonly relative = new Vec3();
+  private readonly offset = new Vec3();
+  private readonly dragStart = new Vec3();
+  private readonly dragOrigin = new Vec3();
+  private readonly dragDelta = new Vec3();
+  private moveSource: XrInputSource | null = null;
   private dragging: string | null = null;
   private hovered: string | null = null;
   private pixelHeight = 1;
 
   constructor(private readonly app: AppBase, name: string, private readonly width: number,
     private readonly position: Vec3, parent: Entity, private readonly redraw: () => void,
-    private readonly bottomAnchored = false, priority = 0) {
+    private readonly bottomAnchored = false, priority = 0, private readonly movable = false) {
     this.entity = new Entity(name);
     parent.addChild(this.screen);
     this.screen.setLocalPosition(position);
@@ -58,22 +63,30 @@ export class SpatialPanel {
     this.entity.element!.on("selectend", this.end, this);
     this.entity.element!.on("click", this.click, this);
     app.xr?.on("update", this.updateHover, this);
+    app.xr?.input.on("selectend", this.stopMoving, this);
   }
 
   begin(height: number) {
-    this.pixelHeight = height;
-    if (this.bottomAnchored) this.screen.setLocalPosition(this.position.x, this.position.y + height * .0012, this.position.z);
-    if (this.canvas.width !== this.width * 2 || this.canvas.height !== height * 2) {
-      this.canvas.width = this.width * 2; this.canvas.height = height * 2;
+    this.pixelHeight = height + (this.movable ? 14 : 0);
+    if (!this.moveSource) this.place();
+    if (this.canvas.width !== this.width * 2 || this.canvas.height !== this.pixelHeight * 2) {
+      this.canvas.width = this.width * 2; this.canvas.height = this.pixelHeight * 2;
     }
     this.context.setTransform(1, 0, 0, 1, 0, 0);
     this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
     this.context.setTransform(2, 0, 0, 2, 0, 0);
     this.controls.length = 0;
-    this.entity.element!.height = height;
+    this.entity.element!.height = this.pixelHeight;
     return this.context;
   }
   finish() {
+    if (this.movable) {
+      const y = this.pixelHeight - 14, ctx = this.context;
+      ctx.fillStyle = "#252525"; ctx.fillRect(0, y, this.width, 14);
+      ctx.fillStyle = this.hovered === "Move panel" ? "#ffe08c" : "#aaa";
+      ctx.beginPath(); ctx.roundRect(this.width / 2 - 19, y + 5, 38, 4, 2); ctx.fill();
+      this.controls.push({ label: "Move panel", x: 0, y, width: this.width, height: 14 });
+    }
     const hovered = this.controls.find(control => control.label === this.hovered);
     if (hovered) {
       const ctx = this.context; ctx.save();
@@ -96,13 +109,17 @@ export class SpatialPanel {
     }
   }
   get enabled() { return this.screen.enabled; }
-  set enabled(value: boolean) { this.screen.enabled = value; if (!value) { this.hovered = this.dragging = null; this.hoverEntity.enabled = false; } }
+  set enabled(value: boolean) { this.screen.enabled = value; if (!value) { this.hovered = this.dragging = null; this.moveSource = null; this.hoverEntity.enabled = false; } }
   get isTargeted() {
     // Engine 2.21 types this as Entity but ElementInput assigns its
     // ElementComponent. Keep that pinned-version mismatch at this boundary.
-    return this.app.xr?.input.inputSources.some(source => source.handedness === "right" &&
-      (source.elementEntity as unknown as ElementComponent | null)?.entity === this.entity) ?? false;
+    return !!this.moveSource || (this.app.xr?.input.inputSources.some(source => source.handedness === "right" &&
+      (source.elementEntity as unknown as ElementComponent | null)?.entity === this.entity) ?? false);
   }
+  resetPosition() { this.moveSource = null; this.offset.set(0, 0, 0); this.place(); }
+  private place() { this.screen.setLocalPosition(this.position.x + this.offset.x,
+    this.position.y + (this.bottomAnchored ? this.pixelHeight * .0012 : 0) + this.offset.y,
+    this.position.z + this.offset.z); }
   isHovered(label: string) { return this.hovered === label; }
 
   private coordinates(source: XrInputSource) {
@@ -130,6 +147,12 @@ export class SpatialPanel {
   private start(event: ElementSelectEvent) {
     if (event.inputSource.handedness !== "right") return;
     const control = this.hit(event.inputSource);
+    if (control?.label === "Move panel" && this.movable) {
+      this.moveSource = event.inputSource;
+      this.dragOrigin.copy(event.inputSource.getPosition() ?? event.inputSource.getOrigin());
+      this.dragStart.copy(this.screen.getLocalPosition());
+      return;
+    }
     if (control?.drag) { this.dragging = control.label; this.apply(control, event); }
   }
   private move(event: ElementSelectEvent) {
@@ -150,12 +173,23 @@ export class SpatialPanel {
   private leave(event: ElementSelectEvent) { if (event.inputSource.handedness !== "right") return; if (this.hovered) { this.hovered = null; this.redraw(); } }
   private updateHover() {
     if (!this.enabled) return;
+    if (this.moveSource) {
+      this.dragDelta.sub2(this.moveSource.getPosition() ?? this.moveSource.getOrigin(), this.dragOrigin);
+      this.screen.parent!.getWorldTransform().clone().invert().transformVector(this.dragDelta, this.dragDelta);
+      this.screen.setLocalPosition(this.dragStart.clone().add(this.dragDelta));
+      this.offset.sub2(this.screen.getLocalPosition(), this.position);
+      if (this.bottomAnchored) this.offset.y -= this.pixelHeight * .0012;
+      this.app.renderNextFrame = true;
+      return;
+    }
     const source = this.app.xr?.input.inputSources.find(source => source.handedness === "right");
     const hovered = source && (source.elementEntity as unknown as ElementComponent | null)?.entity === this.entity ?
       this.hit(source)?.label ?? null : null;
     if (hovered !== this.hovered) { this.hovered = hovered; this.redraw(); }
   }
-  destroy() { this.app.xr?.off("update", this.updateHover, this); this.screen.destroy(); this.texture.destroy(); this.hoverTexture.destroy(); }
+  private stopMoving(source: XrInputSource) { if (source === this.moveSource) this.moveSource = null; }
+  destroy() { this.app.xr?.off("update", this.updateHover, this); this.app.xr?.input.off("selectend", this.stopMoving, this);
+    this.screen.destroy(); this.texture.destroy(); this.hoverTexture.destroy(); }
 }
 
 // @playcanvas/react does not install ElementInput. Own it only for this session,

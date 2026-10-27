@@ -1,5 +1,5 @@
-import { Box3, ExtrudeGeometry, Matrix4, Shape, ShapeUtils, Vector2, Vector3 } from "three";
-import { ExtendedTriangle, MeshBVH } from "three-mesh-bvh";
+import { Box3, BufferAttribute, BufferGeometry, ExtrudeGeometry, Matrix4, Shape, ShapeUtils, Sphere, Vector2, Vector3 } from "three";
+import { ExtendedTriangle, MeshBVH, PointsBVH } from "three-mesh-bvh";
 import type { SelectionVolume } from "./SelectionVolume";
 
 // Edit-time geometry query, shared by mesh faces and splat centers. Three owns
@@ -12,10 +12,28 @@ export class VolumeGeometry {
   private readonly convex: boolean;
   private readonly surface: ExtrudeGeometry | null;
   private readonly tree: MeshBVH | null;
+  private readonly spheres: Sphere[] = [];
+  private readonly brushTree: PointsBVH | null = null;
+  private readonly brushBounds = new Box3();
   private readonly face = new ExtendedTriangle();
   private readonly faceBounds = new Box3();
+  private readonly closest = new Vector3();
 
   constructor(readonly volume: SelectionVolume) {
+    if (volume.shape === "brush") {
+      if (!Number.isFinite(volume.radius) || volume.radius <= 0 || !volume.centers.length ||
+          volume.centers.some(center => center.some(value => !Number.isFinite(value))))
+        throw new Error("Draw a nonempty 3D brush stroke.");
+      this.inverse = new Matrix4(); this.points = []; this.convex = false; this.surface = this.tree = null;
+      this.spheres = volume.centers.map(center => new Sphere(new Vector3(...center), volume.radius));
+      if (this.spheres.length > 8) {
+        const positions = new Float32Array(volume.centers.flat());
+        this.brushTree = new PointsBVH(new BufferGeometry().setAttribute("position", new BufferAttribute(positions, 3)));
+      }
+      for (const sphere of this.spheres) this.bounds.expandByPoint(sphere.center.clone().addScalar(-sphere.radius))
+        .expandByPoint(sphere.center.clone().addScalar(sphere.radius));
+      return;
+    }
     if (volume.outline.length < 3 || !Number.isFinite(volume.depth) || volume.depth <= 0 ||
         volume.outline.some(point => !Number.isFinite(point[0]) || !Number.isFinite(point[1])))
       throw new Error("Draw a nonempty selection volume.");
@@ -57,6 +75,14 @@ export class VolumeGeometry {
 
   contains(point: Vector3) {
     if (!this.bounds.containsPoint(point)) return false;
+    if (this.volume.shape === "brush") {
+      if (!this.brushTree) return this.spheres.some(sphere => sphere.containsPoint(point));
+      const radius = this.volume.radius;
+      this.brushBounds.setFromCenterAndSize(point, new Vector3(radius * 2, radius * 2, radius * 2));
+      // The installed PointsBVH declaration calls this argument an index; its implementation passes a Vector3.
+      return this.brushTree.shapecast({ intersectsBounds: box => box.intersectsBox(this.brushBounds),
+        intersectsPoint: ((candidate: Vector3) => candidate.distanceToSquared(point) <= radius * radius) as never });
+    }
     if (this.volume.shape === "rectangle") return true;
     // Ray crossing is an elementary point-in-polygon test. The library handles
     // triangulation and boundary intersections; this avoids testing every
@@ -74,6 +100,7 @@ export class VolumeGeometry {
   }
 
   containsBounds(box: Box3) {
+    if (this.volume.shape === "brush") return false;
     if (!this.convex || box.min.z < this.bounds.min.z || box.max.z > this.bounds.max.z ||
         !this.bounds.containsBox(box)) return false;
     if (this.volume.shape === "rectangle") return true;
@@ -89,6 +116,14 @@ export class VolumeGeometry {
     this.face.c.copy(triangle.c).applyMatrix4(transform);
     this.face.needsUpdate = true;
     if (!this.bounds.intersectsTriangle(this.face)) return false;
+    if (this.volume.shape === "brush") {
+      const radius = this.volume.radius;
+      if (!this.brushTree) return this.spheres.some(sphere =>
+        this.face.closestPointToPoint(sphere.center, this.closest).distanceToSquared(sphere.center) <= radius * radius);
+      this.faceBounds.setFromPoints([this.face.a, this.face.b, this.face.c]).expandByScalar(radius);
+      return this.brushTree.shapecast({ intersectsBounds: box => box.intersectsBox(this.faceBounds),
+        intersectsPoint: ((candidate: Vector3) => this.face.closestPointToPoint(candidate, this.closest).distanceToSquared(candidate) <= radius * radius) as never });
+    }
     if (this.volume.shape === "rectangle") return true;
     if (this.contains(this.face.a) || this.contains(this.face.b) || this.contains(this.face.c)) return true;
     this.faceBounds.setFromPoints([this.face.a, this.face.b, this.face.c]);
@@ -98,5 +133,5 @@ export class VolumeGeometry {
     });
   }
 
-  destroy() { this.surface?.dispose(); }
+  destroy() { this.surface?.dispose(); this.brushTree?.geometry.dispose(); }
 }

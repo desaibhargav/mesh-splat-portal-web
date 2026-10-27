@@ -18,12 +18,12 @@ export interface SelectionArea {
   id: number; name: string; visible: boolean; snapshot: SelectionSnapshot; color: number; saved?: boolean;
 }
 export type VisibilityTest = (id: number, u: number, v: number, w: number, z: number) => boolean;
-export interface SurfaceHit { point: Vec3; part: number; index: number }
+export interface SurfaceHit { point: Vec3; normal?: Vec3; part: number; index: number }
 export interface SelectionController {
   updateSection(): void;
   readonly layers: readonly number[];
   primitiveAt(app: AppBase, camera: CameraComponent, u: number, v: number): Promise<{ part: number; index: number } | null>;
-  surfaceHit(origin: Vec3, direction: Vec3): SurfaceHit | null | Promise<SurfaceHit | null>;
+  surfaceHit(origin: Vec3, direction: Vec3, normal?: boolean): SurfaceHit | null | Promise<SurfaceHit | null>;
   pickRay(origin: Vec3, direction: Vec3): Vec3 | null | Promise<Vec3 | null>;
   hitTest(app: AppBase, camera: CameraComponent, region: SelectionRegion): Promise<Uint8Array[]>;
   selectVolume(volume: SelectionVolume): Promise<Uint8Array[]>;

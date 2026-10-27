@@ -1,7 +1,6 @@
-import { ASPECT_MANUAL, Color, Entity, Plane, Ray, Vec3, WideLine, WideLineRenderer, type XrInputSource } from "playcanvas";
+import { ASPECT_MANUAL, BLEND_NORMAL, Color, Entity, Plane, Quat, Ray, StandardMaterial, Vec3, type XrInputSource } from "playcanvas";
 import type { SelectionHandle, SelectionShape, SelectionTool, SurfaceHit } from "../selection/types";
 import type { SegmentWorkspaces, WorkspaceDocument } from "../segments/SegmentWorkspaces";
-import { rasterizeGesture } from "../selection/rasterizeGesture";
 import { unpackSelection } from "../selection/SelectionHistory";
 import { saveSelectionArea, decodeColor, encodeColor } from "../selection/selectionColors";
 import { snapshotContains } from "../selection/selectionSnapshot";
@@ -13,7 +12,7 @@ import type { Point } from "../selection/rectangle";
 import { Matrix4, Vector3 } from "three";
 import type { SelectionArea, SelectionState } from "../selection/types";
 import type { PaintState } from "../selection/selectionColors";
-import type { SelectionVolume } from "../selection/volume/SelectionVolume";
+import type { ExtrudedSelectionVolume, BrushSelectionVolume, SelectionVolume } from "../selection/volume/SelectionVolume";
 import { SelectionVolumeVisual } from "./SelectionVolumeVisual";
 
 export class ImmersiveEditing {
@@ -36,16 +35,14 @@ export class ImmersiveEditing {
   private revision = 0;
   private disposed = false;
   private readonly cameraEntity = new Entity("XR selection gesture camera");
-  private readonly lines: WideLineRenderer;
-  private line: WideLine | null = null;
   private readonly strokeColor = new Color(1, .8, .3);
   starting: Promise<void> | null = null;
-  private brush: WideLine | null = null;
-  private brushVisible = false;
-  private readonly brushPoints = new Float32Array(49 * 3);
-  private readonly tangent = new Vec3();
-  private readonly bitangent = new Vec3();
-  private gesture: { points: Point[]; diameter: number; depth: number; anchor: Vec3; document: WorkspaceDocument } | null = null;
+  private brush: Entity | null = null;
+  private brushMaterial: StandardMaterial | null = null;
+  private readonly brushRotation = new Quat();
+  private readonly brushNormal = new Vec3();
+  private gesture: { points: Point[]; depth: number; anchor: Vec3;
+    surfacePoints: [number, number, number][]; radius: number; document: WorkspaceDocument } | null = null;
   private volumeVisual: SelectionVolumeVisual | null = null;
   private volumeBaseline: { state: SelectionState; colors: PaintState; areas: readonly SelectionArea[] } | null = null;
   private depthDrag: { origin: Vec3; depth: number; scale: number; axis: Vec3 } | null = null;
@@ -62,7 +59,6 @@ export class ImmersiveEditing {
     this.tooltip.enabled = false; this.tooltip.entity.element!.useInput = false;
     handle.app.root.addChild(this.cameraEntity);
     this.cameraEntity.addComponent("camera", { enabled: false, fov: 90, nearClip: .005, farClip: 100, aspectRatioMode: ASPECT_MANUAL, aspectRatio: 1 });
-    this.lines = new WideLineRenderer(handle.app); this.lines.depthTest = false; this.lines.depthWrite = false;
   }
   get startPoint() { return this.gesture?.anchor ?? null; }
   get drawing() { return !!this.gesture; }
@@ -74,17 +70,19 @@ export class ImmersiveEditing {
   get selection() { return this.handle.selection; }
   private commit() { this.changed(); }
   setTool(tool: SelectionTool) {
-    this.revision++; this.gesture = null; this.clearLine(); this.clearVolume(); this.selection.previewArea(null);
-    if (tool !== "select" && this.brush && this.brushVisible) { this.lines.remove(this.brush); this.brushVisible = false; }
+    this.revision++; this.gesture = null; this.clearVolume(); this.selection.previewArea(null);
+    if (tool !== "select" && this.brush) this.brush.enabled = false;
     if (tool !== this.tool) { this.selectionName = ""; this.selectionId = null; this.workspaces.history.perform(() => this.selection.clear()); this.input.invalidate(); }
     this.tool = tool; this.dragging = false; this.draft = null; this.step = tool === "annotate" ? "choose" : null; this.message = "";
+    this.input.setNormalPicking(tool === "select" && this.shape === "brush");
   }
   action(action: string, value?: string | number) {
     if (this.busy) return;
     this.message = "";
     const history = this.workspaces.history;
     switch (action) {
-      case "shape": this.clearVolume(); this.shape = value as SelectionShape; break;
+      case "shape": this.clearVolume(); this.shape = value as SelectionShape;
+        this.input.setNormalPicking(this.tool === "select" && this.shape === "brush"); break;
       case "brush": this.brushSize = Number(value); break;
       case "xray": this.xray = !this.xray; break;
       case "name": this.selectionName = String(value); break;
@@ -140,23 +138,21 @@ export class ImmersiveEditing {
     const showBrush = this.tool === "select" && this.shape === "brush" && hit && source;
     if (showBrush) {
       if (!this.brush) {
-        this.brush = new WideLine().set(this.brushPoints, this.strokeColor, 3);
+        this.brush = new Entity("XR 3D brush"); this.handle.app.root.addChild(this.brush);
+        this.brushMaterial = new StandardMaterial();
+        this.brushMaterial.useLighting = false; this.brushMaterial.emissive.copy(this.strokeColor);
+        this.brushMaterial.opacity = .18; this.brushMaterial.blendType = BLEND_NORMAL; this.brushMaterial.depthWrite = false;
+        this.brushMaterial.update();
+        this.brush.addComponent("render", { type: "cylinder", material: this.brushMaterial, castShadows: false, receiveShadows: false });
       }
-      if (!this.brushVisible) { this.lines.add(this.brush); this.brushVisible = true; }
+      this.brush.enabled = true;
       this.handle.space.toWorld(hit.point, this.point);
       const bounds = this.selection.bounds(null), diameter = bounds ? Math.max(bounds.halfExtents.x, bounds.halfExtents.y, bounds.halfExtents.z) * 2 * this.brushSize / 100 : .01;
-      const radius = Math.max(.005, diameter / 2);
-      this.tangent.cross(source.getDirection(), Vec3.UP).normalize();
-      if (this.tangent.lengthSq() < .01) this.tangent.cross(source.getDirection(), Vec3.RIGHT).normalize();
-      this.bitangent.cross(source.getDirection(), this.tangent).normalize();
-      for (let i = 0; i <= 48; i++) {
-        const angle = i / 48 * Math.PI * 2, offset = i * 3;
-        this.brushPoints[offset] = this.point.x + radius * (this.tangent.x * Math.cos(angle) + this.bitangent.x * Math.sin(angle));
-        this.brushPoints[offset + 1] = this.point.y + radius * (this.tangent.y * Math.cos(angle) + this.bitangent.y * Math.sin(angle));
-        this.brushPoints[offset + 2] = this.point.z + radius * (this.tangent.z * Math.cos(angle) + this.bitangent.z * Math.sin(angle));
-      }
-      this.brush.setPositions(this.brushPoints);
-    } else if (this.brush && this.brushVisible) { this.lines.remove(this.brush); this.brushVisible = false; }
+      this.brushNormal.copy(hit.normal ?? source.getDirection().clone().mulScalar(-1)).normalize();
+      this.brush.setPosition(this.point);
+      this.brush.setRotation(this.brushRotation.setFromDirections(Vec3.UP, this.brushNormal));
+      this.brush.setLocalScale(diameter, Math.max(.003, diameter * .06), diameter);
+    } else if (this.brush) this.brush.enabled = false;
 
     if (this.dragging && hit && this.draft && (!this.draft.region || snapshotContains(this.draft.region, hit.part, hit.index)))
       this.draft = { ...this.draft, position: hit.point };
@@ -249,12 +245,13 @@ export class ImmersiveEditing {
     this.cameraEntity.setPosition(origin);
     this.cameraEntity.lookAt(this.point.copy(direction).add(origin), this.handle.viewports.perspectivePanel.camera.entity.up);
     camera.onAppPrerender(); // Disabled query cameras need the native transform invalidation explicitly.
-    const bounds = this.selection.bounds(null), rect = this.handle.app.graphicsDevice.clientRect;
+    const bounds = this.selection.bounds(null);
     const anchor = this.handle.space.toWorld(hit.point);
     const depth = Math.max(camera.nearClip, this.point.sub2(anchor, origin).dot(this.cameraEntity.forward));
     this.plane.setFromPointNormal(this.point.copy(this.cameraEntity.forward).mulScalar(depth).add(origin), this.cameraEntity.forward);
     const worldDiameter = bounds ? Math.max(bounds.halfExtents.x, bounds.halfExtents.y, bounds.halfExtents.z) * 2 * this.brushSize / 100 : .01;
-    this.gesture = { points: [], depth, anchor: hit.point.clone(), diameter: worldDiameter * camera.projectionMatrix.data[5]! / depth * 256,
+    this.gesture = { points: [], depth, anchor: hit.point.clone(),
+      surfacePoints: [anchor.toArray() as [number, number, number]], radius: Math.max(.005, worldDiameter / 2),
       document: this.workspaces.current };
     const rectStart = this.handle.app.graphicsDevice.clientRect;
     camera.worldToScreen(anchor, this.screen);
@@ -275,6 +272,15 @@ export class ImmersiveEditing {
       return;
     }
     if (!this.gesture) return;
+    if (this.shape === "brush") {
+      const hit = this.input.hit(source);
+      if (!hit) return;
+      this.handle.space.toWorld(hit.point, this.point);
+      const last = this.gesture.surfacePoints.at(-1)!;
+      if (this.point.distance(new Vec3(...last)) >= this.gesture.radius * .25)
+        this.gesture.surfacePoints.push(this.point.toArray() as [number, number, number]);
+      return;
+    }
     // A fixed controller-view projection per stroke makes box/lasso/brush
     // deterministic while the headset moves; native camera math maps the ray.
     this.ray.set(source.getOrigin(), source.getDirection());
@@ -285,8 +291,7 @@ export class ImmersiveEditing {
     const path = this.gesture.points, last = path.at(-1);
     if (last && Math.hypot(last.x - next.x, last.y - next.y) < 1) return;
     path.push(next);
-    if (this.shape === "brush") this.drawLine(path);
-    else this.showGestureVolume();
+    this.showGestureVolume();
   }
   private showGestureVolume() {
     if (!this.gesture) return;
@@ -303,21 +308,6 @@ export class ImmersiveEditing {
       }
     } catch { /* A lasso can be temporarily open or self crossing while drawing. */ }
   }
-  private drawLine(path: Point[]) {
-    this.clearLine();
-    let outline = path;
-    if (this.shape === "rectangle") {
-      const a = path[0]!, b = path.at(-1)!;
-      outline = [a, { x: b.x, y: a.y }, b, { x: a.x, y: b.y }, a];
-    } else if (this.shape === "lasso" && path.length > 1) outline = [...path, path[0]!];
-    if (outline.length < 2) return;
-    const positions = new Float32Array(outline.length * 3), rect = this.handle.app.graphicsDevice.clientRect;
-    outline.forEach((point, i) => {
-      this.cameraEntity.camera!.screenToWorld(point.x / 512 * rect.width, point.y / 512 * rect.height, this.gesture!.depth, this.inverse);
-      positions.set(this.inverse.toArray(), i * 3);
-    });
-    this.line = new WideLine().set(positions, this.strokeColor, 3); this.lines.add(this.line);
-  }
   async end() {
     await this.starting;
     if (this.depthDrag) {
@@ -325,7 +315,7 @@ export class ImmersiveEditing {
       if (this.volumeVisual) await this.commitVolume(this.volumeVisual.volume, true);
       return;
     }
-    const gesture = this.gesture; this.gesture = null; this.clearLine();
+    const gesture = this.gesture; this.gesture = null;
     if (!gesture || gesture.points.length === 0) return;
     if (this.shape !== "brush") {
       try {
@@ -344,17 +334,18 @@ export class ImmersiveEditing {
       return;
     }
     const camera = this.cameraEntity.camera!, token = this.revision;
-    const region = rasterizeGesture(this.shape, gesture.points, 512, 512, gesture.diameter);
+    const volume: BrushSelectionVolume = { shape: "brush", centers: gesture.surfacePoints, radius: gesture.radius };
+    const region = { pixels: new Uint8ClampedArray(1), width: 1, height: 1 };
     const view = { projectionMatrix: camera.projectionMatrix.clone(), viewMatrix: camera.viewMatrix.clone() };
     this.busy = true; this.changed();
     try {
-      const hits = this.xray ? undefined : await this.selection.hitTest(this.handle.app, camera, region);
+      const hits = await this.selection.selectVolume(volume);
       if (!this.disposed && token === this.revision && this.workspaces.current === gesture.document)
         this.workspaces.history.perform(() => this.selection.select(region, "add", view, hits));
     } catch (error) { this.message = String(error); }
     finally { this.busy = false; this.input.invalidate(); if (!this.disposed) this.commit(); }
   }
-  private makeVolume(gesture: NonNullable<typeof this.gesture>, preview = false): SelectionVolume | null {
+  private makeVolume(gesture: NonNullable<typeof this.gesture>, preview = false): ExtrudedSelectionVolume | null {
     let path = gesture.points;
     if (preview && path.length < (this.shape === "lasso" ? 3 : 2)) {
       const first = path[0]!;
@@ -419,10 +410,10 @@ export class ImmersiveEditing {
   }
   clearVolume() { this.depthDrag = null; this.volumeVisual?.destroy(); this.volumeVisual = null; this.volumeBaseline = null; }
   cancelGesture() {
-    this.dragging = false; this.revision++; this.gesture = null; this.clearLine();
+    this.dragging = false; this.revision++; this.gesture = null;
     if (this.depthDrag && this.volumeVisual) { this.volumeVisual.volume.depth = this.depthDrag.depth; this.volumeVisual.update(); }
     this.depthDrag = null;
   }
-  private clearLine() { if (this.line) { this.lines.remove(this.line); this.line = null; } }
-  destroy() { this.disposed = true; this.revision++; this.selection.previewArea(null); this.clearLine(); this.clearVolume(); this.lines.destroy(); this.cameraEntity.destroy(); this.tooltip.destroy(); this.tooltipRoot.destroy(); }
+  destroy() { this.disposed = true; this.revision++; this.selection.previewArea(null); this.clearVolume();
+    this.brush?.destroy(); this.brushMaterial?.destroy(); this.cameraEntity.destroy(); this.tooltip.destroy(); this.tooltipRoot.destroy(); }
 }

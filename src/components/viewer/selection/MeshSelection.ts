@@ -139,9 +139,9 @@ export class MeshSelection {
     this.picker ??= new MeshPicker(app, this.parts);
     return this.picker.primitiveAt(camera, u, v, this.isolated);
   }
-  surfaceHit(origin: Vec3, direction: Vec3) {
+  surfaceHit(origin: Vec3, direction: Vec3, normal = false) {
     this.visibility ??= new MeshVisibility(this.app, this.parts);
-    return this.visibility.surfaceHit(origin, direction, this.isolated);
+    return this.visibility.surfaceHit(origin, direction, this.isolated, normal);
   }
   pickRay(origin: Vec3, direction: Vec3) {
     this.visibility ??= new MeshVisibility(this.app, this.parts);

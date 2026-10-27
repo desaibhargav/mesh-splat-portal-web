@@ -70,6 +70,7 @@ export class ImmersiveTools {
   frameChord() {
     this.editing.cancelGesture(); this.tapping = this.dragged = false; this.moving = null;
     this.pointPreview.set(null);
+    this.ui.frame();
   }
   setTool(tool: SelectionTool) {
     this.revision++;

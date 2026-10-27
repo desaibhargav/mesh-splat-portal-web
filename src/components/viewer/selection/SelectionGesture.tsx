@@ -28,7 +28,8 @@ export function SelectionGesture({ handle, tool, brushSize, onSelect }: {
       const panel = handle.viewports.at((event.clientX - rect.left) / rect.width, (event.clientY - rect.top) / rect.height);
       if (panel) { brushPixels = brushDiameter(bounds, panel.camera, brushSize); setDiameter(brushPixels); }
     }
-    let drag: { id: number; points: Point[]; rect: { left: number; top: number; width: number; height: number } } | null = null;
+    let drag: { id: number; points: Point[]; rect: { left: number; top: number; width: number; height: number }; continuation: boolean } | null = null;
+    let touchDraft: { points: Point[]; rect: { left: number; top: number; width: number; height: number } } | null = null;
     function point(event: PointerEvent): Point {
       const bounds = canvas.getBoundingClientRect();
       const r = drag?.rect ?? { left: 0, top: 0, width: bounds.width, height: bounds.height };
@@ -37,7 +38,7 @@ export function SelectionGesture({ handle, tool, brushSize, onSelect }: {
     }
     function reset() {
       const id = drag?.id;
-      drag = null; setPoints([]);
+      drag = null; touchDraft = null; setPoints([]);
       if (id !== undefined && canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id);
     }
     function down(event: PointerEvent) {
@@ -51,14 +52,23 @@ export function SelectionGesture({ handle, tool, brushSize, onSelect }: {
       const panel = handle.viewports.at((event.clientX - bounds.left) / bounds.width, (event.clientY - bounds.top) / bounds.height)!;
       handle.viewports.activate(panel);
       const r = panel.camera.rect;
-      drag = { id: event.pointerId, points: [point(event)], rect: {
+      const panelRect = {
         left: Math.round(r.x * bounds.width), top: Math.round((1 - r.y - r.w) * bounds.height),
-        width: Math.round(r.z * bounds.width), height: Math.round(r.w * bounds.height) } };
+        width: Math.round(r.z * bounds.width), height: Math.round(r.w * bounds.height) };
+      drag = { id: event.pointerId, points: touchDraft ? [...touchDraft.points, point(event)] : [point(event)],
+        rect: touchDraft?.rect ?? panelRect, continuation: !!touchDraft };
+      touchDraft = null;
       setPoints([...drag.points]);
     }
     function move(event: PointerEvent) {
       updateBrush(event);
       const next = point(event); setCursor(next);
+      if (!drag && touchDraft) {
+        if (Math.hypot(next.x - touchDraft.points.at(-1)!.x, next.y - touchDraft.points.at(-1)!.y) >= 2) {
+          touchDraft.points.push(next); setPoints([...touchDraft.points]);
+        }
+        return;
+      }
       if (drag?.id !== event.pointerId) return;
       event.preventDefault(); event.stopImmediatePropagation();
       drag.points.push(next); setPoints([...drag.points]);
@@ -68,6 +78,13 @@ export function SelectionGesture({ handle, tool, brushSize, onSelect }: {
       event.preventDefault(); event.stopImmediatePropagation();
       const path = [...drag.points, point(event)];
       const r = drag.rect;
+      if (event.pointerType === "touch" && tool !== "brush" && !drag.continuation &&
+          Math.hypot(path.at(-1)!.x - path[0]!.x, path.at(-1)!.y - path[0]!.y) < 4) {
+        touchDraft = { points: path, rect: r };
+        const id = drag.id; drag = null;
+        if (canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id);
+        return;
+      }
       const region = rasterizeGesture(tool, path.map(p => ({ x: p.x - r.left, y: p.y - r.top })),
         r.width, r.height, brushPixels);
       reset();
@@ -77,11 +94,14 @@ export function SelectionGesture({ handle, tool, brushSize, onSelect }: {
       if (drag) { event.preventDefault(); event.stopImmediatePropagation(); }
     }
     function leave() { setCursor(null); }
+    function lostCapture(event: PointerEvent) {
+      if (drag?.id === event.pointerId) reset();
+    }
     canvas.addEventListener("pointerdown", down, true);
     canvas.addEventListener("pointermove", move, true);
     canvas.addEventListener("pointerup", up, true);
     canvas.addEventListener("pointercancel", reset, true);
-    canvas.addEventListener("lostpointercapture", reset);
+    canvas.addEventListener("lostpointercapture", lostCapture);
     canvas.addEventListener("pointerleave", leave);
     canvas.addEventListener("wheel", wheel, { capture: true, passive: false });
     return () => {
@@ -89,7 +109,7 @@ export function SelectionGesture({ handle, tool, brushSize, onSelect }: {
       canvas.removeEventListener("pointermove", move, true);
       canvas.removeEventListener("pointerup", up, true);
       canvas.removeEventListener("pointercancel", reset, true);
-      canvas.removeEventListener("lostpointercapture", reset);
+      canvas.removeEventListener("lostpointercapture", lostCapture);
       canvas.removeEventListener("pointerleave", leave);
       canvas.removeEventListener("wheel", wheel, true);
       reset();
