@@ -1,5 +1,12 @@
 import { expect, it } from "vitest";
-import { savedSelectionColors, currentSelectionArea, decodeColor, discardDraftSelection, encodeColor, paintSelection, recordSelectionArea, recordSelectionGesture, saveSelectionArea, updateSelectionAreas, visiblePaint, visibleSelections } from "./selectionColors";
+import { savedSelectionColors, currentSelectionArea, decodeColor, discardDraftSelection, encodeColor, nextSavedSelectionName, paintSelection, recordSelectionArea, recordSelectionGesture, saveSelectionArea, updateSelectionAreas, visiblePaint, visibleSelections } from "./selectionColors";
+
+it("names a saved selection from the next available default", () => {
+  const state = { masks: [new Uint8Array([255])], isolated: false };
+  const first = saveSelectionArea([], state, nextSavedSelectionName([]), null);
+  expect(first[0]?.name).toBe("Selection 1");
+  expect(nextSavedSelectionName([...first, { ...first[0]!, id: 2, name: "Custom" }])).toBe("Selection 2");
+});
 
 it("paints only selected primitives and keeps previous color buffers immutable", () => {
   const original = [new Uint32Array([0, 1, 0]), new Uint32Array([0, 0])];

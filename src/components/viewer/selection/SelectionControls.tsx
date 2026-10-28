@@ -12,7 +12,7 @@ import type { SelectionHandle, SelectionRegion, SelectionShape, SelectionTool } 
 import type { SelectionOperation } from "./rectangle";
 import { unpackSelection } from "./SelectionHistory";
 import { SavedItems } from "../SavedItems";
-import { encodeColor, saveSelectionArea, savedSelectionColors } from "./selectionColors";
+import { encodeColor, nextSavedSelectionName, saveSelectionArea, savedSelectionColors } from "./selectionColors";
 import { SelectionColorPicker } from "./SelectionColorPicker";
 import { ViewControls } from "../views/ViewControls";
 import { SectionControls } from "../section/SectionControls";
@@ -191,7 +191,9 @@ function WorkspaceTools({ handle, tool, onToolChange, disabled, captureName, wor
     if (!handle || !history || unavailable) return;
     const selection = handle.selection;
     setSummary(history.perform(() => {
-      const areas = saveSelectionArea(selection.areas, selection.state, selectionName, editingSelection);
+      const areas = saveSelectionArea(selection.areas, selection.state,
+        selectionName.trim() || selection.areas.find(area => area.id === editingSelection)?.name ||
+          nextSavedSelectionName(selection.areas), editingSelection);
       const saved = areas.at(-1);
       return selection.restore(saved ? unpackSelection(saved.snapshot) : selection.state, selection.colors, areas);
     }));
@@ -205,6 +207,7 @@ function WorkspaceTools({ handle, tool, onToolChange, disabled, captureName, wor
   }
   const savedSelections = handle?.selection.areas.filter(area => area.saved) ?? [];
   const editingSavedSelection = savedSelections.some(area => area.id === editingSelection);
+  const displayedSelectionName = selectionName || (editingSavedSelection ? savedSelections.find(area => area.id === editingSelection)?.name ?? "" : nextSavedSelectionName(savedSelections));
   const savedSelectionName = savedSelections.find(area => area.id === editingSelection)?.name;
   useEffect(() => { if (savedSelectionName !== undefined) setSelectionName(savedSelectionName); }, [savedSelectionName]);
   function frameBounds(bounds: ReturnType<SelectionHandle["selection"]["bounds"]>) {
@@ -284,9 +287,9 @@ function WorkspaceTools({ handle, tool, onToolChange, disabled, captureName, wor
         <button disabled={unavailable || !summary?.selected} onClick={() => {
           setSegmentSeed(packSelection(handle!.selection.state)); onToolChange("segment");
         }}>Create segment</button>
-        <label>Selection name<input aria-label="Selection name" value={selectionName} disabled={unavailable}
+        <label>Selection name<input aria-label="Selection name" value={displayedSelectionName} disabled={unavailable}
           onChange={event => setSelectionName(event.target.value)} /></label>
-        <button disabled={unavailable || !summary?.selected || !selectionName.trim()} className="tool-action-save" onClick={saveSelection}>
+        <button disabled={unavailable || !summary?.selected} className="tool-action-save" onClick={saveSelection}>
           {editingSavedSelection ? "Update selection" : "Save selection"}
         </button>
         {editingSavedSelection && <button disabled={unavailable} onClick={() => {

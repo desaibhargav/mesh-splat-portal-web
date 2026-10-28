@@ -10,6 +10,15 @@ export const selectionColors = [
   { name: "Pink", hex: "#d81b60" }, { name: "Gray", hex: "#808080" }
 ] as const;
 
+export function nextSavedSelectionName(areas: readonly SelectionArea[]): string {
+  const next = areas.reduce((largest, area) => {
+    if (!area.saved) return largest;
+    const match = /^Selection (\d+)$/.exec(area.name);
+    return match ? Math.max(largest, Number(match[1])) : largest;
+  }, 0) + 1;
+  return `Selection ${next}`;
+}
+
 // RGB + 1 represents every sRGB shade, including black; zero restores the source.
 // Immutable buffers share unchanged paint data across undo snapshots.
 export type PaintState = readonly Uint32Array[];

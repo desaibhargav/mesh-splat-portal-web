@@ -1,8 +1,8 @@
-import { ASPECT_MANUAL, BLEND_NORMAL, Color, Entity, Plane, Quat, Ray, StandardMaterial, Vec3, type XrInputSource } from "playcanvas";
+import { ASPECT_MANUAL, BLEND_NORMAL, Color, Entity, Layer, Plane, Quat, Ray, StandardMaterial, Vec3, type XrInputSource } from "playcanvas";
 import type { SelectionHandle, SelectionShape, SelectionTool, SurfaceHit } from "../selection/types";
 import type { SegmentWorkspaces, WorkspaceDocument } from "../segments/SegmentWorkspaces";
 import { unpackSelection } from "../selection/SelectionHistory";
-import { saveSelectionArea, decodeColor, encodeColor } from "../selection/selectionColors";
+import { saveSelectionArea, decodeColor, encodeColor, nextSavedSelectionName } from "../selection/selectionColors";
 import { snapshotContains } from "../selection/selectionSnapshot";
 import type { AnnotationDraft, AnnotationRecord } from "../annotations/Annotations";
 import type { ImmersiveInput } from "./ImmersiveInput";
@@ -29,6 +29,8 @@ export class ImmersiveEditing {
   busy = false;
   dragging = false;
   private readonly tooltipRoot = new Entity("XR annotation tooltip");
+  private readonly tooltipLayer = new Layer({ name: "XR annotation callouts", clearDepthBuffer: true });
+  private readonly releaseTooltipLayer: () => void;
   private readonly tooltip: SpatialPanel;
   private tooltipRecord: AnnotationRecord | null = null;
   private readonly theme;
@@ -54,9 +56,13 @@ export class ImmersiveEditing {
   constructor(private readonly handle: SelectionHandle, private readonly workspaces: SegmentWorkspaces,
     private readonly input: ImmersiveInput, private readonly changed: () => void) {
     this.theme = toolAppearance(handle.app.graphicsDevice.canvas as HTMLCanvasElement);
+    handle.app.scene.layers.push(this.tooltipLayer);
+    this.releaseTooltipLayer = handle.viewports.shareLayer(this.tooltipLayer.id);
     handle.app.root.addChild(this.tooltipRoot);
-    this.tooltip = new SpatialPanel(handle.app, "XR annotation description", 240, new Vec3(.025, .04, 0), this.tooltipRoot, () => {});
+    this.tooltip = new SpatialPanel(handle.app, "XR annotation description", 240, new Vec3(.025, .04, 0),
+      this.tooltipRoot, () => {}, false, 0, false, this.tooltipLayer.id);
     this.tooltip.enabled = false; this.tooltip.entity.element!.useInput = false;
+    this.tooltipLayer.enabled = false;
     handle.app.root.addChild(this.cameraEntity);
     this.cameraEntity.addComponent("camera", { enabled: false, fov: 90, nearClip: .005, farClip: 100, aspectRatioMode: ASPECT_MANUAL, aspectRatio: 1 });
   }
@@ -68,6 +74,8 @@ export class ImmersiveEditing {
   }
   get annotations() { return this.workspaces.current.annotations; }
   get selection() { return this.handle.selection; }
+  get displayedSelectionName() { return this.selectionName || (this.selectionId === null ?
+    nextSavedSelectionName(this.selection.areas) : this.selection.areas.find(area => area.id === this.selectionId)?.name ?? ""); }
   private commit() { this.changed(); }
   setTool(tool: SelectionTool) {
     this.revision++; this.gesture = null; this.clearVolume(); this.selection.previewArea(null);
@@ -98,7 +106,7 @@ export class ImmersiveEditing {
       }
       case "remove": this.clearVolume(); this.workspaces.removeSelection(Number(value)); this.selectionId = null; this.selectionName = ""; break;
       case "save": history.perform(() => {
-        const areas = saveSelectionArea(this.selection.areas, this.selection.state, this.selectionName, this.selectionId);
+        const areas = saveSelectionArea(this.selection.areas, this.selection.state, this.displayedSelectionName, this.selectionId);
         return this.selection.restore(unpackSelection(areas.at(-1)!.snapshot), this.selection.colors, areas);
       }); this.clearVolume(); this.selectionName = ""; this.selectionId = null; break;
     }
@@ -166,7 +174,7 @@ export class ImmersiveEditing {
       this.inverse.copy(source.getDirection()).mulScalar(depth).add(source.getOrigin());
       return depth > 0 && this.inverse.distance(this.point) < .025;
     });
-    this.tooltip.enabled = !!record;
+    this.tooltip.enabled = this.tooltipLayer.enabled = !!record;
     if (record) {
       this.handle.space.toWorld(record.position, this.point); this.tooltipRoot.setPosition(this.point);
       this.tooltipRoot.setRotation(this.handle.viewports.perspectivePanel.camera.entity.getRotation());
@@ -415,5 +423,6 @@ export class ImmersiveEditing {
     this.depthDrag = null;
   }
   destroy() { this.disposed = true; this.revision++; this.selection.previewArea(null); this.clearVolume();
-    this.brush?.destroy(); this.brushMaterial?.destroy(); this.cameraEntity.destroy(); this.tooltip.destroy(); this.tooltipRoot.destroy(); }
+    this.brush?.destroy(); this.brushMaterial?.destroy(); this.cameraEntity.destroy(); this.tooltip.destroy(); this.tooltipRoot.destroy();
+    this.releaseTooltipLayer(); this.handle.app.scene.layers.remove(this.tooltipLayer); }
 }

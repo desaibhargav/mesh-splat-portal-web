@@ -344,6 +344,11 @@ try {
       const source=[...i.hits.keys()].find(s=>s.handedness==='right'),hit=i.hit(source),tip=i.pointers.get(source).positions;
       const world=i.handle.space.toWorld(hit.point);return Math.hypot(tip[3]-world.x,tip[4]-world.y,tip[5]-world.z)<.002;
     }),'Controller ray did not stop at its surface hit');
+    check(await input.evaluate(i=>{
+      const source=[...i.pointers.keys()].find(s=>s.handedness==='right');
+      const pointer=i.pointers.get(source); return pointer.tip.enabled &&
+        pointer.tip.getPosition().distance({x:pointer.positions[3],y:pointer.positions[4],z:pointer.positions[5]})<.002;
+    }),'Controller ray endpoint has no visible pointer');
     await page.evaluate(()=>window.xrDevice.controllers.right.updateButtonValue('trigger',1)); await settle(h);
     await page.evaluate(()=>window.xrDevice.controllers.right.position.x+=.04); await settle(h);
     await page.evaluate(()=>window.xrDevice.controllers.right.updateButtonValue('trigger',0)); await settle(h);
@@ -361,6 +366,8 @@ try {
         });
       }),'Sectioned selection included removed splats');
     }
+    check(await menu.evaluate(m=>m.editing.displayedSelectionName==='Selection 1'),
+      'Unsaved XR selection did not show a default name');
     await control(options,'Selection name'); await type('region'); await control(options,'Save selection');
     check(await h.evaluate(h=>h.selection.areas.some(a=>a.saved&&a.name==='region')),'XR selection not saved');
     await control(options,'Blue');
@@ -429,6 +436,9 @@ try {
     check(await ws.evaluate(ws=>ws.current.annotations.records.length===1&&ws.current.annotations.records[0].region),'XR region annotation was not saved');
     await move(aim); await settle(h);
     check(await h.evaluate(h=>h.app.root.findByName('XR annotation description')?.parent.enabled),'XR annotated-region hover omitted description');
+    check(await menu.evaluate(m=>m.editing.tooltipLayer.clearDepthBuffer &&
+      m.editing.tooltip.entity.element.layers.includes(m.editing.tooltipLayer.id)),
+      'XR annotation callout is not rendered above mesh depth');
     await page.screenshot({path:path.join(output,`${id}-xr-annotated-selection.png`)});
     await control(options,'note'); await control(options,'Title'); await type('x'); await control(options,'Save annotation');
     check(await ws.evaluate(ws=>ws.current.annotations.records[0].title==='notex'),'XR annotation editing failed');

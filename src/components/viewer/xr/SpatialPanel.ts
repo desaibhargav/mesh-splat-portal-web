@@ -1,4 +1,4 @@
-import { Color, ElementInput, Entity, FILTER_LINEAR, PIXELFORMAT_RGBA8, Plane, Ray, Texture, Vec3,
+import { Color, ElementInput, Entity, FILTER_LINEAR, FILTER_LINEAR_MIPMAP_LINEAR, PIXELFORMAT_RGBA8, Plane, Ray, Texture, Vec3,
   type AppBase, type ElementComponent, type ElementSelectEvent, type XrInputSource } from "playcanvas";
 
 export interface PanelControl {
@@ -38,20 +38,21 @@ export class SpatialPanel {
 
   constructor(private readonly app: AppBase, name: string, private readonly width: number,
     private readonly position: Vec3, parent: Entity, private readonly redraw: () => void,
-    private readonly bottomAnchored = false, priority = 0, private readonly movable = false) {
+    private readonly bottomAnchored = false, priority = 0, private readonly movable = false,
+    renderLayer?: number) {
     this.entity = new Entity(name);
     parent.addChild(this.screen);
     this.screen.setLocalPosition(position);
     this.screen.addComponent("screen", { screenSpace: false, referenceResolution: [1000, 1000], priority });
     this.screen.setLocalScale(.0012, .0012, .0012);
     this.screen.addChild(this.entity);
-    this.texture = new Texture(app.graphicsDevice, { name, format: PIXELFORMAT_RGBA8, srgb: true, mipmaps: false,
-      minFilter: FILTER_LINEAR, magFilter: FILTER_LINEAR });
-    const layer = app.scene.layers.getLayerByName("UI")!.id;
+    this.texture = new Texture(app.graphicsDevice, { name, format: PIXELFORMAT_RGBA8, srgb: true, mipmaps: true,
+      minFilter: FILTER_LINEAR_MIPMAP_LINEAR, magFilter: FILTER_LINEAR });
+    const layer = renderLayer ?? app.scene.layers.getLayerByName("UI")!.id;
     this.entity.addComponent("element", { type: "image", width, height: 1, pivot: [0, 1],
       anchor: [.5, .5, .5, .5], texture: this.texture, color: Color.WHITE, useInput: true, layers: [layer] });
     this.hoverTexture = new Texture(app.graphicsDevice, { name: `${name} hover`, format: PIXELFORMAT_RGBA8,
-      srgb: true, mipmaps: false, minFilter: FILTER_LINEAR, magFilter: FILTER_LINEAR });
+      srgb: true, mipmaps: true, minFilter: FILTER_LINEAR_MIPMAP_LINEAR, magFilter: FILTER_LINEAR });
     this.screen.addChild(this.hoverEntity);
     this.hoverEntity.addComponent("element", { type: "image", width: 1, height: 1, pivot: [0, 1],
       anchor: [.5, .5, .5, .5], texture: this.hoverTexture, color: Color.WHITE, useInput: false, layers: [layer] });

@@ -1,4 +1,4 @@
-import { Layer, Mat4, Plane, Quat, Ray, Vec3, WideLine, WideLineRenderer, type AppBase, type Entity, type ElementComponent, type XrInputSource } from "playcanvas";
+import { Color, Entity, Layer, Mat4, Plane, Quat, Ray, StandardMaterial, Vec3, WideLine, WideLineRenderer, type AppBase, type ElementComponent, type XrInputSource } from "playcanvas";
 import { XrControllers } from "playcanvas/scripts/esm/xr/xr-controllers.mjs";
 import { XrManipulation } from "playcanvas/scripts/esm/xr/xr-manipulation.mjs";
 
@@ -13,7 +13,8 @@ export class ImmersiveInput {
   private readonly rays: WideLineRenderer;
   private readonly rayLayer = new Layer({ name: "XR pointer rays" });
   private readonly releaseRayLayer: () => void;
-  private readonly pointers = new Map<XrInputSource, { line: WideLine; positions: Float32Array }>();
+  private readonly pointers = new Map<XrInputSource, { line: WideLine; positions: Float32Array; tip: Entity }>();
+  private readonly tipMaterial = new StandardMaterial();
   private readonly hits = new Map<XrInputSource, { origin: Vec3; direction: Vec3; transform: Mat4;
     hit: SurfaceHit | null; pending: boolean; time: number; revision: number }>();
   private readonly plane = new Plane();
@@ -40,6 +41,9 @@ export class ImmersiveInput {
     this.releaseRayLayer = handle.viewports.shareLayer(this.rayLayer.id);
     this.rays = new WideLineRenderer(app); this.rays.layer = this.rayLayer;
     this.rays.depthTest = false; this.rays.depthWrite = false;
+    this.tipMaterial.useLighting = this.tipMaterial.useFog = this.tipMaterial.useTonemap = false;
+    this.tipMaterial.useSkybox = false; this.tipMaterial.emissive = new Color(1, 1, 1);
+    this.tipMaterial.depthTest = this.tipMaterial.depthWrite = false; this.tipMaterial.update();
     app.on("xr:controller:add", this.nameModel, this);
     app.xr!.input.on("remove", this.remove, this);
     rig.addComponent("script");
@@ -89,12 +93,20 @@ export class ImmersiveInput {
       if (!pointer) {
         const positions = new Float32Array(6);
         const line = new WideLine().set(positions, [1, 1, 1, 1, 1, 1], 5);
-        this.rays.add(line); pointer = { line, positions }; this.pointers.set(source, pointer);
+        const tip = new Entity(`XR ${source.handedness} pointer`);
+        this.app.root.addChild(tip);
+        tip.addComponent("render", { type: "sphere", material: this.tipMaterial, layers: [this.rayLayer.id],
+          castShadows: false, receiveShadows: false });
+        tip.setLocalScale(.012, .012, .012);
+        this.rays.add(line); pointer = { line, positions, tip }; this.pointers.set(source, pointer);
       }
       const origin = source.getOrigin(), direction = source.getDirection();
       const state = this.hits.get(source);
       const transform = this.handle.space.root.getWorldTransform();
-      if (this.target.enabled && (!state || (!state.pending && performance.now() - state.time >= 16 &&
+      const element = source.elementEntity as unknown as ElementComponent | null;
+      const surfacePointer = !element;
+      const probeInterval = source.handedness === "right" ? 50 : 100;
+      if (this.target.enabled && surfacePointer && (!state || (!state.pending && performance.now() - state.time >= probeInterval &&
         (state.revision !== this.revision || !state.transform.equals(transform) ||
           state.origin.distance(origin) > .0005 || state.direction.distance(direction) > .001)))) {
         const next = { origin: origin.clone(), direction: direction.clone(), transform: transform.clone(),
@@ -103,14 +115,13 @@ export class ImmersiveInput {
         void this.pick(source).then(hit => { if (!this.disposed && this.hits.get(source) === next) next.hit = hit; })
           .catch(() => { next.hit = null; }).finally(() => { next.pending = false; });
       }
-      const hit = this.target.enabled ? this.hits.get(source)?.hit : null;
+      const hit = this.target.enabled && surfacePointer ? this.hits.get(source)?.hit : null;
       this.end.copy(direction).mulScalar(rayLength).add(origin);
       if (hit) this.handle.space.toWorld(hit.point, this.end);
       const extra = this.extraTarget?.(source);
       if (extra) this.end.copy(extra);
       // ElementInput owns targeting; intersect its winning element's plane,
       // rather than creating a second UI picker or extending through the control.
-      const element = source.elementEntity as unknown as ElementComponent | null;
       if (element) {
         const corners = element.worldCorners;
         this.normal.sub2(corners[1]!, corners[0]!); this.edge.sub2(corners[3]!, corners[0]!);
@@ -123,13 +134,14 @@ export class ImmersiveInput {
       positions[0] = origin.x; positions[1] = origin.y; positions[2] = origin.z;
       positions[3] = this.end.x; positions[4] = this.end.y; positions[5] = this.end.z;
       pointer.line.setPositions(pointer.positions);
+      pointer.tip.setPosition(this.end);
     }
   }
 
   private remove(source: XrInputSource) {
     this.hits.delete(source);
     const pointer = this.pointers.get(source);
-    if (pointer) { this.rays.remove(pointer.line); this.pointers.delete(source); }
+    if (pointer) { this.rays.remove(pointer.line); pointer.tip.destroy(); this.pointers.delete(source); }
     if (source === this.grabbing) this.grabbing = null;
   }
 
@@ -140,6 +152,7 @@ export class ImmersiveInput {
     this.app.xr?.input.off("remove", this.remove, this);
     this.rig.script?.destroy("xrControllers"); this.rig.script?.destroy("xrManipulation");
     this.rays.destroy(); this.releaseRayLayer(); this.app.scene.layers.remove(this.rayLayer);
-    this.pointers.clear(); this.grabbing = null;
+    for (const pointer of this.pointers.values()) pointer.tip.destroy();
+    this.tipMaterial.destroy(); this.pointers.clear(); this.grabbing = null;
   }
 }

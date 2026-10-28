@@ -245,7 +245,8 @@ export class ToolPanel {
       const button = (label: string, callback: () => void, color?: string, disabled = false) => {
         this.centered(panel, label, 8, y, 254, 30, callback, color, disabled || editing.busy); y += 36;
       };
-      const field = (label: string, value: string, change: (value: string) => void, done?: () => void) => {
+      const field = (label: string, value: string, change: (value: string) => void, done?: () => void,
+        editValue = value) => {
         this.text(ctx, label, 8, y); y += 12;
         if (label === "Description") {
           this.box(ctx, 8, y, 254, 76, this.theme.input);
@@ -253,9 +254,9 @@ export class ToolPanel {
           const words = value.split(" "); let line = "", row = 0;
           for (const word of words) { if ((line + word).length > 36) { this.text(ctx, line, 14, y + 14 + row++ * 15); line = ""; } line += `${word} `; }
           this.text(ctx, line, 14, y + 14 + row * 15); ctx.restore();
-          panel.controls.push({ label, x: 8, y, width: 254, height: 76, activate: () => this.editText(label, value, change, done) }); y += 86;
+          panel.controls.push({ label, x: 8, y, width: 254, height: 76, activate: () => this.editText(label, editValue, change, done) }); y += 86;
         } else {
-          this.button(panel, label, 8, y, 254, 30, () => this.editText(label, value, change, done), { text: value, color: this.theme.input }); y += 40;
+          this.button(panel, label, 8, y, 254, 30, () => this.editText(label, editValue, change, done), { text: value, color: this.theme.input }); y += 40;
         }
       };
       if (selection) {
@@ -270,8 +271,9 @@ export class ToolPanel {
         panel.controls.push({ label: "Brush size", x: 118, y, width: 140, height: 24, drag: true, activate: f => act("brush", Math.round(1 + f * 49)) }); y += 32;
         button(`X-ray ${editing.xray ? "on" : "off"}`, () => act("xray"));
         button(editing.selection.summary.isolated ? "Show all" : "Isolate", () => act("isolate"), undefined, !editing.selection.summary.selected);
-        field("Selection name", editing.selectionName, value => act("name", value));
-        button(editing.selectionId ? "Update selection" : "Save selection", () => act("save"), this.saveColor, !editing.selection.summary.selected || !editing.selectionName.trim());
+        field("Selection name", editing.displayedSelectionName, value => act("name", value), undefined,
+          editing.selectionName || editing.selectionId !== null ? editing.displayedSelectionName : "");
+        button(editing.selectionId ? "Update selection" : "Save selection", () => act("save"), this.saveColor, !editing.selection.summary.selected);
         this.text(ctx, "Color selection", 8, y); y += 12;
         selectionColors.forEach((color, i) => this.centered(panel, color.name, 8 + i % 4 * 64, y + Math.floor(i / 4) * 29, 60, 25,
           () => act("paint", encodeColor(color.hex)), color.hex, !editing.selection.summary.selected, "")); y += 64;
