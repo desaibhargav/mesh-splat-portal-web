@@ -1,5 +1,6 @@
 import { ViewportLayout } from "./viewports/ViewportLayout";
 import { Application } from "@playcanvas/react";
+import { DEVICETYPE_WEBGL2, DEVICETYPE_WEBGPU } from "playcanvas";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Artifact } from "../../api/artifacts";
 import { MeshViewer } from "./MeshViewer";
@@ -13,6 +14,10 @@ import { SegmentWorkspaces } from "./segments/SegmentWorkspaces";
 export type ViewerStatus = { loading: boolean; progress: number; error: string | null };
 
 export function ArtifactViewer({ artifact }: { artifact: Artifact }) {
+  // Opt-in comparison of PlayCanvas's native GPU and CPU splat sorters in XR.
+  // The public default stays on the known WebGL path until Quest measurements agree.
+  const gpuTrial = artifact.type === "splat" && new URLSearchParams(window.location.search).get("xrGpuSort") === "1";
+  const canUseXrGpu = gpuTrial && "gpu" in navigator && "XRGPUBinding" in window;
   const frame = useRef<HTMLElement>(null);
   const [status, setStatus] = useState<ViewerStatus>({ loading: true, progress: 0, error: null });
   const [fullscreen, setFullscreen] = useState(false);
@@ -49,10 +54,12 @@ export function ArtifactViewer({ artifact }: { artifact: Artifact }) {
       }}>
       <div className="viewer-toolbar">
         <span>{artifact.type === "mesh" ? "Mesh" : "Gaussian splat"}</span>
+        {gpuTrial && <span role="status">{selection ? selection.app.graphicsDevice.isWebGPU ? "WebGPU trial" : "WebGL fallback" : "Checking GPU renderer…"}</span>}
       </div>
       <SelectionControls handle={selection} workspaces={workspaces} tool={tool} onToolChange={changeTool} disabled={immersive || status.loading || Boolean(status.error)} captureName={artifact.title} />
       <div className="viewer-canvas">
-        <Application graphicsDeviceOptions={{ antialias: artifact.type === "mesh", xrCompatible: true }}>
+        <Application deviceTypes={canUseXrGpu ? [DEVICETYPE_WEBGPU, DEVICETYPE_WEBGL2] : [DEVICETYPE_WEBGL2]}
+          graphicsDeviceOptions={{ antialias: artifact.type === "mesh", xrCompatible: true }}>
           <TypingRenderPolicy scope={frame} />
           {artifact.type === "mesh" ? <MeshViewer url={artifact.contentUrl} onStatus={setStatus} onSelectionReady={setSelection} /> :
             <SplatViewer url={artifact.contentUrl} onStatus={setStatus} onSelectionReady={setSelection} />}

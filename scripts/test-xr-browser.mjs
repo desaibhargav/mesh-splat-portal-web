@@ -706,9 +706,12 @@ try {
   }
   for (const id of Object.keys(assets).filter(id=>!process.env.XR_ASSET || id===process.env.XR_ASSET)) {
     const loadStarted = performance.now();
-    await page.goto(`${base}/artifacts/${id}`);
+    await page.goto(`${base}/artifacts/${id}${process.env.XR_GPU_TRIAL ? '?xrGpuSort=1' : ''}`);
     await page.evaluate(environment => window.xrDevice.sem.loadEnvironment(environment), room);
     await page.waitForSelector('[aria-label="Select"]:not([disabled])', { timeout: 90000 });
+    if (process.env.XR_GPU_TRIAL) check(await page.evaluate(() =>
+      "XRGPUBinding" in window || document.querySelector('.viewer-toolbar [role="status"]')?.textContent === 'WebGL fallback'),
+      'XR GPU trial did not report its WebGL fallback');
     await page.waitForSelector('[aria-label="View in VR"]');
     check(await page.evaluate(() => {
       const footer = document.querySelector(".viewer-footer"), vr = footer?.querySelector('[aria-label="View in VR"]');
