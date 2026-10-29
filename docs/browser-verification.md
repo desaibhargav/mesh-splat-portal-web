@@ -68,6 +68,8 @@ Read screenshots with the image-viewing tool, not just a file-existence check. F
 
 ## Complete and report
 
+For passive render-policy changes, run `XR_PASSIVE_ONLY=1 XR_ASSET=2022-01-0056-model` with the IWER/SEM paths and `VIEWER_BASE` used by the XR suite, then repeat for a mesh and development/production builds. The test requires actual asset pixels, zero scene draws across 60 settled update ticks, a visible orbit redraw, and a return to idle after damping and ordinary pointer movement. The segment suite additionally checks idle draw counts with saved annotations and measurements, plus visibility and workspace cleanup. These checks establish draw suppression in Chromium; verify Quest browser responsiveness separately and keep immersive rendering continuous.
+
 Run the same critical interactions against the minified production output (`npm run build`, then `npm run preview -- --host 127.0.0.1 --port 5180`). Development-server tests alone do not establish deployment correctness: minification can change class-derived engine registration names. Use explicit PlayCanvas script names for application-owned script subclasses. The Views camera regression was reproduced on both formats only in production output; verify tool activation, navigation, and teardown there before shipping.
 
 Run the relevant unit/regression tests and production build. Preserve a small automated regression test for the diagnosed cause when practical, especially for resource ownership or state-transition faults. Keep temporary diagnostic instrumentation out of production code.

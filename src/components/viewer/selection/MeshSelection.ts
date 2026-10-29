@@ -286,6 +286,7 @@ export class MeshSelection {
     this.refresh(); return this.summary;
   }
   private refresh() {
+    this.app.renderNextFrame = true;
     this.visibility?.invalidateRays();
     this.clearPreviews();
     this.picker?.invalidate();

@@ -11,6 +11,7 @@ export class ViewerAnnotationManager extends AnnotationManager {
   regionAnnotation: Annotation | null = null;
   private readonly parentScale = new Vec3();
   _setAnnotationHover(annotation: Annotation, hover: boolean) {
+    this.app.renderNextFrame = true;
     super._setAnnotationHover(annotation, hover);
     const color = hover ? this.hoverColor : this.shades.get(annotation) ?? this.hotspotColor;
     for (const material of this._annotationResources.get(annotation)?.materials ?? []) {

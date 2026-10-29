@@ -383,6 +383,19 @@ try {
     await page.keyboard.press("q");
     alpha = await doc();
     check(alpha.notes[0] === "Alpha note" && alpha.measures[0] === "Alpha span", "Local tool records missing");
+    const idleDraws = await (await appHandle()).evaluate(async h => {
+      let draws=0;
+      const rendered=()=>draws++;
+      h.app.on('postrender',rendered);
+      try {
+        for(let i=0;i<120;i++) {
+          await new Promise(resolve=>h.app.once('frameend',resolve));
+          if(i===59)draws=0;
+        }
+        return draws;
+      } finally {h.app.off('postrender',rendered);}
+    });
+    check(idleDraws===0,'Saved annotations/measurements kept drawing while Navigate was idle');
     await page.click('[aria-label="Measure distance"]');
     ps = await points("perspective");
     await click(ps[0]);

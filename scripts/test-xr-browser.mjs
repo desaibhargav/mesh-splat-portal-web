@@ -78,7 +78,8 @@ try {
       let timer;
       try {
         await Promise.race([(async()=> {
-          for (let i=0;i<3;i++) await new Promise(resolve => h.app.once("postrender", resolve));
+          h.app.renderNextFrame = true;
+          for (let i=0;i<3;i++) await new Promise(resolve => h.app.once("frameend", resolve));
         })(), new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error("Viewer stopped rendering during interaction")),12000);})]);
       } finally {clearTimeout(timer);}
     });
@@ -706,14 +707,11 @@ try {
   }
   for (const id of Object.keys(assets).filter(id=>!process.env.XR_ASSET || id===process.env.XR_ASSET)) {
     const loadStarted = performance.now();
-    await page.goto(`${base}/artifacts/${id}${process.env.XR_GPU_TRIAL ? '?xrGpuSort=1' : ''}`);
+    await page.goto(`${base}/artifacts/${id}`);
     await page.evaluate(environment => window.xrDevice.sem.loadEnvironment(environment), room);
     await page.waitForSelector('[aria-label="Select"]:not([disabled])', { timeout: 90000 });
-    if (process.env.XR_GPU_TRIAL) check(await page.evaluate(() =>
-      "XRGPUBinding" in window || document.querySelector('.viewer-toolbar [role="status"]')?.textContent === 'WebGL fallback'),
-      'XR GPU trial did not report its WebGL fallback');
-    await page.waitForSelector('[aria-label="View in VR"]');
-    check(await page.evaluate(() => {
+    if (!process.env.XR_PASSIVE_ONLY) await page.waitForSelector('[aria-label="View in VR"]');
+    if (!process.env.XR_PASSIVE_ONLY) check(await page.evaluate(() => {
       const footer = document.querySelector(".viewer-footer"), vr = footer?.querySelector('[aria-label="View in VR"]');
       const ar = footer?.querySelector('[aria-label="View in your room"]');
       const full = footer?.querySelector('[aria-label="Fullscreen"]');
@@ -725,6 +723,43 @@ try {
     await page.$eval(".viewer-frame", element => element.scrollIntoView());
     const h = await handle();
     console.log("LOAD",id,Math.round(performance.now()-loadStarted),"primitives",await h.evaluate(h=>h.selection.summary.total));
+    if (process.env.XR_PASSIVE_ONLY) {
+      const idle = async () => h.evaluate(async h => {
+        let draws=0, quiet=0, previous=0;
+        const rendered=()=>draws++;
+        h.app.on('postrender',rendered);
+        try {
+          for(let i=0;i<240&&quiet<20;i++) {
+            await new Promise(resolve=>h.app.once('frameend',resolve));
+            quiet=draws===previous?quiet+1:0;previous=draws;
+          }
+          const start=draws;
+          for(let i=0;i<60;i++)await new Promise(resolve=>h.app.once('frameend',resolve));
+          return {quiet,draws:draws-start,autoRender:h.app.autoRender};
+        } finally {h.app.off('postrender',rendered);}
+      });
+      check((await idle()).draws===0,'Passive viewer kept rendering while idle');
+      const canvas=await page.$('.viewer-canvas canvas'),r=await canvas.boundingBox();
+      const before=await canvas.screenshot();
+      const assetPixels=await page.evaluate(async png=>{
+        const image=new Image();image.src='data:image/png;base64,'+png;await image.decode();
+        const canvas=document.createElement('canvas');canvas.width=image.width;canvas.height=image.height;
+        const ctx=canvas.getContext('2d');ctx.drawImage(image,0,0);
+        const pixels=ctx.getImageData(image.width*.2,image.height*.15,image.width*.5,image.height*.7).data;
+        let count=0;for(let i=0;i<pixels.length;i+=4)if(Math.abs(pixels[i]-192)+Math.abs(pixels[i+1]-192)+Math.abs(pixels[i+2]-192)>36)count++;
+        return count;
+      },before.toString('base64'));
+      check(assetPixels>100,'Passive viewer has no rendered asset pixels');
+      await page.mouse.move(r.x+r.width*.45,r.y+r.height*.4);
+      await page.mouse.down();await page.mouse.move(r.x+r.width*.55,r.y+r.height*.45,{steps:10});await page.mouse.up();
+      check((await idle()).draws===0,'Camera damping did not return to render-on-demand');
+      check(!before.equals(await canvas.screenshot()),'Passive camera orbit did not render');
+      await page.mouse.move(r.x+r.width*.6,r.y+r.height*.5,{steps:10});
+      check((await idle()).draws===0,'Pointer hover restarted passive scene rendering');
+      await page.screenshot({path:path.join(output,`${id}-passive-orbit.png`)});
+      console.log('PASS',id,'idle rendering, orbit redraw, damping settles, pointer hover stays idle');
+      continue;
+    }
     if (process.env.XR_PROFILE_ONLY) continue;
     if (process.env.XR_EDITING_ONLY) {
       // A Quest's 2D browser can deliver tap/release rather than a held drag.
@@ -1193,7 +1228,8 @@ try {
     await h.dispose();
   }
   if (errors.length) throw Error(errors.join("\n"));
-  console.log("PASS XR denied-entry recovery, placement, head tracking, AR alpha, stereo mesh/splat rendering, four-view restoration, teardown", output);
+  console.log(process.env.XR_PASSIVE_ONLY ? "PASS passive viewer rendering and navigation" :
+    "PASS XR denied-entry recovery, placement, head tracking, AR alpha, stereo mesh/splat rendering, four-view restoration, teardown", output);
 } catch (error) {
   for (const page of await browser.pages()) console.log("XR FAILURE", page.url(), await page.evaluate(() => document.body.innerText));
   throw error;

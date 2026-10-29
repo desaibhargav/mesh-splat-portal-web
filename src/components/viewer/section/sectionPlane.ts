@@ -27,6 +27,7 @@ export function planeCoefficients(frame: ViewFrame, flip: boolean): Float32Array
 }
 
 export function setSectionPlane(app: AppBase, plane: Float32Array | null) {
+  app.renderNextFrame = true;
   app.graphicsDevice.scope.resolve("portalSectionPlane").setValue(plane ?? new Float32Array(4));
   app.graphicsDevice.scope.resolve("portalSectionEnabled").setValue(plane ? 1 : 0);
 }

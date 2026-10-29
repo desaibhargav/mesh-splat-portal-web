@@ -88,6 +88,7 @@ export class MeasurementRenderer {
   }
 
   setStyle(style: MeasurementStyle) {
+    this.handle.app.renderNextFrame = true;
     this.style = style;
     for (const visual of this.visuals) {
       visual.line?.setWidths(style.lineWidth);
@@ -98,6 +99,7 @@ export class MeasurementRenderer {
   }
 
   setSegments(segments: readonly (readonly Vec3[])[]) {
+    this.handle.app.renderNextFrame = true;
     this.font.updateTextures(segments.filter(points => points.length === 2)
       .map(points => formatDistance(points[0]!.distance(points[1]!))).join(""));
     this.visuals.slice(segments.length).forEach(visual => { if (visual.line) this.lines.remove(visual.line); visual.root.destroy(); });

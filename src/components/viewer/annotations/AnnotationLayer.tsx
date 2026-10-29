@@ -57,6 +57,7 @@ function AnnotationViewport({ color, handle: shared, panel, records, interactive
   }, [handle]);
   useEffect(() => {
     if (!root.current) return;
+    handle.app.renderNextFrame = true;
     for (const [id, entity] of entities.current) if (!records.some(record => record.id === id)) {
       const annotation = entity.script!.get("annotation") as unknown as Annotation;
       if (manager.current?.regionAnnotation === annotation) manager.current.showRegion(null);

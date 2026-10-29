@@ -253,6 +253,7 @@ export class SplatSelection {
     return bounds.value;
   }
   private update() {
+    this.component.system.app.renderNextFrame = true;
     this.surfacePicker?.invalidate();
     this.picker?.invalidate();
     const selection = this.texture.lock() as Uint8Array;
