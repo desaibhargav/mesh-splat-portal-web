@@ -65,6 +65,11 @@ server {
         proxy_store off;
     }
 
+    # Revalidate the SPA entry point so new visits pick up deployed asset hashes.
+    location = /index.html {
+        expires -1;
+    }
+
     location / {
         try_files \$uri \$uri/ /index.html;
     }
@@ -83,6 +88,11 @@ server {
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-Frame-Options "DENY" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    # Revalidate the SPA entry point so new visits pick up deployed asset hashes.
+    location = /index.html {
+        expires -1;
+    }
 
     location / {
         try_files \$uri \$uri/ /index.html;
