@@ -46,6 +46,8 @@ The headset's ordinary 2D browser exposes generic pointer events, not XR control
 
 XR keeps every splat in the published asset. PlayCanvas uses background CPU sorting on WebGL and GPU sorting only when WebGPU is available; this is a plausible performance cost, not a measured diagnosis for the reported Quest lag. The prior XR-only framebuffer scale and fixed foveation settings were removed to restore menu legibility. Controller models use scene lighting, and rays render after the UI layer and stop just before the targeted control. Surface probes are skipped while either controller targets UI and throttled when pointing at the asset. Quest frame-time and energy measurements remain necessary before claiming the splat performance problem is resolved.
 
+Splat XR sessions use PlayCanvas's native radial sorting to avoid full worker sorts caused only by head rotation; the previous setting is restored on exit. The replay and resource measurements, visual tradeoff, and remaining Quest uncertainty are recorded in [the splat performance investigation](splat-performance.md).
+
 The former `?xrGpuSort=1` trial was removed after Quest reported WebGL fallback and a separate local WebGPU check found the splat shader adapter could render blank. The GPU sorter uses `gsplatHybridVS`; our section/hover fragment interface must be validated against that path before enabling it. Browser API availability alone does not establish a working renderer. Keep this as an explicit integration gap rather than presenting the trial as a performance fix.
 
 ## Passive page rendering

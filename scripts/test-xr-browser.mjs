@@ -224,6 +224,32 @@ try {
     const ws=await workspace();
     const menu=await h.evaluateHandle(h=>h.app.xr.input._callbacks.get('selectstart').find(c=>c.scope?.editing)?.scope);
     const input=await h.evaluateHandle(h=>h.app._callbacks.get('prerender').find(c=>c.scope?.pointers&&c.scope?.hits)?.scope);
+    const isSplat=await h.evaluate(h=>!!h.selection.centers);
+    check(await h.evaluate((h,isSplat)=>h.app.scene.gsplat.radialSorting===isSplat,isSplat),
+      'XR sorting mode did not match the asset type');
+    if(isSplat) {
+      const rotations=await h.evaluate(async h=>{
+        const app=h.app,head=window.xrDevice.quaternion;
+        const original=[head.x,head.y,head.z,head.w],originalX=window.xrDevice.position.x,Q=app.root.getRotation().constructor;
+        const base=new Q(...original),turn=new Q();
+        for(let i=0;i<30;i++)await new Promise(r=>app.once('frameend',r));
+        let sorts=0;const sorted=()=>sorts++;app.scene.on('gsplat:sorted',sorted);
+        try {
+          for(let i=0;i<90;i++) {
+            turn.setFromEulerAngles(0,i*.23,0).mul(base);
+            head.set(turn.x,turn.y,turn.z,turn.w);
+            await new Promise(r=>app.once('frameend',r));
+          }
+          const rotations=sorts;sorts=0;
+          window.xrDevice.position.x+=.02;
+          for(let i=0;i<30;i++)await new Promise(r=>app.once('frameend',r));
+          return {rotations,translations:sorts};
+        } finally {head.set(...original);window.xrDevice.position.x=originalX;app.scene.off('gsplat:sorted',sorted);}
+      });
+      check(rotations.rotations<=2,'Head rotation repeatedly re-sorted the full splat: '+rotations.rotations);
+      check(rotations.translations>0,'Radial sorting failed to refresh after head translation');
+      console.log('XR HEAD SORTS',id,rotations,'over 90 rotation frames and one translation');
+    }
     const move = async point => {
       await page.evaluate(()=>{const c=window.xrDevice.controllers.right;c.position.set(0,0,0);c.quaternion.set(0,0,0,1);}); await settle(h);
       const offset=await h.evaluate(h=>h.app.xr.input.inputSources.find(s=>s.handedness==='right').getOrigin().toArray());
@@ -606,6 +632,7 @@ try {
     await page.evaluate(()=>{window.xrDevice.controllers.left.updateButtonValue('trigger',0);
       window.xrDevice.controllers.right.updateButtonValue('trigger',0);}); await settle(h);
     await h.evaluate(h=>new Promise(resolve=>h.app.xr.end(resolve))); await settle(h);
+    check(await h.evaluate(h=>!h.app.scene.gsplat.radialSorting),'XR left radial sorting enabled on desktop');
     await page.click('[aria-label="Annotate"]');
     await page.waitForSelector('.annotation-list');
     check(await page.$eval('.selection-toolbar [role="status"]',e=>e.textContent.startsWith('0 /')),'Desktop selection summary did not synchronize from XR');
@@ -733,12 +760,13 @@ try {
             await new Promise(resolve=>h.app.once('frameend',resolve));
             quiet=draws===previous?quiet+1:0;previous=draws;
           }
-          const start=draws;
-          for(let i=0;i<60;i++)await new Promise(resolve=>h.app.once('frameend',resolve));
-          return {quiet,draws:draws-start,autoRender:h.app.autoRender};
+          const start=draws;let gpuDraws=0;
+          for(let i=0;i<60;i++){await new Promise(resolve=>h.app.once('frameend',resolve));gpuDraws+=h.app.stats.drawCalls.total;}
+          return {quiet,draws:draws-start,gpuDraws,autoRender:h.app.autoRender};
         } finally {h.app.off('postrender',rendered);}
       });
-      check((await idle()).draws===0,'Passive viewer kept rendering while idle');
+      const initialIdle=await idle();
+      check(initialIdle.draws===0&&initialIdle.gpuDraws===0,'Passive viewer kept issuing scene or GPU draws while idle');
       const canvas=await page.$('.viewer-canvas canvas'),r=await canvas.boundingBox();
       const before=await canvas.screenshot();
       const assetPixels=await page.evaluate(async png=>{
