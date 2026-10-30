@@ -50,10 +50,42 @@ Quest access logs confirm that the headset fetched the passive-rendering build. 
 
 ## What remains unresolved
 
-The exact CPU/GPU/framebuffer bottleneck on the physical Quest is not yet measured because USB profiling is unavailable. Local zero-idle-draw results do not explain continuing headset lag on a stationary page. Do not report the complete issue as fixed or attribute the white dots to hardware damage.
+### Interaction comparison
+
+The latest Quest report distinguishes smooth ordinary page scrolling from lag when interacting with the viewer. That is consistent with passive Navigate stopping graphics work and camera movement resuming it; it does not establish that controller input itself is expensive. Pure pointer hover must be tested separately from a drag and from an active surface tool.
+
+A controlled 120-frame replay of the full 1,500,020-Gaussian necklace on this Mac, with native GPU timer queries and raw WebGL call counts, found:
+
+| Interaction | Native full work-buffer rebuilds | Native sort requests | Mean GPU frame time |
+| --- | ---: | ---: | ---: |
+| Desktop idle or unpressed pointer hover | 0 | 0 | No graphics calls |
+| Desktop orbit | 0; 3 color-only updates | 100 | 4.7 ms |
+| XR stationary head/controllers | 0 | 0 | 6.1 ms |
+| XR moving controller ray only | 0 | 0 | 6.3 ms |
+| XR left-trigger artifact orbit | 119 | 119 | 7.4 ms |
+| XR ray movement, surface queries disabled for comparison | 0 | 0, excluding one pending sort | 6.6 ms |
+| XR orbit, surface queries disabled for comparison | 119 | 119 | 7.6 ms |
+
+Desktop used a 1102 × 544 framebuffer; IWER stereo used a 1200 × 1000 framebuffer. Instrumentation was temporary and is not shipped. The query-disabled runs did not show a local performance gain. Ordinary desktop hover did not create a surface-query worker. XR ray queries completed asynchronously, about 35 queries over the ray-only replay (mean 2.6 ms end-to-end latency, not main-thread execution time). Native worker sorts during orbit averaged about 9.5 ms. These are local measurements, not Quest timings or an assertion that the headset has the same bottleneck.
+
+The rebuild distinction comes from the native unified renderer: desktop orbit changes the camera, while XR manipulation changes the artifact transform. Native `GSplatWorld.applyWorkBufferUpdates()` copies the changed Gaussian geometry into its world-space work buffer and requests sorting. Stationary rendering and ray movement reuse that buffer. No duplicate whole-cloud render path was found in these replays. Replacing artifact motion with inverse headset/controller transforms would change physical-space and editing contracts; do not introduce that as an untested optimization.
+
+### Published Quest guidance and jagged edges
+
+PlayCanvas's [performance guide](https://developer.playcanvas.com/user-manual/gaussian-splatting/building/performance/) recommends roughly one million active Gaussians for mobile as a starting budget, not a hard Quest limit. Fixed SOG assets render in full: setting a streaming budget would not reduce this asset's workload. Their [SuperSplat Quest report](https://forum.playcanvas.com/t/supersplat-update-follow-creators-a-new-home-page-and-enhanced-xr-mode/42734) describes a 72 Hz target, fixed foveation and a one-million-splat budget, with one large scene improving from 9.7 to 30.7 fps (40.3 in Performance mode). Their [quality implementation](https://github.com/playcanvas/supersplat-viewer/blob/main/src/quality.ts) explicitly distinguishes standalone XR budgets from desktop budgets. Native APIs therefore do not imply unrestricted Quest performance. Those quality/budget reductions have not been applied here; full published detail remains required.
+
+In our installed engine, `WebglXrBridge.attachPresentation()` constructs `XRWebGLLayer` with `antialias: false`. The splat desktop canvas also disables multisample antialiasing, consistent with the engine's fragment-cost guidance. Spatial menu textures already use double-density canvases, mipmaps and trilinear filtering. Their texture filtering cannot provide multisample coverage for the panel geometry's outer edges. These facts identify antialiasing boundaries to investigate; they do not prove the reported headset-wide zigzag artifacts have that cause. Enabling multisampling for the entire splat frame would increase rendering cost and must not be presented as a free correction. Runtime/compositor frame drops and actual layer dimensions need measurement on Quest.
+
+The exact CPU/GPU/framebuffer bottleneck on the physical Quest is not yet measured because USB profiling is unavailable. Do not report the complete issue as fixed or attribute the white dots to hardware damage.
 
 The former WebGPU trial is removed. It fell back to WebGL on the tested Quest; local WebGPU checks also exposed a blank-render problem in the custom shader interface. Enabling WebGPU requires proper hybrid-renderer integration and browser/XR tool tests, not only API detection.
 
 When the Quest can be attached, inspect the actual current tab and record: update and raw GPU draw counts while stationary, camera/projection changes, canvas/framebuffer dimensions, worker sort frequency/time, GPU timer results when supported, memory, and work-buffer uploads during asset manipulation. Compare the same asset with native rendering under the same device conditions. No reduced detail, resolution, or added renderer UI is part of this investigation.
+
+## Close inspection
+
+XR zoom previously clamped presentation scale to ¼×–4× the initial placement; that was portal policy, not a PlayCanvas requirement. The clamp is removed. Finite positive scale is required, and scaling still preserves the VR center or the placed AR floor contact. Reset restores the placed scale. Desktop native orbit controls now use the camera near-clip distance as their positive minimum, replacing the asset-radius-based stop, and have no arbitrary far-distance cap. Camera clipping still exists; zoom does not add source detail. Enlarging Gaussian footprints can increase overdraw, and XR scale changes invoke the native transform-update path above.
+
+The browser regression uses actual wheel input to pass the former desktop close-inspection stop and holds the controller thumbstick past the former 4× XR limit on both formats, in VR and AR. The unit regression checks AR floor preservation and Reset after 16× zoom, and rejects nonfinite/nonpositive factors.
 
 Sources: [PlayCanvas renderers](https://developer.playcanvas.com/user-manual/gaussian-splatting/rendering-architecture/renderers/), [radial sorting API](https://api.playcanvas.com/engine/classes/GSplatParams.html#radialsorting), [Meta browser debugging](https://developers.meta.com/vr/documentation/web/browser-remote-debugging/).

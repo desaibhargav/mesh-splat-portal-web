@@ -19,7 +19,6 @@ export class ImmersiveScene {
   private readonly before = new Vec3();
   private readonly after = new Vec3();
   private readonly offset = new Vec3();
-  private readonly baseScale: number;
   private readonly initialPosition = new Vec3();
   private readonly initialRotation = new Quat();
   private initialScale = 1;
@@ -29,8 +28,8 @@ export class ImmersiveScene {
     this.parent = handle.space.root.parent!;
     this.section = new Float32Array(handle.app.graphicsDevice.scope.resolve("portalSectionPlane").getValue());
     handle.app.root.addChild(this.root); this.root.addChild(handle.space.root);
-    this.baseScale = displaySize / (2 * Math.max(bounds.halfExtents.x, bounds.halfExtents.y, bounds.halfExtents.z));
-    this.root.setLocalScale(this.baseScale, this.baseScale, this.baseScale);
+    const scale = displaySize / (2 * Math.max(bounds.halfExtents.x, bounds.halfExtents.y, bounds.halfExtents.z));
+    this.root.setLocalScale(scale, scale, scale);
     handle.app.on("prerender", this.updateSection, this);
   }
 
@@ -93,8 +92,8 @@ export class ImmersiveScene {
 
   zoom(factor: number) {
     const current = this.root.getLocalScale().x;
-    const next = Math.min(this.baseScale * 4, Math.max(this.baseScale * .25, current * factor));
-    if (next === current) return;
+    const next = current * factor;
+    if (!Number.isFinite(next) || next <= 0 || next === current) return;
     this.pivot.copy(this.bounds.center);
     if (this.grounded) this.pivot.y -= this.bounds.halfExtents.y;
     this.root.getWorldTransform().transformPoint(this.pivot, this.before);

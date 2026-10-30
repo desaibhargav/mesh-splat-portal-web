@@ -29,7 +29,9 @@ export function ViewerCamera({ view, onReady }: { view: ViewerView; onReady(came
   useEffect(() => {
     if (!controls) return;
     controls.focusPoint = view.focusPoint;
-    controls.zoomRange = new Vec2(Math.max(view.radius * 0.02, 0.01), Math.max(view.radius * 100, 100));
+    // Use the camera's clipping scale for close inspection, without an
+    // asset-size stop or arbitrary far-distance limit (native 0 means unbounded).
+    controls.zoomRange = new Vec2(controls.entity.camera!.nearClip, 0);
   }, [controls, view]);
   useEffect(() => { onReady(controls?.entity.camera ?? null); }, [controls, onReady]);
   useEffect(() => {

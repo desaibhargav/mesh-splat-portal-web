@@ -28,6 +28,14 @@ it("normalizes presentation without changing saved coordinates and carries the r
   scene.zoom(2);
   expect(scene.root.getLocalScale().x).toBeCloseTo(size * 2);
   expect(scene.root.getWorldTransform().transformPoint(bottom).equalsApprox(floor, 1e-5)).toBe(true);
+  scene.zoom(8);
+  expect(scene.root.getLocalScale().x).toBeCloseTo(size * 16);
+  expect(scene.root.getWorldTransform().transformPoint(bottom).equalsApprox(floor, 1e-5)).toBe(true);
+  const zoomed = scene.root.getLocalTransform().clone();
+  for (const invalid of [0, -1, Infinity, NaN]) scene.zoom(invalid);
+  expect(scene.root.getLocalTransform().equals(zoomed)).toBe(true);
+  scene.reset();
+  expect(scene.root.getLocalScale().x).toBeCloseTo(size);
   for (const angles of [[0, 0, 0], [10, 35, 25], [75, -20, 5]]) {
     scene.root.setPosition(1, 3, -2); scene.root.setEulerAngles(...angles as [number, number, number]); scene.root.setLocalScale(.5, .5, .5);
     app.fire("prerender");

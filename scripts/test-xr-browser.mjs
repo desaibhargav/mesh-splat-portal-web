@@ -743,10 +743,12 @@ try {
     check(Math.abs(panned.position[0]-panBefore.position[0])>.05,"Right trigger gesture did not pan");
     await page.evaluate(() => window.xrDevice.controllers.right.updateButtonValue("trigger",0)); await settle(h);
     const zoomBefore=await targetPose(h);
-    await page.evaluate(() => window.xrDevice.controllers.left.updateAxes("thumbstick",0,-1)); await settle(h);
+    await page.evaluate(() => window.xrDevice.controllers.left.updateAxes("thumbstick",0,-1));
+    await h.evaluate(async h => { for (let i=0;i<90;i++) await new Promise(resolve=>h.app.once("frameend",resolve)); });
     const zoomed=await targetPose(h);
-    check(zoomed.scale>zoomBefore.scale,"Left thumbstick forward did not zoom in");
-    await page.evaluate(() => window.xrDevice.controllers.left.updateAxes("thumbstick",0,1)); await settle(h);
+    check(zoomed.scale>zoomBefore.scale*4,"Left thumbstick zoom stopped at the former 4x limit");
+    await page.evaluate(() => window.xrDevice.controllers.left.updateAxes("thumbstick",0,1));
+    await h.evaluate(async h => { for (let i=0;i<90;i++) await new Promise(resolve=>h.app.once("frameend",resolve)); });
     const zoomedOut=await targetPose(h);
     check(zoomedOut.scale<zoomed.scale,"Left thumbstick backward did not zoom out");
     await page.evaluate(() => window.xrDevice.controllers.left.updateAxes("thumbstick",0,0)); await settle(h);
@@ -931,6 +933,12 @@ try {
     await page.mouse.wheel({ deltaY: -250 }); await settle(h);
     const desktopZoom = await desktopCamera();
     check(desktopZoom.position.some((value, index) => Math.abs(value - desktopPan.position[index]) > .001), "Desktop zoom stopped working");
+    const distanceBefore = await h.evaluate(h => h.camera().entity.script.get("cameraControls")._pose.distance);
+    await page.mouse.wheel({ deltaY: -10000 });
+    await h.evaluate(async h => { for (let i=0;i<30;i++) await new Promise(resolve=>h.app.once("frameend",resolve)); });
+    const closeDistance = await h.evaluate(h => h.camera().entity.script.get("cameraControls")._pose.distance);
+    check(closeDistance > 0 && closeDistance < distanceBefore * .005, "Desktop close inspection stopped at the former asset-size zoom limit");
+    await page.keyboard.press("f"); await settle(h);
     console.log("PASS", id, "desktop orbit, pan, zoom before XR entry");
     // Denied permission must leave the desktop viewer ready to retry.
     await page.evaluate(() => {
@@ -1317,7 +1325,16 @@ try {
     check(await h.evaluate(h => h.app.autoRender), "Typing policy blocked immersive rendering");
     await h.evaluate(async h => { await new Promise(resolve => h.app.xr.end(resolve)); });
     await page.waitForFunction(() => document.querySelector('.viewer-frame')?.dataset.immersive === "false");
-    check(await h.evaluate(h => h.app.autoRender), "Desktop stayed paused after entering XR from a text field");
+    // XR enters Navigate. Passive Navigate correctly stops drawing after exit;
+    // assert a real camera gesture redraws instead of requiring continuous GPU work.
+    await page.waitForSelector('[aria-label="Navigate (Q)"][aria-pressed="true"]');
+    const restoredCanvas = await page.$(".viewer-canvas canvas"), restoredBounds = await restoredCanvas.boundingBox();
+    const restoredImage = await restoredCanvas.screenshot(), restoredPose = await desktopCamera();
+    await page.mouse.move(restoredBounds.x + restoredBounds.width * .2, restoredBounds.y + restoredBounds.height * .2);
+    await page.mouse.down(); await page.mouse.move(restoredBounds.x + restoredBounds.width * .3, restoredBounds.y + restoredBounds.height * .25, {steps:8});
+    await page.mouse.up(); await settle(h);
+    check((await desktopCamera()).rotation.some((value,i)=>Math.abs(value-restoredPose.rotation[i])>.001) &&
+      !restoredImage.equals(await restoredCanvas.screenshot()), "Desktop did not visibly navigate after entering XR from a text field");
     console.log("PASS", id, "text entry to XR to desktop rendering");
     // Leave the route while presenting to exercise scene teardown and session end.
     await page.click('[aria-label="View in VR"]');
