@@ -1,10 +1,11 @@
-import { CULLFACE_BACK, CULLFACE_FRONT, Vec3, type AppBase, type CameraComponent, type MeshInstance } from "playcanvas";
+import { CULLFACE_BACK, CULLFACE_FRONT, Vec3, type AppBase, type CameraComponent } from "playcanvas";
+import type { StaticMeshInstance } from "../MeshSelection";
 import type { SelectionRegion, SurfaceHit } from "../types";
 import type { VisibilityGeometry, VisibilityPart, VisibilityQuery } from "./visibilityTypes";
 import type { SelectionVolume } from "../volume/SelectionVolume";
 import { regionAlpha, type PickImage } from "../pickImage";
 
-interface Part { source: MeshInstance; positions: Float32Array; indices: number[]; mask: Uint8Array; scope: Uint8Array | null }
+interface Part { source: StaticMeshInstance; positions: Float32Array; indices: number[]; mask: Uint8Array; scope: Uint8Array | null }
 interface Reply { id: number; result?: Uint8Array[]; hit?: { point: number[]; normal?: number[]; part: number; index: number } | null; error?: string }
 
 // One lazily-created worker per mesh controller. Geometry is copied/transferred

@@ -4,7 +4,21 @@ The reported Quest 3 problem affects the ordinary splat webpage and immersive AR
 
 ## Measured workloads
 
-The necklace `2022-01-0056-model` contains 1,500,020 Gaussians with three spherical-harmonic bands. The portal uses PlayCanvas 2.21.4, unified splat rendering, WebGL 2, and native worker sorting. Multisample antialiasing is disabled for splats. No LOD or lower-density XR derivative is active.
+The necklace `2022-01-0056-model` contains 1,500,020 Gaussians with three spherical-harmonic bands. The portal now uses PlayCanvas 2.23.3, unified splat rendering, WebGL 2, and native worker sorting. Multisample antialiasing is disabled for splats. No LOD or lower-density XR derivative is active. The initial comparison below used 2.21.4 before the resource/lifecycle corrections described next.
+
+## Confirmed application and integration faults
+
+Opening a pristine splat previously installed the custom shader extensions, enabled source IDs and allocated four whole-cloud edit textures before any editing operation. `SplatSelection` now leaves the native rendering path intact until selection display, paint, scope, sectioning, or ID picking actually needs the extensions. Initializing a section must not reset its already-active plane. The textures are created once and retained after editing so saved edits keep rendering; this is deferred allocation, not a claim that editing requires no additional memory.
+
+In the controlled Chromium regression, engine-tracked GPU texture allocations were 40,050,996 bytes with the native path and 105,823,572 bytes after enabling editing: about 63 MiB of avoidable initial allocation for the same 1,500,020 Gaussians. These are engine counters, not browser-driver memory, CPU memory, or Quest measurements. A raw GL audit also found zero graphics calls during settled desktop Navigate and no eagerly created surface-query worker.
+
+Rapid XR exit/re-entry reproduced an uncaught `instantiateRenderEntity` error in the old native controller loader. A model could be unloaded while another load was waiting for it. The portal now uses the upstream controller ownership fixes in PlayCanvas 2.23.3, with one native controller-model cache owner per viewer application, created only on first XR entry. Ending a session removes its controller instances; closing the viewer releases the cached model resources. A deterministic regression delays model downloads through session exit/re-entry, requires both controllers in the next session and exactly one download per model URL, and rejects browser errors.
+
+The newer native end event keeps its session/camera available to listeners until end processing completes. Desktop camera clip planes and viewport navigation are restored in the next microtask, after the engine detaches XR listeners. Disposing the viewer instead releases session resources immediately without trying to restore a camera that is being destroyed. This ordering is necessary to avoid updating the render state of an already-ended session; it is not a rendering delay or navigation reset.
+
+The desktop pixel-ratio cap also fed the engine's XR framebuffer scale calculation. With a display pixel ratio of 3 and the default canvas cap of 1, the old setup requested one-third linear resolution. `ImmersiveViewer` now compensates through the native `framebufferScaleFactor` option, requesting the runtime's normal resolution independently of the desktop canvas. The high-DPI regression checks the actual layer-constructor option because IWER does not model its resolution effect. This corrects a conditional resolution fault; it does not prove the Quest used that pixel ratio or that higher resolution reduces frame cost.
+
+These faults are independently verified. They do not establish the complete cause of the reported headset-wide lag or white dots. Keep full detail and verify the deployed behavior on Quest before calling that report resolved.
 
 Controlled Chromium measurements on the Mac, at a 1102 × 544 framebuffer:
 

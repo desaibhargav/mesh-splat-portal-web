@@ -83,7 +83,7 @@ export class MeasurementRenderer {
     const entity = new Entity("Measurement text"); parent.addChild(entity);
     entity.addComponent("element", { type: ELEMENTTYPE_TEXT, font: this.font, text: value,
       fontSize: this.style.fontSize, lineHeight: this.style.fontSize, color: Color.WHITE,
-      pivot: [0.5, 0.5], alignment: [0.5, 0.5], layers: [this.layer.id], useInput: false, enableMarkup: false });
+      pivot: [0.5, 0.5], alignment: new Vec2(0.5, 0.5), layers: [this.layer.id], useInput: false, enableMarkup: false });
     return entity;
   }
 

@@ -40,6 +40,8 @@ For hover and XR tools, avoid rebuilding whole-asset buffers or running geometry
 
 Give resources clear owners and release them before the graphics device is destroyed. Discard pending asynchronous results when their viewer or operation is gone. Test navigation away and repeated mounting as well as the happy path.
 
+Keep passive inspection on the native rendering path where possible. Initialize optional whole-asset edit textures, shader extensions and spatial indexes when an operation actually needs them; measure startup, first interaction and steady memory separately. A native API still needs the right owner lifetime: session teardown must not release shared resources that another session or asynchronous load is using.
+
 ## Consistent editing workflow
 
 - Use explicit Save actions and a saved-items box above each tool’s options for selections, annotations, measurements, views, and sections. Open entries there to edit/update/delete them. The model tree inventories scene records and controls visibility; renaming is allowed there and must synchronize with the saved list and any open editor. Clicking a tree name opens the saved record in its tool and frames it (or recalls its saved camera for views/sections). Eye controls and rename actions never open editors or move the camera.

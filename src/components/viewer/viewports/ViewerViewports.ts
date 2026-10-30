@@ -67,9 +67,12 @@ export class ViewerViewports extends EventHandler {
     this.activate(panel); this.split = false; this.layout();
   }
   private leaveXR() {
-    if (!this.beforeXR) return;
-    const previous = this.beforeXR; this.beforeXR = null;
-    this.activate(previous.active); this.split = previous.split; this.layout();
+    // Restore desktop navigation after native end processing releases the XR camera.
+    queueMicrotask(() => {
+      if (this.disposed || !this.beforeXR) return;
+      const previous = this.beforeXR; this.beforeXR = null;
+      this.activate(previous.active); this.split = previous.split; this.layout();
+    });
   }
   shareLayer(id: number) {
     this.sharedLayers.add(id);

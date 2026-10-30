@@ -16,8 +16,9 @@ import { configureSectionMaterial, reverseFaceColor } from "../section/sectionSh
 import { sectionTest, setSectionPlane } from "../section/sectionPlane";
 import type { SelectionArea, SelectionCamera, SelectionRegion, SelectionSnapshot, SelectionState, SelectionSummary } from "./types";
 
+export type StaticMeshInstance = MeshInstance & { mesh: Mesh; material: StandardMaterial };
 interface Part {
-  source: MeshInstance; positions: Float32Array; indices: number[]; centers: Float32Array; mask: Uint8Array;
+  source: StaticMeshInstance; positions: Float32Array; indices: number[]; centers: Float32Array; mask: Uint8Array;
   scope: Uint8Array | null; vertices: VertexBuffer; baseMaterial: StandardMaterial; layers: Layer[]; groups: Map<number, { instance: MeshInstance; material: StandardMaterial }>;
   previewMaterial?: StandardMaterial;
 }
@@ -68,13 +69,14 @@ export class MeshSelection {
     const instances = components.filter(c => c.enabled && c.entity.enabled).flatMap(c => c.meshInstances).filter(instance => instance.visible);
     // Validate before changing any scene state.
     for (const instance of instances) {
-      if (instance.skinInstance || instance.morphInstance || instance.mesh.primitive[0]!.type !== PRIMITIVE_TRIANGLES || !(instance.material instanceof StandardMaterial)) {
+      if (!instance.mesh || instance.skinInstance || instance.morphInstance || instance.mesh.primitive[0]!.type !== PRIMITIVE_TRIANGLES || !(instance.material instanceof StandardMaterial)) {
         throw new Error("Selection requires static triangle meshes with standard materials.");
       }
     }
     this.originals = components.map(component => ({ component, enabled: component.enabled }));
     try {
-      for (const source of instances) {
+      // These source meshes/materials were validated above and outlive our subsets.
+      for (const source of instances as StaticMeshInstance[]) {
         const mesh = source.mesh;
         const positions: number[] = [], allIndices: number[] = [];
         mesh.getPositions(positions); mesh.getIndices(allIndices);
@@ -326,7 +328,7 @@ export class MeshSelection {
           instance.castShadow = false; group = { instance, material }; part.groups.set(key, group);
           part.layers.forEach(layer => layer.addMeshInstances([instance]));
         }
-        group.instance.mesh.setIndices(indices); group.instance.mesh.update(PRIMITIVE_TRIANGLES, false);
+        group.instance.mesh!.setIndices(indices); group.instance.mesh!.update(PRIMITIVE_TRIANGLES, false);
       }
     }
   }

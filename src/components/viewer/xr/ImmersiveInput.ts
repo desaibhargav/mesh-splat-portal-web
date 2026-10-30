@@ -6,6 +6,18 @@ import type { SelectionHandle, SurfaceHit } from "../selection/types";
 
 const profiles = "https://cdn.jsdelivr.net/npm/@webxr-input-profiles/assets@1.0.20/dist/profiles";
 const rayLength = 1.5;
+const controllerModels = new WeakMap<AppBase, Entity>();
+
+// The native loader owns a URL cache across sessions. Keep its owner alive for
+// the viewer, so ending one session cannot unload a model another is loading.
+function ensureControllerModels(app: AppBase) {
+  if (controllerModels.has(app)) return;
+  const owner = new Entity("XR controller models");
+  app.root.addChild(owner); owner.addComponent("script");
+  owner.script!.create(XrControllers, { properties: { basePath: profiles } });
+  controllerModels.set(app, owner);
+  app.once("destroy", () => { controllerModels.delete(app); owner.destroy(); });
+}
 
 // Native scripts own model loading and the two-handed manipulation algorithm.
 // This adapter adds only pointer visuals and full-pose, one-controller grabbing.
@@ -47,7 +59,7 @@ export class ImmersiveInput {
     app.on("xr:controller:add", this.nameModel, this);
     app.xr!.input.on("remove", this.remove, this);
     rig.addComponent("script");
-    rig.script!.create(XrControllers, { properties: { basePath: profiles } });
+    ensureControllerModels(app);
     rig.script!.create(XrManipulation, { properties: { target, scalePivot: "hands", enableScale: false } });
     app.on("update", this.update, this);
     app.on("prerender", this.drawRays, this);
@@ -150,7 +162,7 @@ export class ImmersiveInput {
     this.app.off("prerender", this.drawRays, this);
     this.app.off("update", this.update, this); this.app.off("xr:controller:add", this.nameModel, this);
     this.app.xr?.input.off("remove", this.remove, this);
-    this.rig.script?.destroy("xrControllers"); this.rig.script?.destroy("xrManipulation");
+    this.rig.script?.destroy("xrManipulation");
     this.rays.destroy(); this.releaseRayLayer(); this.app.scene.layers.remove(this.rayLayer);
     for (const pointer of this.pointers.values()) pointer.tip.destroy();
     this.tipMaterial.destroy(); this.pointers.clear(); this.grabbing = null;

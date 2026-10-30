@@ -2,7 +2,6 @@ import {
   Picker, ShaderChunks, SHADERLANGUAGE_GLSL, SHADERLANGUAGE_WGSL, TYPE_UINT32,
   type AppBase, type CameraComponent, type RenderTarget, type Texture
 } from "playcanvas";
-import { setSectionPlane } from "../section/sectionPlane";
 import { splatSectionFragment, splatSectionVertex } from "../section/sectionShaders";
 
 import { renderPickView } from "../picking/PickView";
@@ -56,7 +55,6 @@ export class SplatPicker {
 }
 
 export function configureSplatPicking(app: AppBase): () => void {
-  setSectionPlane(app, null);
   const material = app.scene.gsplat.material, previousIds = app.scene.gsplat.enableIds;
   const chunks = [material.shaderChunks.glsl, material.shaderChunks.wgsl] as const;
   const previous = chunks.map(value => ({

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Color, Vec3 } from "playcanvas";
+import { Color, Vec3, WireRenderer } from "playcanvas";
 import type { SelectionHandle } from "../selection/types";
 import { useSurfacePick } from "../picking/useSurfacePick";
 import { captureFrame, threePointFrame, type ViewFrame } from "./viewFrame";
@@ -20,9 +20,10 @@ export function ThreePointAlignment({ handle, frame, onAlign, onCancel }: {
   });
   useEffect(() => {
     const radius = frame.distance * Math.tan(frame.fov * Math.PI / 360) / 100;
+    const wire = new WireRenderer(handle.app); wire.color = Color.WHITE;
     const draw = () => {
-      points.forEach(point => handle.app.drawWireSphere(point, radius, Color.WHITE));
-      if (points.length === 2) handle.app.drawLine(points[0]!, points[1]!, Color.WHITE);
+      points.forEach(point => wire.sphere(point, radius));
+      if (points.length === 2) wire.line(points[0]!, points[1]!);
     };
     handle.app.on("prerender", draw);
     return () => { handle.app.off("prerender", draw); };

@@ -1,7 +1,7 @@
 import { Pose, PROJECTION_ORTHOGRAPHIC, Vec3, type CameraComponent } from "playcanvas";
 import { CameraControls as EngineCameraControls } from "playcanvas/scripts/esm/camera-controls.mjs";
 
-// The bundled 2.21.4 reset/focus APIs call Pose.look(), which discards roll.
+// The bundled reset/focus APIs call Pose.look(), which discards roll (reviewed in 2.23.3).
 // Restore its own pose and orbit controller together, rather than fighting
 // camera transforms each frame. Review this boundary when upgrading the script.
 export class CameraControls extends EngineCameraControls {

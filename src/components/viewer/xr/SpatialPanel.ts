@@ -112,7 +112,7 @@ export class SpatialPanel {
   get enabled() { return this.screen.enabled; }
   set enabled(value: boolean) { this.screen.enabled = value; if (!value) { this.hovered = this.dragging = null; this.moveSource = null; this.hoverEntity.enabled = false; } }
   get isTargeted() {
-    // Engine 2.21 types this as Entity but ElementInput assigns its
+    // The engine types this as Entity but ElementInput assigns its
     // ElementComponent. Keep that pinned-version mismatch at this boundary.
     return !!this.moveSource || (this.app.xr?.input.inputSources.some(source => source.handedness === "right" &&
       (source.elementEntity as unknown as ElementComponent | null)?.entity === this.entity) ?? false);

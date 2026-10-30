@@ -16,6 +16,8 @@ Only the Perspective camera renders in XR. Leaving restores its parent, pose, pr
 
 ## Verification
 
+The viewer is pinned to PlayCanvas 2.23.3. Its native controller model loader remains alive across sessions, with a viewer-owned URL cache; per-session input adapters own only rays and manipulation. Desktop camera/layout restoration runs after native end-event processing, when changing clip planes cannot update an ended session. XR requests the runtime's normal framebuffer resolution independently of the desktop pixel-ratio cap. Splat edit textures/shader extensions initialize only when needed; full published Gaussian detail is retained.
+
 The test uses Meta's official [IWER](https://github.com/meta-quest/immersive-web-emulation-runtime) **only in the browser harness**, never in the application bundle. Install it outside the repository:
 
 ```bash

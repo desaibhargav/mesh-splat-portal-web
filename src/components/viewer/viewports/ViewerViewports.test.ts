@@ -15,7 +15,7 @@ it("routes canvas coordinates into exactly one panel with top-origin pointer coo
 });
 
 
-it("uses only the immersive camera during XR and restores the desktop panel arrangement afterward", () => {
+it("uses only the immersive camera during XR and restores the desktop panel arrangement afterward", async () => {
   function camera() {
     const controls = { enabled: false };
     return { entity: { script: { get: () => controls } }, layers: [0], rect: new Vec4(0, 0, 1, 1),
@@ -30,8 +30,9 @@ it("uses only the immersive camera during XR and restores the desktop panel arra
   expect(rig.split).toBe(false); expect(rig.active.camera).toBe(primary);
   expect(primary.enabled).toBe(true); expect(other.camera.enabled).toBe(false);
   rig.activate(other); expect(rig.active.camera).toBe(primary);
-  // Native 2.21.4 clears its camera before the end event, and its session afterward.
-  xr.camera = null; xr.fire("end"); xr.active = false;
+  // Native end listeners retain the camera until event processing completes.
+  xr.fire("end"); xr.camera = null; xr.active = false;
+  await Promise.resolve();
   expect(rig.split).toBe(true); expect(rig.active).toBe(other);
   expect(primary.enabled).toBe(true); expect(other.camera.enabled).toBe(true);
   expect(other.camera.rect.z).toBe(.5);

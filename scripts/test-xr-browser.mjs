@@ -37,7 +37,7 @@ room.spatialEntities = room.spatialEntities.filter(entity => entity.semanticLabe
 const browser = await puppeteer.launch({ headless: true });
 try {
   const page = await browser.newPage(), errors = [];
-  await page.setViewport({ width: 1200, height: 1000, deviceScaleFactor: 1 });
+  await page.setViewport({ width: 1200, height: 1000, deviceScaleFactor: Number(process.env.XR_DPR ?? 1) });
   page.setDefaultTimeout(30000);
   page.on("pageerror", error => errors.push(String(error)));
   page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
@@ -45,12 +45,32 @@ try {
     window.xrDevice = new IWER.XRDevice(IWER.metaQuest3, { stereoEnabled: true });
     window.xrDevice.installSEM(IWER_SEM.SyntheticEnvironmentModule);
     window.xrDevice.installRuntime({ forceInstall: true });
+    window.xrLayerOptions = [];
+    window.XRWebGLLayer = new Proxy(window.XRWebGLLayer, {
+      construct(Target, args) {
+        window.xrLayerOptions.push(args[2]);
+        return Reflect.construct(Target, args);
+      }
+    });
   `);
   await page.setRequestInterception(true);
+  let holdModels = false, modelLoads = 0, firstModel, firstModelReady;
+  const pendingModels = [];
   page.on("request", async request => {
     const url = new URL(request.url());
     const parts = url.pathname.split("/").filter(Boolean);
-    if (url.pathname === "/favicon.ico") request.respond({ status: 204 });
+    // Deterministic native-loader ownership test: finish a model load only after
+    // its original session has ended and another is waiting for the same URL.
+    if (process.env.XR_RENDERING_ONLY && url.hostname === 'cdn.jsdelivr.net' && url.pathname.includes('/profiles/')) {
+      if (url.pathname.endsWith('/profile.json')) request.respond({status:200,headers:{'Access-Control-Allow-Origin':'*'},contentType:'application/json',body:JSON.stringify({
+        profileId:parts.at(-2), layouts:{left:{assetPath:'left.glb'},right:{assetPath:'right.glb'}}
+      })});
+      else if (url.pathname.endsWith('.glb')) {
+        modelLoads++; firstModelReady();
+        if (holdModels) pendingModels.push(request);
+        else request.respond({status:200,headers:{'Access-Control-Allow-Origin':'*'},contentType:'model/gltf-binary',body:fixtureBody});
+      } else request.continue();
+    } else if (url.pathname === "/favicon.ico") request.respond({ status: 204 });
     else if (url.pathname === "/api/v1/artifacts") request.respond({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], nextCursor: null }) });
     else if (url.pathname.startsWith("/api/v1/artifacts/")) {
       const id = url.pathname.split("/").at(-1), asset = assets[id];
@@ -733,6 +753,10 @@ try {
     console.log("PASS",id,type,"controller models, grip movement, orbit, pan, zoom, release, transition, disconnect");
   }
   for (const id of Object.keys(assets).filter(id=>!process.env.XR_ASSET || id===process.env.XR_ASSET)) {
+    if (process.env.XR_RENDERING_ONLY) {
+      holdModels = true; modelLoads = 0;
+      firstModel = new Promise(resolve => { firstModelReady = resolve; });
+    }
     const loadStarted = performance.now();
     await page.goto(`${base}/artifacts/${id}`);
     await page.evaluate(environment => window.xrDevice.sem.loadEnvironment(environment), room);
@@ -750,6 +774,53 @@ try {
     await page.$eval(".viewer-frame", element => element.scrollIntoView());
     const h = await handle();
     console.log("LOAD",id,Math.round(performance.now()-loadStarted),"primitives",await h.evaluate(h=>h.selection.summary.total));
+    if (assets[id].type === 'splat') {
+      check(await h.evaluate(h => !h.app.scene.gsplat.enableIds && !h.app.scene.gsplat.material.shaderChunks.glsl.get('gsplatVS') &&
+        !h.selection.component.getParameter('portalPaint')), 'A pristine splat eagerly installed edit textures/shaders');
+    }
+    if (process.env.XR_RENDERING_ONLY) {
+      let controllerOwner;
+      for (const label of ['View in VR', 'View in your room']) {
+        await page.click(`[aria-label="${label}"]`);
+        await page.waitForFunction(() => document.querySelector('.viewer-frame')?.dataset.immersive === 'true');
+        await settle(h);
+        if (label === 'View in VR') {
+          let timeout;
+          try { await Promise.race([firstModel, new Promise((_, reject) => { timeout = setTimeout(() => reject(Error('Native controller loader did not request a model')), 10000); })]); }
+          finally { clearTimeout(timeout); }
+          controllerOwner = await h.evaluateHandle(h => h.app.root.findByName('XR controller models'));
+        } else {
+          check(await h.evaluate((h, owner) => h.app.root.findByName('XR controller models') === owner, controllerOwner),
+            'A new session replaced the controller-model cache owner');
+          holdModels = false;
+          for (const request of pendingModels.splice(0)) await request.respond({status:200,headers:{'Access-Control-Allow-Origin':'*'},contentType:'model/gltf-binary',body:fixtureBody});
+          await page.waitForFunction(h => h.app.root.findByName('XR controller left') && h.app.root.findByName('XR controller right'), {}, h);
+          check(modelLoads === 2, 'Controller models were downloaded again for the second session');
+        }
+        check(await page.evaluate(() => Math.abs(window.xrLayerOptions.at(-1).framebufferScaleFactor - 1) < 1e-6),
+          'The desktop pixel-ratio cap reduced the XR framebuffer');
+        if (assets[id].type === 'splat') check(await h.evaluate(h => !h.selection.component.getParameter('portalPaint')),
+          'Entering XR eagerly allocated unused splat edit textures');
+        await page.screenshot({path:path.join(output,`${id}-${label.replaceAll(' ','-')}-native.png`)});
+        await h.evaluate(async h => { await new Promise(resolve => h.app.xr.end(resolve)); });
+        await page.waitForFunction(() => document.querySelector('.viewer-frame')?.dataset.immersive === 'false');
+      }
+      await controllerOwner.dispose();
+      if (assets[id].type === 'splat') {
+        const before = await h.evaluate(h => h.app.stats.vram.tex);
+        await page.click('[aria-label="Cross section"]');
+        await page.locator('.section-buttons button ::-p-text(Enable section)').click();
+        await page.waitForFunction(h => !!h.selection.component.getParameter('portalPaint') &&
+          h.app.graphicsDevice.scope.resolve('portalSectionEnabled').getValue() === 1, {}, h);
+        await h.evaluate(async h => { for (let i=0;i<90;i++) await new Promise(resolve => h.app.once('frameend',resolve)); });
+        console.log('SPLAT GPU TEXTURE BYTES', id, {native:before, editing:await h.evaluate(h => h.app.stats.vram.tex)});
+        await page.screenshot({path:path.join(output,`${id}-first-section.png`)});
+        await page.keyboard.press('q');
+        await page.waitForFunction(h => !h.app.graphicsDevice.scope.resolve('portalSectionEnabled').getValue(), {}, h);
+      }
+      console.log('PASS', id, 'native initial renderer, lazy edit resources, delayed controller loads across sessions, native XR framebuffer at DPR', process.env.XR_DPR ?? 1);
+      continue;
+    }
     if (process.env.XR_PASSIVE_ONLY) {
       const idle = async () => h.evaluate(async h => {
         let draws=0, quiet=0, previous=0;

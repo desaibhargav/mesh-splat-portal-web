@@ -90,11 +90,13 @@ export class ImmersiveViewer extends EventHandler {
     this.restore = () => {
       xr.off("update", place);
       app.scene.gsplat.radialSorting = radialSorting;
-      parent.addChild(camera.entity); camera.entity.setLocalScale(scale);
-      camera.nearClip = near; camera.farClip = far; camera.clearColor = clearColor; camera.layers = cameraLayers;
-      recallFrame(camera, frame); cameraControls(camera).enabled = enabled;
-      app.renderNextFrame = true;
-      app.graphicsDevice.setResolution(width, height);
+      if (!this.disposed) {
+        parent.addChild(camera.entity); camera.entity.setLocalScale(scale);
+        camera.nearClip = near; camera.farClip = far; camera.clearColor = clearColor; camera.layers = cameraLayers;
+        recallFrame(camera, frame); cameraControls(camera).enabled = enabled;
+        app.renderNextFrame = true;
+        app.graphicsDevice.setResolution(width, height);
+      }
       gestures.destroy(); menu.destroy(); this.toolMenu = null;
       placement?.destroy(); input.destroy(); scene.destroy(); rig.destroy(); this.activeScene = null;
       app.scene.ambientLight = ambient;
@@ -114,7 +116,9 @@ export class ImmersiveViewer extends EventHandler {
     xr.once("update", place);
     this.pending = true; this.error = null; this.changed();
     try {
-      xr.start(camera, type, XRSPACE_LOCALFLOOR, { callback: error => {
+      // The engine multiplies this by maxPixelRatio / devicePixelRatio. Keep
+      // the runtime's native XR resolution independent of the desktop canvas cap.
+      xr.start(camera, type, XRSPACE_LOCALFLOOR, { framebufferScaleFactor: window.devicePixelRatio / app.graphicsDevice.maxPixelRatio, callback: error => {
         if (error) { this.error = error.message; this.ended(); }
         else if (this.disposed) xr.end();
       } });
@@ -156,17 +160,18 @@ export class ImmersiveViewer extends EventHandler {
     this.toolMenu?.open();
   }
   private ended() {
+    // Native end listeners still have the ended session/camera available.
+    // Restore clip planes only after the engine detaches its XR listeners.
+    queueMicrotask(() => { if (!this.disposed) this.finishEnd(); });
+  }
+  private finishEnd() {
     this.handle.app.off("update", this.controllerExit, this);
     this.exitPressed = false;
     this.framePressed = this.undoPressed = this.redoPressed = false; this.lastReset = 0;
     const tool = this.toolMenu?.currentTool;
     this.restore?.(); this.restore = null;
     this.active = false; this.pending = false; this.changed();
-    // Sync the menu choice after leaving PlayCanvas's XR update. React panel
-    // transitions during the headset session can interrupt that update.
-    if (tool && tool !== this.tool && !this.disposed) setTimeout(() => {
-      if (!this.disposed && !this.active) this.changeTool(tool);
-    }, 0);
+    if (tool && tool !== this.tool && !this.disposed) this.changeTool(tool);
   }
   private changed() { this.revision++; this.fire("change"); }
   destroy() {
@@ -176,6 +181,6 @@ export class ImmersiveViewer extends EventHandler {
     this.xr?.off("available", this.changed, this); this.xr?.off("start", this.entered, this); this.xr?.off("end", this.ended, this);
     app.off("destroy", this.destroy, this);
     if (this.active) this.xr?.end();
-    this.ended(); this.off();
+    this.finishEnd(); this.off();
   }
 }

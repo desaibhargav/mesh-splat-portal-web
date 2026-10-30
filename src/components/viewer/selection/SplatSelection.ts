@@ -14,7 +14,7 @@ import type { SelectionArea, SelectionCamera, SelectionRegion, SelectionState, S
 import { SplatPicker, configureSplatPicking } from "./SplatPicker";
 import { SelectionBounds } from "./selectionBounds";
 import { snapshotContains } from "./selectionSnapshot";
-import { sectionTest } from "../section/sectionPlane";
+import { sectionTest, setSectionPlane } from "../section/sectionPlane";
 
 const modifier = {
   glsl: `
@@ -57,19 +57,20 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
 
 export class SplatSelection {
   private surfacePicker: SplatSurfacePicker | null = null;
-  private readonly scopeTexture: Texture;
+  private scopeTexture!: Texture;
   private scope: SelectionScope = null;
   private scopeCount: number | null = null;
-  private readonly texture: Texture;
-  private readonly paintTexture: Texture;
-  private readonly previewTexture: Texture;
+  private texture!: Texture;
+  private paintTexture!: Texture;
+  private previewTexture!: Texture;
+  private visualsReady = false;
   private paintState: PaintState;
   private uploadedColors: Uint32Array;
   private readonly centers: Float32Array;
   private readonly mask: Uint8Array;
   private disposed = false;
   private picker?: SplatPicker;
-  private readonly releasePicking: () => void;
+  private releasePicking?: () => void;
   private selected = 0;
   private isolated = false;
   private selectionAreas: readonly SelectionArea[] = [];
@@ -79,16 +80,24 @@ export class SplatSelection {
   constructor(private readonly component: GSplatComponent, private readonly tint: Color) {
     const resource = component.resource;
     if (!resource?.hasCenters) throw new Error("This splat has no selectable center data.");
-    this.releasePicking = configureSplatPicking(component.system.app);
+    setSectionPlane(component.system.app, null);
     this.centers = resource.centers;
     this.mask = new Uint8Array(this.centers.length / 3);
+    this.paintState = [new Uint32Array(this.mask.length)]; this.uploadedColors = this.paintState[0]!;
+  }
+
+  // A pristine asset uses the native renderer. Allocate edit textures and shader
+  // extensions only when an operation needs them, once per viewer lifetime.
+  private prepareVisuals() {
+    if (this.visualsReady) return;
+    const component = this.component, resource = component.resource!, tint = this.tint;
+    this.releasePicking = configureSplatPicking(component.system.app);
     this.texture = new Texture(resource.device, {
       name: "Portal selection", width: resource.textureDimensions.x, height: resource.textureDimensions.y,
       format: PIXELFORMAT_R8, mipmaps: false, minFilter: FILTER_NEAREST, magFilter: FILTER_NEAREST
     });
     (this.texture.lock() as Uint8Array).fill(0);
     this.texture.unlock();
-    this.paintState = [new Uint32Array(this.mask.length)]; this.uploadedColors = this.paintState[0]!;
     this.paintTexture = new Texture(resource.device, {
       name: "Portal paint", width: resource.textureDimensions.x, height: resource.textureDimensions.y,
       format: PIXELFORMAT_RGBA8, mipmaps: false, minFilter: FILTER_NEAREST, magFilter: FILTER_NEAREST
@@ -113,9 +122,11 @@ export class SplatSelection {
     component.setParameter("portalSelectionVisible", 1);
     component.setParameter("portalIsolate", 0);
     component.setWorkBufferModifier(modifier);
+    this.visualsReady = true;
   }
 
   private setScope(masks: SelectionScope) {
+    this.prepareVisuals();
     this.scope = masks;
     this.scopeCount = masks ? masks[0]!.reduce((n, value) => n + Number(!!value), 0) : null;
     const pixels = this.scopeTexture.lock() as Uint8Array;
@@ -126,7 +137,10 @@ export class SplatSelection {
   get summary(): SelectionSummary {
     return { selected: this.selected, total: this.scopeCount ?? this.centers.length / 3, isolated: this.isolated };
   }
-  updateSection() { this.picker?.invalidate(); }
+  updateSection() {
+    if (this.component.system.app.graphicsDevice.scope.resolve("portalSectionEnabled").getValue()) this.prepareVisuals();
+    this.picker?.invalidate();
+  }
 
   async hitTest(app: AppBase, camera: CameraComponent, region: SelectionRegion): Promise<Uint8Array[]> {
     const matrix = new Mat4().mul2(camera.projectionMatrix, camera.viewMatrix).mul(this.component.entity.getWorldTransform());
@@ -143,6 +157,7 @@ export class SplatSelection {
   }
 
   async primitiveAt(app: AppBase, camera: CameraComponent, u: number, v: number) {
+    this.prepareVisuals();
     this.picker ??= new SplatPicker(app, this.layers);
     const index = await this.picker.pick(camera, u, v);
     return index !== null && index < this.mask.length && (!this.scope || this.scope[0]![index]) ? { part: 0, index } : null;
@@ -199,6 +214,7 @@ export class SplatSelection {
     if (this.preview?.snapshot === area?.snapshot) return;
     this.preview = area;
     const app = this.component.system.app;
+    if (area) this.prepareVisuals();
     app.graphicsDevice.scope.resolve("portalHoverOpacity").setValue(area ? selectionHoverOpacity : 0);
     if (!area) { app.renderNextFrame = true; return; }
     const pixels = this.previewTexture.lock() as Uint8Array;
@@ -256,6 +272,8 @@ export class SplatSelection {
     this.component.system.app.renderNextFrame = true;
     this.surfacePicker?.invalidate();
     this.picker?.invalidate();
+    if (!this.visualsReady && !this.selected && !this.selectionAreas.length && !this.scope) return;
+    this.prepareVisuals();
     const selection = this.texture.lock() as Uint8Array;
     selection.set(this.isolated ? this.mask : visibleSelections(this.selectionAreas, [this.mask.length])[0]!);
     this.texture.unlock();
@@ -287,7 +305,8 @@ export class SplatSelection {
     this.disposed = true;
     this.component.system.app.graphicsDevice.scope.resolve("portalHoverOpacity").setValue(0);
     this.component.system.app.graphicsDevice.scope.resolve("portalHoverMask").setValue(null);
-    this.surfacePicker?.destroy(); this.picker?.destroy(); this.releasePicking();
+    this.surfacePicker?.destroy(); this.picker?.destroy(); this.releasePicking?.();
+    if (!this.visualsReady) return;
     this.component.setWorkBufferModifier(null);
     for (const name of ["portalScope", "portalSelection", "portalSelectionTint", "portalSelectionVisible", "portalIsolate", "portalPaint", "portalPreview"]) this.component.deleteParameter(name);
     this.scopeTexture.destroy(); this.texture.destroy(); this.paintTexture.destroy(); this.previewTexture.destroy();

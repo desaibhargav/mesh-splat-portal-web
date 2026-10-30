@@ -11,7 +11,7 @@ export interface ViewerView {
   fov?: number;
 }
 
-// CameraControls 2.21.4 listens for keyup but does not clear modifiers on window blur.
+// The bundled controller does not clear modifiers on window blur (reviewed in 2.23.3).
 // Release them through the same DOM events its public input source consumes.
 function releaseModifiers(shift = true, control = true) {
   if (shift) {
