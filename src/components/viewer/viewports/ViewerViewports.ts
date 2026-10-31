@@ -99,7 +99,10 @@ export class ViewerViewports extends EventHandler {
       else {
         const current = captureFrame(panel.camera);
         current.origin.copy(frame.origin); current.distance = frame.distance;
-        current.orthoHeight = frame.orthoHeight ?? frame.distance / panel.camera.projectionMatrix.data[5]!;
+        // A perspective camera's dormant orthoHeight (normally 10) is not its
+        // framing. Match its visible span when recalling it into an ortho panel.
+        current.orthoHeight = frame.projection === PROJECTION_ORTHOGRAPHIC && frame.orthoHeight !== undefined ?
+          frame.orthoHeight : frame.distance * Math.tan(frame.fov * Math.PI / 360);
         recallFrame(panel.camera, current);
       }
     }

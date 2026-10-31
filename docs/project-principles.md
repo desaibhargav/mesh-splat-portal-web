@@ -82,7 +82,7 @@ The owner prefers autonomous completion of authorized work without repeated conf
 
 ## Current derivative policy
 
-Serve one derivative per asset at 30% of the validated master, retaining the existing one-million-triangle mesh cap. Automatic LOD and cross-level edit correspondence are intentionally absent from main. The complete experiment is preserved on the `lod` branch of both repositories; generated bundles are archived privately on the Mac under the backend's `data/authorization/lod-archive-20261020/`. Do not reintroduce LOD implicitly. Retain one thumbnail per asset and never publish preservation masters.
+Meshes retain one 30% derivative with the existing one-million-triangle cap; mesh LOD remains disabled. Splats use native PlayCanvas Streamed SOG, generated at 30%, 15% and 7.5% of the validated master, with 30% the finest published level. Reuse native streaming, distance selection and budgets; do not force the finest level while editing. Canonical edit IDs belong to that finest public derivative, with approximate correspondence on coarser levels. Preserve the lazy native inspection path and the portable four-attachment GPU budget when adding edit streams. Retain one thumbnail per asset and never publish preservation masters. The earlier combined mesh/splat experiment remains on the `lod` branches; restore only reviewed, currently authorized parts.
 
 ## Segment workspaces
 

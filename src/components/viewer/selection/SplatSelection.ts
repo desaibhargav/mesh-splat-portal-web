@@ -1,3 +1,4 @@
+import type { StreamedSplatBridge } from "../lod/StreamedSplatBridge";
 import { SplatSurfacePicker } from "./visibility/SplatSurfacePicker";
 import type { SelectionVolume } from "./volume/SelectionVolume";
 import { constrainMask, type SelectionScope } from "./selectionScope";
@@ -77,11 +78,11 @@ export class SplatSelection {
   private currentArea: SelectionArea | null = null;
   private preview: SelectionArea | null = null;
 
-  constructor(private readonly component: GSplatComponent, private readonly tint: Color) {
+  constructor(private readonly component: GSplatComponent, private readonly tint: Color, private readonly stream?: StreamedSplatBridge) {
     const resource = component.resource;
-    if (!resource?.hasCenters) throw new Error("This splat has no selectable center data.");
+    if (!stream && !resource?.hasCenters) throw new Error("This splat has no selectable center data.");
     setSectionPlane(component.system.app, null);
-    this.centers = resource.centers;
+    this.centers = stream?.data.centers ?? resource!.centers;
     this.mask = new Uint8Array(this.centers.length / 3);
     this.paintState = [new Uint32Array(this.mask.length)]; this.uploadedColors = this.paintState[0]!;
   }
@@ -91,25 +92,30 @@ export class SplatSelection {
   private prepareVisuals() {
     if (this.visualsReady) return;
     const component = this.component, resource = component.resource!, tint = this.tint;
-    this.releasePicking = configureSplatPicking(component.system.app);
-    this.texture = new Texture(resource.device, {
-      name: "Portal selection", width: resource.textureDimensions.x, height: resource.textureDimensions.y,
+    const device = component.system.app.graphicsDevice;
+    this.stream?.enable();
+    this.releasePicking = configureSplatPicking(component.system.app, !!this.stream);
+    const width = this.stream ? Math.min(device.maxTextureSize, Math.ceil(Math.sqrt(this.mask.length))) : resource.textureDimensions.x;
+    const height = this.stream ? Math.ceil(this.mask.length / width) : resource.textureDimensions.y;
+    if (height > device.maxTextureSize) throw new Error("Selection exceeds the device texture capacity.");
+    this.texture = new Texture(device, {
+      name: "Portal selection", width, height,
       format: PIXELFORMAT_R8, mipmaps: false, minFilter: FILTER_NEAREST, magFilter: FILTER_NEAREST
     });
     (this.texture.lock() as Uint8Array).fill(0);
     this.texture.unlock();
-    this.paintTexture = new Texture(resource.device, {
-      name: "Portal paint", width: resource.textureDimensions.x, height: resource.textureDimensions.y,
+    this.paintTexture = new Texture(device, {
+      name: "Portal paint", width, height,
       format: PIXELFORMAT_RGBA8, mipmaps: false, minFilter: FILTER_NEAREST, magFilter: FILTER_NEAREST
     });
     (this.paintTexture.lock() as Uint8Array).fill(0); this.paintTexture.unlock();
-    this.previewTexture = new Texture(resource.device, {
-      name: "Portal selection preview", width: resource.textureDimensions.x, height: resource.textureDimensions.y,
+    this.previewTexture = new Texture(device, {
+      name: "Portal selection preview", width, height,
       format: PIXELFORMAT_R8, mipmaps: false, minFilter: FILTER_NEAREST, magFilter: FILTER_NEAREST
     });
     (this.previewTexture.lock() as Uint8Array).fill(0); this.previewTexture.unlock();
-    this.scopeTexture = new Texture(resource.device, {
-      name: "Portal workspace", width: resource.textureDimensions.x, height: resource.textureDimensions.y,
+    this.scopeTexture = new Texture(device, {
+      name: "Portal workspace", width, height,
       format: PIXELFORMAT_R8, mipmaps: false, minFilter: FILTER_NEAREST, magFilter: FILTER_NEAREST
     });
     (this.scopeTexture.lock() as Uint8Array).fill(255); this.scopeTexture.unlock();
@@ -121,7 +127,9 @@ export class SplatSelection {
     component.setParameter("portalSelectionTint", new Float32Array([tint.r, tint.g, tint.b, tint.a]));
     component.setParameter("portalSelectionVisible", 1);
     component.setParameter("portalIsolate", 0);
-    component.setWorkBufferModifier(modifier);
+    if (this.stream) component.setParameter("portalEditWidth", width);
+    component.setWorkBufferModifier(this.stream ? this.stream.modifier(modifier) : modifier);
+    component.workBufferUpdate = WORKBUFFER_UPDATE_ONCE;
     this.visualsReady = true;
   }
 
@@ -143,6 +151,15 @@ export class SplatSelection {
   }
 
   async hitTest(app: AppBase, camera: CameraComponent, region: SelectionRegion): Promise<Uint8Array[]> {
+    if (this.stream) {
+      const fresh = !this.visualsReady;
+      this.prepareVisuals();
+      if (fresh) await this.stream.ready(camera);
+      this.picker ??= new SplatPicker(app, this.layers);
+      const hits = this.stream.selection(await this.picker.capture(camera, region));
+      constrainMask(hits, this.scope?.[0]);
+      return [hits];
+    }
     const matrix = new Mat4().mul2(camera.projectionMatrix, camera.viewMatrix).mul(this.component.entity.getWorldTransform());
     const depth = await captureDepth(app, camera, this.layers.map(id => app.scene.layers.getLayerById(id)!)), hits = new Uint8Array(this.mask.length);
     const visible = depthTest(depth), retained = sectionTest(app, this.centers, this.component.entity.getWorldTransform());
@@ -157,9 +174,13 @@ export class SplatSelection {
   }
 
   async primitiveAt(app: AppBase, camera: CameraComponent, u: number, v: number) {
+    const fresh = !this.visualsReady;
     this.prepareVisuals();
+    if (fresh && this.stream) await this.stream.ready(camera);
     this.picker ??= new SplatPicker(app, this.layers);
-    const index = await this.picker.pick(camera, u, v);
+    if (this.stream) this.picker.invalidate();
+    const picked = await this.picker.pick(camera, u, v);
+    const index = picked !== null && this.stream ? this.stream.canonicalId(picked) : picked;
     return index !== null && index < this.mask.length && (!this.scope || this.scope[0]![index]) ? { part: 0, index } : null;
   }
 
@@ -308,7 +329,7 @@ export class SplatSelection {
     this.surfacePicker?.destroy(); this.picker?.destroy(); this.releasePicking?.();
     if (!this.visualsReady) return;
     this.component.setWorkBufferModifier(null);
-    for (const name of ["portalScope", "portalSelection", "portalSelectionTint", "portalSelectionVisible", "portalIsolate", "portalPaint", "portalPreview"]) this.component.deleteParameter(name);
+    for (const name of ["portalScope", "portalSelection", "portalSelectionTint", "portalSelectionVisible", "portalIsolate", "portalPaint", "portalPreview", "portalEditWidth"]) this.component.deleteParameter(name);
     this.scopeTexture.destroy(); this.texture.destroy(); this.paintTexture.destroy(); this.previewTexture.destroy();
   }
 }

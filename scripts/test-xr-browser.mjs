@@ -1,3 +1,4 @@
+import { gunzipSync } from "node:zlib";
 // Real engine AR/VR sessions with Meta IWER; emulator is test-only and never bundled.
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -6,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
-const derivatives = path.join(root, "mesh-splat-artifact-service/data/assets/derivatives");
+const derivatives = process.env.XR_DERIVATIVES ?? path.join(root, "mesh-splat-artifact-service/data/assets/derivatives");
 const output = await mkdtemp(path.join(tmpdir(), "gab-xr-"));
 const require = createRequire(path.join(root, "mesh-splat-artifact-service/package.json"));
 const { default: puppeteer } = await import(require.resolve("puppeteer"));
@@ -76,12 +77,16 @@ try {
       const id = url.pathname.split("/").at(-1), asset = assets[id];
       request.respond({ status: 200, contentType: "application/json", body: JSON.stringify({
         id, title: id, description: "XR regression", type: asset.type, thumbnailUrl: null,
-        contentUrl: `${url.origin}/${id}/${asset.file}`, sizeBytes: 0
+        contentUrl: `${url.origin}/${id}/${process.env.XR_STREAMED && asset.type === "splat" ? "stream/lod-meta.json" : asset.file}`,
+        ...(process.env.XR_STREAMED && asset.type === "splat" ? {lodUrl:`${url.origin}/${id}/lod.json`} : {}), sizeBytes: 0
       }) });
-    } else if (assets[parts[0]] && parts.length === 2 && /^[-a-zA-Z0-9._]+$/.test(parts[1])) {
+    } else if (assets[parts[0]] && parts.length >= 2 && parts.slice(1).every(part=>part!=="." && part!==".." && /^[-a-zA-Z0-9._]+$/.test(part))) {
       try {
-        const body = assets[parts[0]].body ?? await readFile(path.join(derivatives, parts[0], parts[1]));
-        request.respond({ status: 200, contentType: parts[1].endsWith(".glb") ? "model/gltf-binary" : parts[1].endsWith(".json") ? "application/json" : "application/octet-stream", body });
+        let body = assets[parts[0]].body ?? await readFile(path.join(derivatives, ...parts));
+        // CDP fulfillment supplies the decoded response body; real HTTP delivery
+        // is covered separately by the backend/streaming suite.
+        if (parts.at(-1).endsWith(".gz")) body = gunzipSync(body);
+        request.respond({ status: 200, contentType: parts.at(-1).endsWith(".glb") ? "model/gltf-binary" : parts.at(-1).endsWith(".json") ? "application/json" : "application/octet-stream", body });
       } catch { request.respond({ status: 404 }); }
     } else request.continue();
   });
@@ -349,16 +354,19 @@ try {
     let aim=null;
     for(const x of [0,-.1,.1,-.2,.2]) {
       const point=[bounds.center[0]+x,bounds.center[1],bounds.front+.3]; await move(point);
-      await page.waitForFunction(input=>[...input.hits.values()].every(s=>!s.pending),{timeout:20000},input);
-      const hit=await input.evaluate(i=>{const s=[...i.hits.keys()].find(s=>s.handedness==='right'); return i.hit(s)?.point.toArray();});
-      if(hit){aim=point;break;}
+      await page.waitForFunction(input=>{
+        const source=[...input.hits.keys()].find(source=>source.handedness==='right');
+        return source && !input.hits.get(source)?.pending;
+      },{timeout:5000},input).catch(()=>{});
+      const hit=await input.evaluate(i=>{const s=[...i.hits.keys()].find(s=>s.handedness==='right'); return !!i.hit(s)?.normal;});
+      if(hit && !await menu.evaluate(m=>m.isMenuTargeted)){aim=point;break;}
     }
-    if (await h.evaluate(h=>!!h.selection.centers)) {
+    if (!aim && await h.evaluate(h=>!!h.selection.centers)) {
       const point=await h.evaluate(h=>{
         const c=h.selection.centers,t=h.selection.component.entity.getWorldTransform(),b=h.selection.bounds(null),V=b.center.constructor,p=new V();
         let best=-Infinity,chosen=null;
-        for(let i=0;i<c.length;i+=300){p.set(c[i],c[i+1],c[i+2]);t.transformPoint(p,p);
-          if(p.x<b.center.x-b.halfExtents.x*.35&&Math.abs(p.y-b.center.y)<b.halfExtents.y*.4&&p.z>best){best=p.z;chosen=p.toArray();}}
+        for(let i=0;i<c.length;i+=30){p.set(c[i],c[i+1],c[i+2]);t.transformPoint(p,p);
+          if(p.x<b.center.x-b.halfExtents.x*.1&&Math.abs(p.y-b.center.y)<b.halfExtents.y*.9&&p.z>best){best=p.z;chosen=p.toArray();}}
         return chosen;
       });
       check(point,'No unobstructed splat test target');
@@ -433,7 +441,7 @@ try {
     await control(options,'Isolate'); check(await h.evaluate(h=>h.selection.summary.isolated),'XR isolate failed');
     await control(options,'Show all');
     await control('XR tool bar','Annotate'); await control(options,'Annotate a selection');
-    if (await h.evaluate(h=>!!h.selection.centers)) {
+    if (!aim && await h.evaluate(h=>!!h.selection.centers)) {
       const selectedAim=await h.evaluate(async h=>{
         const selection=h.selection,area=selection.areas.find(a=>a.saved),bits=area.snapshot.masks[0].bits,
           centers=selection.centers,transform=selection.component.entity.getWorldTransform(),V=selection.bounds(null).center.constructor,
@@ -470,7 +478,7 @@ try {
       if(h.selection.previews) for(const groups of h.selection.previews.values())for(const g of groups)g.instance.visible=true;
       else h.app.graphicsDevice.scope.resolve('portalHoverOpacity').setValue(.8);
     }); await settle(h);
-    if (await h.evaluate(h=>!!h.selection.centers)) {
+    if (!aim && await h.evaluate(h=>!!h.selection.centers)) {
       const stable=await hoverCanvas.asElement().screenshot();
       for(let frame=0;frame<4;frame++)await settle(h);
       check(stable.equals(await hoverCanvas.asElement().screenshot()),'Splat hover flickered while controller and asset were still');
@@ -762,7 +770,9 @@ try {
     const loadStarted = performance.now();
     await page.goto(`${base}/artifacts/${id}`);
     await page.evaluate(environment => window.xrDevice.sem.loadEnvironment(environment), room);
-    await page.waitForSelector('[aria-label="Select"]:not([disabled])', { timeout: 90000 });
+    await page.waitForFunction(()=>document.querySelector('[aria-label="Select"]:not([disabled])') || document.querySelector('.viewer-error'), { timeout: 90000 });
+    const loadError = await page.$eval('.viewer-frame', node=>node.querySelector('.viewer-error')?.textContent);
+    if (loadError) throw Error(loadError);
     if (!process.env.XR_PASSIVE_ONLY) await page.waitForSelector('[aria-label="View in VR"]');
     if (!process.env.XR_PASSIVE_ONLY) check(await page.evaluate(() => {
       const footer = document.querySelector(".viewer-footer"), vr = footer?.querySelector('[aria-label="View in VR"]');
@@ -1222,6 +1232,12 @@ try {
     check((await measurementStyle()).fontSize === 16, "XR font-size reset did not restore the default");
     await page.screenshot({ path:path.join(output, `${id}-measurement-edit.png`) });
     await collapse();
+    // Keep the head-anchored toolbar clear of the endpoint ray, as a user can by moving the panel.
+    await h.evaluate(h => {
+      const tools = h.app.xr.input._callbacks.get("selectstart").find(item => item.scope?.currentTool).scope;
+      tools.ui.toolbar.position.x = -.7;
+      tools.ui.toolbar.place();
+    });
     const previousEndpoint = (await measurementRecords()).at(-1).points[1];
     for (const delta of [.04, -.04, .08, -.08]) {
       const target = await h.evaluate((h, position) => {

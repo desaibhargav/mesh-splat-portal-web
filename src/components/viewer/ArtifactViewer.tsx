@@ -55,7 +55,7 @@ export function ArtifactViewer({ artifact }: { artifact: Artifact }) {
         <Application graphicsDeviceOptions={{ antialias: artifact.type === "mesh", xrCompatible: true }}>
           <ViewerRenderPolicy scope={frame} handle={selection} workspaces={workspaces} tool={tool} splat={artifact.type === "splat"} />
           {artifact.type === "mesh" ? <MeshViewer url={artifact.contentUrl} onStatus={setStatus} onSelectionReady={setSelection} /> :
-            <SplatViewer url={artifact.contentUrl} onStatus={setStatus} onSelectionReady={setSelection} />}
+            <SplatViewer url={artifact.contentUrl} lodUrl={artifact.lodUrl} onStatus={setStatus} onSelectionReady={setSelection} />}
         </Application>
       </div>
       {selection && <ViewportLayout handle={selection} />}

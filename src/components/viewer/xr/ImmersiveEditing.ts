@@ -262,7 +262,11 @@ export class ImmersiveEditing {
       surfacePoints: [anchor.toArray() as [number, number, number]], radius: Math.max(.005, worldDiameter / 2),
       document: this.workspaces.current };
     const rectStart = this.handle.app.graphicsDevice.clientRect;
-    camera.worldToScreen(anchor, this.screen);
+    // Start the outline in the same ray/plane frame used by subsequent controller samples.
+    // Splat surface estimates can differ slightly from the ray, otherwise leaving a tiny
+    // leading spike that turns an ordinary lasso into a self-intersecting polygon.
+    this.ray.set(source.getOrigin(), source.getDirection());
+    camera.worldToScreen(this.plane.intersectsRay(this.ray, this.point) ? this.point : anchor, this.screen);
     this.gesture.points.push({ x: this.screen.x / rectStart.width * 512, y: this.screen.y / rectStart.height * 512 });
     if (this.shape !== "brush") this.showGestureVolume();
     this.track(source);

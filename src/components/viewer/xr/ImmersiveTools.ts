@@ -102,13 +102,15 @@ export class ImmersiveTools {
     if (!this.tapping) return;
     this.tapOrigin.copy(source.getPosition() ?? source.getOrigin());
     const record = this.current();
+    let nearest = .025;
     if (record?.points.length === 2) for (const index of [0, 1] as const) {
       this.handle.space.toWorld(record.points[index]!, this.endpoint);
       this.rayPoint.sub2(this.endpoint, source.getOrigin());
       const distance = this.rayPoint.dot(source.getDirection());
       this.rayPoint.copy(source.getDirection()).mulScalar(distance).add(source.getOrigin());
-      if (distance > 0 && this.rayPoint.distance(this.endpoint) < .025) {
-        this.moving = index; this.armed = true; break;
+      const separation = this.rayPoint.distance(this.endpoint);
+      if (distance > 0 && separation < nearest) {
+        nearest = separation; this.moving = index; this.armed = true;
       }
     }
   }

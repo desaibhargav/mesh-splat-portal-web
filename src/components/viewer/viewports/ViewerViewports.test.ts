@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { EventHandler, Vec4, type AppBase, type CameraComponent, type Entity } from "playcanvas";
+import { EventHandler, PROJECTION_ORTHOGRAPHIC, PROJECTION_PERSPECTIVE, Quat, Vec3, Vec4, type AppBase, type CameraComponent, type Entity } from "playcanvas";
 import { ViewerViewports, viewportContains, viewportPoint } from "./ViewerViewports";
 
 it("routes canvas coordinates into exactly one panel with top-origin pointer coordinates", () => {
@@ -36,4 +36,21 @@ it("uses only the immersive camera during XR and restores the desktop panel arra
   expect(rig.split).toBe(true); expect(rig.active).toBe(other);
   expect(primary.enabled).toBe(true); expect(other.camera.enabled).toBe(true);
   expect(other.camera.rect.z).toBe(.5);
+});
+
+it("recalls perspective framing in orthographic panels without using its dormant orthographic height", () => {
+  const makeCamera = (projection: number) => {
+    const controls = { focusPoint: new Vec3(), restorePose: () => {}, enabled: true };
+    return { projection, orthoHeight: 10, fov: 45, enabled: true, layers: [0],
+      entity: { script: { get: () => controls }, getPosition: () => new Vec3(0,0,2), getRotation: () => new Quat() }
+    } as unknown as CameraComponent;
+  };
+  const app = new EventHandler() as AppBase, perspective = makeCamera(PROJECTION_PERSPECTIVE);
+  const rig = new ViewerViewports(app, perspective), top = makeCamera(PROJECTION_ORTHOGRAPHIC);
+  rig.panels.push({id:"top",label:"Top",camera:top}); rig.split = true;
+  rig.restore({origin:new Vec3(),rotation:new Quat(),distance:2,fov:45,projection:PROJECTION_PERSPECTIVE,orthoHeight:10});
+  expect(top.projection).toBe(PROJECTION_ORTHOGRAPHIC);
+  expect(top.orthoHeight).toBeCloseTo(2*Math.tan(Math.PI/8));
+  rig.restore({origin:new Vec3(),rotation:new Quat(),distance:2,fov:45,projection:PROJECTION_ORTHOGRAPHIC,orthoHeight:.3});
+  expect(top.orthoHeight).toBe(.3);
 });

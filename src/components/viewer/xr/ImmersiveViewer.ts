@@ -63,7 +63,7 @@ export class ImmersiveViewer extends EventHandler {
     const cameraLayers = [...camera.layers];
     const width = app.graphicsDevice.width, height = app.graphicsDevice.height;
     const ambient = app.scene.ambientLight.clone();
-    const radialSorting = app.scene.gsplat.radialSorting;
+    const radialSorting = app.scene.gsplat.radialSorting, behindPenalty = app.scene.gsplat.lodBehindPenalty;
     const rig = new Entity("Immersive viewing space");
     app.root.addChild(rig);
     if (this.isSplat) {
@@ -90,6 +90,7 @@ export class ImmersiveViewer extends EventHandler {
     this.restore = () => {
       xr.off("update", place);
       app.scene.gsplat.radialSorting = radialSorting;
+      app.scene.gsplat.lodBehindPenalty = behindPenalty;
       if (!this.disposed) {
         parent.addChild(camera.entity); camera.entity.setLocalScale(scale);
         camera.nearClip = near; camera.farClip = far; camera.clearColor = clearColor; camera.layers = cameraLayers;
@@ -111,7 +112,7 @@ export class ImmersiveViewer extends EventHandler {
     camera.nearClip = .01; camera.farClip = 100;
     // Native distance sorting avoids re-sorting every Gaussian just because the
     // headset turns. Translation and artifact changes still trigger sorting.
-    if (this.isSplat) app.scene.gsplat.radialSorting = true;
+    if (this.isSplat) { app.scene.gsplat.radialSorting = true; app.scene.gsplat.lodBehindPenalty = 1; }
     if (type === XRTYPE_AR) camera.clearColor = clearColor.clone().set(0, 0, 0, 0);
     xr.once("update", place);
     this.pending = true; this.error = null; this.changed();

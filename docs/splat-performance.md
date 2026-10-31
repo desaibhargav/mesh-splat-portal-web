@@ -4,7 +4,7 @@ The reported Quest 3 problem affects the ordinary splat webpage and immersive AR
 
 ## Measured workloads
 
-The necklace `2022-01-0056-model` contains 1,500,020 Gaussians with three spherical-harmonic bands. The portal now uses PlayCanvas 2.23.3, unified splat rendering, WebGL 2, and native worker sorting. Multisample antialiasing is disabled for splats. No LOD or lower-density XR derivative is active. The initial comparison below used 2.21.4 before the resource/lifecycle corrections described next.
+The necklace `2022-01-0056-model` contains 1,500,020 Gaussians with three spherical-harmonic bands. The portal now uses PlayCanvas 2.23.3, unified splat rendering, WebGL 2, and native worker sorting. Multisample antialiasing is disabled for splats. The fixed-SOG baseline below predates the native Streamed SOG restoration described at the end of this report. The initial comparison below used 2.21.4 before the resource/lifecycle corrections described next.
 
 ## Confirmed application and integration faults
 
@@ -89,3 +89,15 @@ XR zoom previously clamped presentation scale to ¼×–4× the initial placemen
 The browser regression uses actual wheel input to pass the former desktop close-inspection stop and holds the controller thumbstick past the former 4× XR limit on both formats, in VR and AR. The unit regression checks AR floor preservation and Reset after 16× zoom, and rejects nonfinite/nonpositive factors.
 
 Sources: [PlayCanvas renderers](https://developer.playcanvas.com/user-manual/gaussian-splatting/rendering-architecture/renderers/), [radial sorting API](https://api.playcanvas.com/engine/classes/GSplatParams.html#radialsorting), [Meta browser debugging](https://developers.meta.com/vr/documentation/web/browser-remote-debugging/).
+
+## Native streamed SOG restoration
+
+Splats now have three independently decimated native levels: 30%, 15% and 7.5% of the validated master. The finest public detail ceiling is unchanged. SplatTransform builds the spatial tree and SOG chunks; PlayCanvas owns loading, per-region LOD, worker sorting, caches and drawing. Native budget-limit mode lets distant assets use less than the global budget instead of filling it unnecessarily. Distance thresholds track asset bounds, and XR disables behind-camera LOD penalties so turning around does not expose artificially degraded regions. Mesh LOD remains disabled. No foveation or framebuffer-resolution reduction is introduced.
+
+Native rendering can start while the canonical edit data loads. Mapping uses SciPy cKDTree offline; no nearest-neighbour search runs on the UI thread during navigation. Masks and paint remain in the finest published document; coarse geometry samples those records. Boundaries are approximate at coarse levels, and measurements remain source-space anchors. The viewer retains the existing lazy edit textures. First-use picking waits for the native completed frame and postrender, rather than reading a new ID target before it is populated.
+
+The bridge packs canonical and picking IDs into one RG32U resource stream and one RG32U work-buffer attachment. Its custom picking shader uses that stream directly, avoiding a redundant native component-ID attachment. The native compact work buffer plus this stream uses four color attachments, the portable WebGL2 minimum. Review this pinned shader adapter on engine upgrades. Pending native-ready waits and streamed metadata requests are cancelled when their owner closes.
+
+The streamed composition test also exposed a saved-view framing fault: a perspective camera's unused orthoHeight=10 was applied to every orthographic panel. Restoring a perspective view now derives each orthographic span from the saved distance and field of view, while saved orthographic views retain their explicit height. This is covered by a unit test and view → section → measurement in four panels.
+
+Generation, local browser frame times and emulated stereo/session tests do not establish the improvement on the physical Quest. Record the actual headset result after deployment before calling the lag or zigzag artifact resolved.
