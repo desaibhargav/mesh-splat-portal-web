@@ -507,7 +507,22 @@ try {
     await move([markerWorld[0],markerWorld[1],bounds.front+.3]);
     await page.evaluate(()=>window.xrDevice.controllers.right.updateButtonValue('trigger',1)); await settle(h);
     check(await menu.evaluate(m=>m.editing.dragging),'XR marker did not grab under trigger');
-    await page.evaluate(()=>window.xrDevice.controllers.right.position.x+=.03); await settle(h);
+    const markerDragOrigin=await page.evaluate(()=>{
+      const p=window.xrDevice.controllers.right.position;return [p.x,p.y,p.z];
+    });
+    let markerDestination=false;
+    // A point cloud has gaps: release on a confirmed different surface, rather
+    // than assuming a fixed controller displacement always intersects one.
+    for(const [dx,dy] of [[.03,0],[-.03,0],[0,.03],[0,-.03],[.06,0],[-.06,0]]) {
+      await page.evaluate(([origin,dx,dy])=>window.xrDevice.controllers.right.position.set(origin[0]+dx,origin[1]+dy,origin[2]),[markerDragOrigin,dx,dy]);
+      await settle(h);
+      const destination=await input.evaluate(async i=>{
+        const source=[...i.hits.keys()].find(s=>s.handedness==='right');
+        return (await i.pick(source))?.point.toArray();
+      });
+      if(destination && destination.some((v,i)=>Math.abs(v-marker[i])>1e-4)){markerDestination=true;break;}
+    }
+    check(markerDestination,'No distinct surface found for XR marker drag');
     await page.evaluate(()=>window.xrDevice.controllers.right.updateButtonValue('trigger',0)); await settle(h);
     await page.waitForFunction(menu=>!menu.editing.busy,{},menu);
     check(await menu.evaluate(m=>m.editing.step==='details'),'XR marker drag failed to finish');
@@ -789,6 +804,46 @@ try {
     if (assets[id].type === 'splat') {
       check(await h.evaluate(h => !h.app.scene.gsplat.enableIds && !h.app.scene.gsplat.material.shaderChunks.glsl.get('gsplatVS') &&
         !h.selection.component.getParameter('portalPaint')), 'A pristine splat eagerly installed edit textures/shaders');
+    }
+    if (process.env.XR_PANEL_EDGES_ONLY) {
+      for (const label of ['View in VR', 'View in your room']) {
+        await page.click(`[aria-label="${label}"]`);
+        await page.waitForFunction(() => document.querySelector('.viewer-frame')?.dataset.immersive === 'true');
+        await settle(h);
+        const coverage = await h.evaluate(h => {
+          const tools = h.app.xr.input._callbacks.get('selectstart').find(item => item.scope?.currentTool).scope;
+          tools.setTool('measure');
+          const panels = [tools.ui.toolbar, tools.ui.options];
+          return panels.map(panel => {
+            panel.screen.setLocalEulerAngles(0, 20, 12);
+            // Exercise the raised control's separate native image quad too.
+            panel.hovered = panel.controls.find(control => control.activate)?.label;
+            panel.redraw();
+            const sample = canvas => {
+              const ctx = canvas.getContext('2d'), w=canvas.width, height=canvas.height;
+              const pixels=ctx.getImageData(0,0,w,height).data;
+              let opaque=0,partial=0;
+              for(let i=3;i<pixels.length;i+=4){if(pixels[i]===255)opaque++;else if(pixels[i]>0)partial++;}
+              return { outer:[ctx.getImageData(w/2,0,1,1).data[3],ctx.getImageData(0,height/2,1,1).data[3],
+                ctx.getImageData(w/2,height-1,1,1).data[3],ctx.getImageData(w-1,height/2,1,1).data[3]],
+                opaque,partial,total:w*height };
+            };
+            return { name:panel.entity.name, outer:sample(panel.canvas), raised:sample(panel.hoverCanvas),
+              filter:panel.texture.minFilter,mipmaps:panel.texture.mipmaps };
+          });
+        });
+        await settle(h);
+        await page.screenshot({path:path.join(output,`${id}-${label.replaceAll(' ','-')}-panel-edges.png`)});
+        console.log('XR PANEL COVERAGE',id,label,JSON.stringify(coverage));
+        check(coverage.every(panel=>[panel.outer,panel.raised].every(sample=>
+          sample.outer.every(alpha=>alpha===0) && sample.partial>0 && sample.opaque>0 &&
+          sample.opaque+sample.partial>sample.total*.3)),
+          'XR panels need a transparent margin, filtered coverage, and visible contents');
+        await h.evaluate(async h => { await new Promise(resolve => h.app.xr.end(resolve)); });
+        await page.waitForFunction(() => document.querySelector('.viewer-frame')?.dataset.immersive === 'false');
+      }
+      console.log('PASS',id,'VR/AR filtered panel edges and raised controls');
+      continue;
     }
     if (process.env.XR_RENDERING_ONLY) {
       let controllerOwner;

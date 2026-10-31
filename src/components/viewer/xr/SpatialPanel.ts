@@ -96,6 +96,7 @@ export class SpatialPanel {
       ctx.beginPath(); ctx.roundRect(hovered.x + 1.5, hovered.y + 1.5,
         hovered.width - 3, hovered.height - 3, 3); ctx.fill(); ctx.stroke(); ctx.restore();
     }
+    softenPanelEdges(this.canvas);
     this.texture.resize(this.canvas.width, this.canvas.height);
     this.texture.setSource(this.canvas); this.app.renderNextFrame = true;
     this.hoverEntity.enabled = !!hovered;
@@ -103,6 +104,7 @@ export class SpatialPanel {
       this.hoverCanvas.width = hovered.width * 2; this.hoverCanvas.height = hovered.height * 2;
       this.hoverCanvas.getContext("2d")!.drawImage(this.canvas, hovered.x * 2, hovered.y * 2,
         hovered.width * 2, hovered.height * 2, 0, 0, this.hoverCanvas.width, this.hoverCanvas.height);
+      softenPanelEdges(this.hoverCanvas);
       this.hoverTexture.resize(this.hoverCanvas.width, this.hoverCanvas.height);
       this.hoverTexture.setSource(this.hoverCanvas);
       this.hoverEntity.element!.width = hovered.width; this.hoverEntity.element!.height = hovered.height;
@@ -191,6 +193,20 @@ export class SpatialPanel {
   private stopMoving(source: XrInputSource) { if (source === this.moveSource) this.moveSource = null; }
   destroy() { this.app.xr?.off("update", this.updateHover, this); this.app.xr?.input.off("selectend", this.stopMoving, this);
     this.screen.destroy(); this.texture.destroy(); this.hoverTexture.destroy(); }
+}
+
+// Keep the visible silhouette inside the image quad so the native texture filter
+// smooths its boundary even on XR framebuffers without multisampling. This runs
+// only when panel contents change, and covers raised controls as well as panels.
+function softenPanelEdges(canvas: HTMLCanvasElement) {
+  const ctx = canvas.getContext("2d")!;
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = "destination-in";
+  ctx.fillStyle = "#fff";
+  ctx.beginPath(); ctx.roundRect(2, 2, canvas.width - 4, canvas.height - 4, 4); ctx.fill();
+  ctx.restore();
 }
 
 // @playcanvas/react does not install ElementInput. Own it only for this session,
