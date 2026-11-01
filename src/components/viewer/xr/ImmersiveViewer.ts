@@ -82,13 +82,14 @@ export class ImmersiveViewer extends EventHandler {
     const input = new ImmersiveInput(app, rig, scene.root, this.handle);
     const placement = type === XRTYPE_AR ? new ImmersivePlacement(app, scene, camera.entity) : null;
     const menu = new ImmersiveTools(this.handle, () => this.workspaces.current.measurement,
-      () => this.workspaces.fire("change"), () => !placement || placement.placed, input, this.workspaces);
+      () => this.workspaces.fire("change"), () => !placement || placement.placed, input, this.workspaces, scene);
     this.toolMenu = menu;
     const gestures = new ImmersiveGestures(app, camera.entity, scene, () => !placement || placement.placed,
       () => menu.blocksPan, () => menu.isArmed);
     const place = () => { if (type === XRTYPE_VR) scene.place(camera.entity); };
     this.restore = () => {
       xr.off("update", place);
+      gestures.destroy(); menu.destroy(); this.toolMenu = null;
       app.scene.gsplat.radialSorting = radialSorting;
       app.scene.gsplat.lodBehindPenalty = behindPenalty;
       if (!this.disposed) {
@@ -98,7 +99,6 @@ export class ImmersiveViewer extends EventHandler {
         app.renderNextFrame = true;
         app.graphicsDevice.setResolution(width, height);
       }
-      gestures.destroy(); menu.destroy(); this.toolMenu = null;
       placement?.destroy(); input.destroy(); scene.destroy(); rig.destroy(); this.activeScene = null;
       app.scene.ambientLight = ambient;
     };

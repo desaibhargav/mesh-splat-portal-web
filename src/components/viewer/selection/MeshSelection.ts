@@ -1,6 +1,6 @@
 import { constrainMask, type SelectionScope } from "./selectionScope";
 import {
-  BLEND_NORMAL, CULLFACE_NONE, Color, Entity, Mat4, Mesh, MeshInstance, PRIMITIVE_TRIANGLES, SEMANTIC_POSITION, StandardMaterial,
+  BLEND_NORMAL, BoundingBox, CULLFACE_NONE, Color, Entity, Mat4, Mesh, MeshInstance, PRIMITIVE_TRIANGLES, SEMANTIC_POSITION, StandardMaterial,
   TYPE_INT8, TYPE_INT16, TYPE_UINT8, TYPE_UINT16, Vec3, type VertexBuffer,
   type AppBase, type CameraComponent, type Layer, type RenderComponent
 } from "playcanvas";
@@ -240,18 +240,28 @@ export class MeshSelection {
     this.currentArea = currentSelectionArea(this.state, this.selectionAreas);
     this.refresh(); return this.summary;
   }
-  bounds(state: SelectionState | null = this.state) {
+  bounds(state: SelectionState | null = this.state, relativeTo?: Entity) {
     const bounds = new SelectionBounds();
+    const inverse = relativeTo ? new Mat4().invert(relativeTo.getWorldTransform()) : null;
+    const model = (part: typeof this.parts[number]) => inverse ? new Mat4().mul2(inverse, part.source.node.getWorldTransform()) : part.source.node.getWorldTransform();
     if ((state === null || !state.masks.some(mask => mask.some(Boolean))) && this.scope) state = { masks: [...this.scope], isolated: false };
     const selected = state !== null && state.masks.some(mask => mask.some(Boolean));
     if (!selected) {
+      if (inverse) {
+        let whole: BoundingBox | null = null;
+        for (const part of this.parts) {
+          const box = new BoundingBox(); box.setFromTransformedAabb(part.source.mesh.aabb, model(part));
+          if (whole) whole.add(box); else whole = box;
+        }
+        return whole;
+      }
       const whole = this.parts[0]?.source.aabb.clone();
       if (!whole) return null;
       for (let i = 1; i < this.parts.length; i++) whole.add(this.parts[i]!.source.aabb);
       return whole;
     }
     for (const [partIndex, part] of this.parts.entries()) {
-      const transform = part.source.node.getWorldTransform();
+      const transform = model(part);
       const mask = state?.masks[partIndex];
       for (let face = 0; face < part.mask.length; face++) if (!selected || mask![face]) {
         for (let corner = 0; corner < 3; corner++) bounds.add(part.positions, part.indices[face * 3 + corner]! * 3, transform);

@@ -1,0 +1,56 @@
+import { expect, it } from "vitest";
+import { BoundingBox, Entity, EventHandler, NullGraphicsDevice, Quat, Vec3, Vec4 } from "playcanvas";
+import { ViewerSpace } from "../ViewerSpace";
+import { SavedPresets } from "../presets/SavedPresets";
+import type { SelectionHandle } from "../selection/types";
+import type { NamedView } from "../views/viewFrame";
+import type { NamedSection } from "./SectionControls";
+import { SectionDocument } from "./SectionDocument";
+import { ImmersiveScene } from "../xr/ImmersiveScene";
+
+it("shares section drafts, saved recall and gesture undo without redundant geometry updates", () => {
+  const device = new NullGraphicsDevice({} as HTMLCanvasElement);
+  const app = Object.assign(new EventHandler(), { root: new Entity(), graphicsDevice: device });
+  const asset = new Entity(); app.root.addChild(asset);
+  const space = new ViewerSpace(asset,new Vec3());
+  let updates=0;
+  const bounds=new BoundingBox(new Vec3(),new Vec3(2,3,1));
+  const handle={app,space,selection:{bounds:()=>bounds.clone(),updateSection:()=>updates++}} as unknown as SelectionHandle;
+  const model=new SectionDocument(handle,new SavedPresets<NamedSection>(),new SavedPresets<NamedView>());
+  model.adapter={capture:()=>({id:0,name:"",assetRotation:space.rotation,frame:{origin:new Vec3(),rotation:new Quat(),distance:10,fov:45}}),restore:()=>{},look:()=>{}};
+  const detach=model.attach(); const originalUpdates=updates;
+  space.setRotation(new Quat().setFromEulerAngles(0,30,0));
+  expect(updates).toBe(originalUpdates);
+  model.enter(); model.enable(true); model.name("Inside"); model.save();
+  model.begin(); model.options({offset:.2}); model.options({offset:.4}); model.commit();
+  model.undo(); expect(model.state.options.offset).toBe(0);
+  model.redo(); expect(model.state.options.offset).toBe(.4);
+  model.leave(); expect(model.state.options.offset).toBe(0); expect(model.state.enabled).toBe(true);
+  model.sections.open(1); model.name("Updated"); model.options({offset:.25}); model.save();
+  expect(model.sections.records).toHaveLength(1); expect(model.sections.records[0]!.options.offset).toBe(.25);
+  model.sections.rename(1,"Shared name"); model.sections.open(1); expect(model.state.name).toBe("Shared name");
+  model.sections.close(); model.enter(); model.enable(true); model.options({offset:-.5}); model.leave();
+  expect(model.state.enabled).toBe(false);
+  detach(); space.destroy(); device.destroy();
+});
+
+it("updates an XR cut while its presentation is stationary and preserves source orientation on exit", () => {
+  const device=new NullGraphicsDevice({} as HTMLCanvasElement);
+  const app=Object.assign(new EventHandler(),{root:new Entity(),graphicsDevice:device});
+  const asset=new Entity();app.root.addChild(asset);const space=new ViewerSpace(asset,new Vec3());
+  const handle={app,space,selection:{bounds:()=>new BoundingBox(new Vec3(),new Vec3(1,1,1)),updateSection:()=>{}}} as unknown as SelectionHandle;
+  const model=new SectionDocument(handle,new SavedPresets<NamedSection>(),new SavedPresets<NamedView>());
+  model.adapter={capture:()=>({id:0,name:"",assetRotation:space.rotation,frame:{origin:new Vec3(),rotation:new Quat(),distance:3,fov:45}}),restore:()=>{},look:()=>{}};
+  const detach=model.attach();model.enter();model.enable(true);
+  const scene=new ImmersiveScene(handle,new BoundingBox(new Vec3(),new Vec3(1,1,1)));
+  scene.root.setPosition(1,2,-3);scene.root.setEulerAngles(20,35,10);
+  const orientation=new Quat().setFromEulerAngles(10,25,5);space.setRotation(orientation);
+  expect(space.rotation.equalsApprox(orientation)).toBe(true);
+  expect(space.root.getLocalPosition().equals(Vec3.ZERO)).toBe(true);
+  model.options({offset:.5,tiltX:25});
+  const plane=device.scope.resolve("portalSectionPlane").getValue() as Float32Array;
+  const point=scene.root.getWorldTransform().transformPoint(model.frame!.origin);
+  expect(new Vec4(...plane as unknown as [number,number,number,number]).dot(new Vec4(point.x,point.y,point.z,1))).toBeCloseTo(0,5);
+  scene.destroy();expect(space.rotation.equalsApprox(orientation)).toBe(true);
+  detach();space.destroy();device.destroy();
+});

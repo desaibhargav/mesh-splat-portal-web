@@ -124,7 +124,8 @@ function WorkspaceTools({ handle, tool, onToolChange, disabled, captureName, wor
       if (!undo && !focus) return;
       key.preventDefault(); key.stopPropagation();
       if (unavailable) return;
-      if (undo) setSummary(key.shiftKey ? history.redo() : history.undo());
+      if (undo && tool === "section") { key.shiftKey ? document?.section.redo() : document?.section.undo(); }
+      else if (undo) setSummary(key.shiftKey ? history.redo() : history.undo());
       else {
         const bounds = handle.selection.bounds(selecting ? undefined : null);
         if (bounds) handle.viewports.focus(bounds);
@@ -132,7 +133,7 @@ function WorkspaceTools({ handle, tool, onToolChange, disabled, captureName, wor
     };
     frame.addEventListener("keydown", onKeyDown);
     return () => frame.removeEventListener("keydown", onKeyDown);
-  }, [handle, history, unavailable, tool]);
+  }, [handle, history, unavailable, tool, document]);
   const onSelect = useCallback(async (region: SelectionRegion, operation: SelectionOperation) => {
     if (!handle || !history) return;
     const token = generation.current;
@@ -310,7 +311,7 @@ function WorkspaceTools({ handle, tool, onToolChange, disabled, captureName, wor
       onChange={documentChanged} />}
     {document?.visible && handle && measurement && <MeasurementControls openRequest={openRequest?.tool === "measure" ? openRequest : null} handle={handle} measurement={measurement} active={tool === "measure" && !disabled} onChange={documentChanged} />}
     {document?.visible && handle && views && <ViewControls openRequest={openRequest?.tool === "views" ? openRequest : null} handle={handle} active={tool === "views" && !disabled} views={views} />}
-    {document?.visible && handle && views && sections && <SectionControls openRequest={openRequest?.tool === "section" ? openRequest : null} handle={handle} active={tool === "section" && !disabled} views={views.records} sections={sections} session={document.sectionSession} />}
+    {document?.visible && handle && views && sections && <SectionControls openRequest={openRequest?.tool === "section" ? openRequest : null} handle={handle} active={tool === "section" && !disabled} model={document.section} />}
     {document?.visible && handle && annotations && <CaptureControls handle={handle} annotations={annotations.records}
       active={tool === "capture" && !disabled} initialName={captureName} />}
   </>;

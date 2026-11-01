@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
-import { BoundingBox, GraphicsDevice, Mat4, NullGraphicsDevice, Quat, Vec3, type AppBase } from "playcanvas";
-import { cutawayView, planeCoefficients, sectionFrame, sectionTest, setSectionPlane } from "./sectionPlane";
+import { BoundingBox, EventHandler, GraphicsDevice, Mat4, NullGraphicsDevice, Quat, Vec3, type AppBase } from "playcanvas";
+import { cutawayView, planeCoefficients, sectionFrame, sectionTilts, sectionTest, setSectionPlane } from "./sectionPlane";
 
 import { framePose } from "../views/viewFrame";
 
@@ -32,7 +32,7 @@ it("offset limits sweep beyond every bounds corner for arbitrary references and 
 
 it("X-ray classification uses the same world plane on transformed geometry", () => {
   const device: GraphicsDevice = new NullGraphicsDevice({} as HTMLCanvasElement);
-  const app = { graphicsDevice: device } as AppBase;
+  const app = Object.assign(new EventHandler(), { graphicsDevice: device }) as AppBase;
   const transform = new Mat4().setTRS(new Vec3(1, 2, 3), new Quat().setFromEulerAngles(0, 0, 90), new Vec3(2, 3, 4));
   const positions = new Float32Array([0, 1, 0, 0, -1, 0]);
   setSectionPlane(app, new Float32Array([1, 0, 0, 0]));
@@ -41,6 +41,16 @@ it("X-ray classification uses the same world plane on transformed geometry", () 
   setSectionPlane(app, null);
   expect(sectionTest(app, positions, transform)).toBeUndefined();
   device.destroy();
+});
+
+it("converts arbitrary controller rotations to two tilts without changing the cutting normal", () => {
+  for (const base of [[0,0,0],[25,35,-15]]) for (const angles of [[80,40,25],[-90,0,0],[120,-170,45],[0,180,0]]) {
+    const reference = new Quat().setFromEulerAngles(...base as [number,number,number]);
+    const rotation = reference.clone().mul(new Quat().setFromEulerAngles(...angles as [number,number,number]));
+    const tilt = sectionTilts(reference,rotation);
+    const recovered = reference.clone().mul(new Quat().setFromEulerAngles(tilt.tiltX,tilt.tiltY,0));
+    expect(recovered.transformVector(Vec3.BACK).equalsApprox(rotation.transformVector(Vec3.BACK),1e-5)).toBe(true);
+  }
 });
 
 it("views into the retained section from its removed side for both flips and tilted planes", () => {

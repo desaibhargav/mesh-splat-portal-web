@@ -1,37 +1,16 @@
 import { useEffect, useRef } from "react";
-import { BLEND_NORMAL, CULLFACE_NONE, Color, Entity, Layer, StandardMaterial } from "playcanvas";
 import type { SelectionHandle } from "../selection/types";
 import type { ViewFrame } from "../views/viewFrame";
+import { SectionPlaneVisual } from "./SectionPlaneVisual";
 
 export function SectionGuide({ handle, frame, extent }: { handle: SelectionHandle; frame: ViewFrame; extent: number }) {
-  const entities = useRef<{ root: Entity; plane: Entity } | null>(null);
+  const visual = useRef<SectionPlaneVisual | null>(null);
   useEffect(() => {
-    const layer = new Layer({ name: "Section guide" });
-    const material = new StandardMaterial();
-    const gold = new Color(215 / 255, 188 / 255, 119 / 255);
-    material.useLighting = false; material.diffuse.copy(gold); material.emissive.copy(gold);
-    material.opacity = 0.35; material.blendType = BLEND_NORMAL; material.cull = CULLFACE_NONE;
-    material.depthWrite = false; material.update();
-    const root = new Entity("Section plane"), plane = new Entity("Plane guide");
-    handle.app.root.addChild(root); root.addChild(plane);
-    entities.current = { root, plane };
-    plane.setLocalEulerAngles(90, 0, 0);
-    plane.addComponent("render", { type: "plane", material, layers: [layer.id], castShadows: false, receiveShadows: false });
-    handle.app.scene.layers.push(layer);
-    const releaseLayer = handle.viewports.shareLayer(layer.id);
+    const guide = new SectionPlaneVisual(handle); visual.current = guide;
     let disposed = false;
-    const dispose = () => {
-      if (disposed) return; disposed = true;
-      handle.app.off("destroy", dispose); root.destroy(); material.destroy(); entities.current = null;
-      releaseLayer(); handle.app.scene.layers.remove(layer);
-    };
-    handle.app.on("destroy", dispose);
-    return dispose;
+    const dispose = () => { if (disposed) return; disposed = true; handle.app.off("destroy", dispose); guide.destroy(); visual.current = null; };
+    handle.app.on("destroy", dispose); return dispose;
   }, [handle]);
-  useEffect(() => {
-    const { root, plane } = entities.current!;
-    root.setPosition(frame.origin); root.setRotation(frame.rotation);
-    plane.setLocalScale(extent * 2, 1, extent * 2);
-  }, [handle, frame, extent]);
+  useEffect(() => { visual.current?.update(frame, extent); }, [handle, frame, extent]);
   return null;
 }

@@ -3,6 +3,12 @@ import { copyFrame, type ViewFrame } from "../views/viewFrame";
 
 export interface SectionOptions { offset: number; tiltX: number; tiltY: number; flip: boolean }
 
+export function sectionTilts(reference: Quat, rotation: Quat): Pick<SectionOptions, "tiltX" | "tiltY"> {
+  const normal = reference.clone().invert().mul(rotation).transformVector(Vec3.BACK);
+  return { tiltX: Math.asin(Math.max(-1, Math.min(1, -normal.y))) * 180 / Math.PI,
+    tiltY: Math.atan2(normal.x, normal.z) * 180 / Math.PI };
+}
+
 export function sectionFrame(reference: ViewFrame, bounds: BoundingBox, options: SectionOptions): ViewFrame {
   const rotation = reference.rotation.clone().mul(new Quat().setFromEulerAngles(options.tiltX, options.tiltY, 0));
   const normal = rotation.transformVector(Vec3.BACK, new Vec3());
@@ -30,6 +36,7 @@ export function setSectionPlane(app: AppBase, plane: Float32Array | null) {
   app.renderNextFrame = true;
   app.graphicsDevice.scope.resolve("portalSectionPlane").setValue(plane ?? new Float32Array(4));
   app.graphicsDevice.scope.resolve("portalSectionEnabled").setValue(plane ? 1 : 0);
+  app.fire("portal:sectionchange", plane);
 }
 
 // Transform a world plane into local coefficients once per selection gesture;

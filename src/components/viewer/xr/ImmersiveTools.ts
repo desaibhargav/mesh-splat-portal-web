@@ -7,6 +7,8 @@ import type { Measurement } from "../measurement/Measurement";
 import type { SelectionHandle, SelectionTool } from "../selection/types";
 import { ToolPanel } from "./ToolPanel";
 import { spatialInput } from "./SpatialPanel";
+import { ImmersiveReferences } from "./ImmersiveReferences";
+import type { ImmersiveScene } from "./ImmersiveScene";
 
 // Session tool input/presentation over the shared desktop documents.
 export class ImmersiveTools {
@@ -14,6 +16,7 @@ export class ImmersiveTools {
   private readonly releaseInput: () => void;
   private readonly pointPreview: SurfacePointMarker;
   private readonly editing: ImmersiveEditing;
+  private readonly references: ImmersiveReferences;
   private readonly tapOrigin = new Vec3();
   private readonly endpoint = new Vec3();
   private readonly rayPoint = new Vec3();
@@ -31,11 +34,12 @@ export class ImmersiveTools {
 
   constructor(private readonly handle: SelectionHandle, private readonly measurement: () => Measurement,
     private readonly changed: () => void, private readonly ready: () => boolean, private readonly input: ImmersiveInput,
-    private readonly workspaces: SegmentWorkspaces) {
+    private readonly workspaces: SegmentWorkspaces, scene: ImmersiveScene) {
     const app = handle.app, camera = handle.viewports.perspectivePanel.camera;
     this.releaseInput = spatialInput(app);
     this.editing = new ImmersiveEditing(handle, workspaces, input, () => this.commit());
-    input.setExtraTarget(source => this.tool === "select" ? this.editing.depthHandleTarget(source) : null);
+    this.references = new ImmersiveReferences(handle, workspaces, scene, input, () => this.refresh(), () => this.ui.targeted, ready);
+    input.setExtraTarget(source => this.tool === "select" ? this.editing.depthHandleTarget(source) : this.references.target(source));
     this.ui = new ToolPanel(app, camera.entity, {
       tool: tool => this.setTool(tool),
       open: id => { this.revision++; this.selectedId = id; this.name = this.current()!.name; this.armed = false; this.refresh(); },
@@ -53,21 +57,24 @@ export class ImmersiveTools {
   get isArmed() { return this.tool === "measure" && this.armed; }
   get isMenuTargeted() { return this.ui.targeted; }
   get blocksPan() { return this.ui.targeted || this.moving !== null || this.editing.drawing ||
-    this.editing.starting !== null || this.editing.depthDragging || this.editing.dragging; }
+    this.editing.starting !== null || this.editing.depthDragging || this.editing.dragging || this.references.dragging; }
   get currentTool() { return this.tool; }
   undo() {
+    if (this.tool === "views" || this.tool === "section") this.references.undo();
     if (this.tool === "select") { this.editing.clearVolume(); this.workspaces.history.undo(); this.editing.selectionId = null; this.input.invalidate(); }
     else if (this.tool === "annotate") { this.workspaces.current.annotations.undo(); this.editing.annotate("cancel"); }
     else if (this.tool === "measure") { this.measurement().undo(); if (!this.current()) this.selectedId = null; }
     this.commit();
   }
   redo() {
+    if (this.tool === "views" || this.tool === "section") this.references.redo();
     if (this.tool === "select") { this.editing.clearVolume(); this.workspaces.history.redo(); this.editing.selectionId = null; this.input.invalidate(); }
     else if (this.tool === "annotate") { this.workspaces.current.annotations.redo(); this.editing.annotate("cancel"); }
     else if (this.tool === "measure") { this.measurement().redo(); if (!this.current()) this.selectedId = null; }
     this.commit();
   }
   frameChord() {
+    this.references.end();
     this.editing.cancelGesture(); this.tapping = this.dragged = false; this.moving = null;
     this.pointPreview.set(null);
     this.ui.frame();
@@ -75,8 +82,9 @@ export class ImmersiveTools {
   setTool(tool: SelectionTool) {
     this.revision++;
     if (tool !== "measure" && this.tool === "measure" && this.measurement().discardUnsaved()) this.changed();
-    this.tool = ["measure", "select", "annotate"].includes(tool) ? tool : "navigate";
+    this.tool = ["measure", "select", "annotate", "views", "section"].includes(tool) ? tool : "navigate";
     this.editing.setTool(this.tool);
+    this.references.setTool(this.tool);
     this.armed = this.tool === "measure"; this.moving = null; this.selectedId = null; this.message = "";
     this.pointPreview.set(null); this.commit();
   }
@@ -94,10 +102,11 @@ export class ImmersiveTools {
   // so a pan release cannot also create a measurement.
   private selectStart(source: XrInputSource) {
     if (source.handedness !== "right") return;
+    if (!this.isMenuTargeted && this.references.start(source)) return;
     if (this.tool === "select" && !this.isMenuTargeted && this.ready() &&
       (this.input.hit(source) || this.editing.depthHandleNear(source))) { this.editing.start(source); return; }
     if (!this.isMenuTargeted && this.editing.beginAnnotationDrag(source)) return;
-    this.tapping = (this.tool === "measure" || this.tool === "annotate") && !this.isMenuTargeted;
+    this.tapping = (this.tool === "measure" || this.tool === "annotate" || this.references.picking) && !this.isMenuTargeted;
     this.dragged = false;
     if (!this.tapping) return;
     this.tapOrigin.copy(source.getPosition() ?? source.getOrigin());
@@ -124,6 +133,7 @@ export class ImmersiveTools {
   private cancelPointer(source: XrInputSource) {
     if (source.handedness !== "right") return;
     this.editing.cancelGesture();
+    this.references.end();
     this.revision++; this.moving = null; this.tapping = this.dragged = false;
     this.armed = this.tool === "measure" && this.current()?.points.length !== 2;
   }
@@ -134,7 +144,7 @@ export class ImmersiveTools {
     if (this.tool === "annotate" && this.editing.draft?.position && this.editing.step === "details") {
       this.pointPreview.set(this.editing.draft.position); return;
     }
-    const previewing = this.isArmed || this.tool === "select" || (this.tool === "annotate" && (this.editing.step === "marker" || this.editing.step === "drag"));
+    const previewing = this.isArmed || this.tool === "select" || this.references.picking || (this.tool === "annotate" && (this.editing.step === "marker" || this.editing.step === "drag"));
     if (!previewing || !this.ready() || !source || this.isMenuTargeted ||
       (this.moving === null && (source.selecting || this.dragged))) {
       this.pointPreview.set(null); return;
@@ -144,9 +154,14 @@ export class ImmersiveTools {
   }
   private async selectEnd(source: XrInputSource) {
     if (source.handedness !== "right") return;
+    if (this.references.dragging) { this.references.end(); return; }
     if (this.editing.drawing || this.editing.starting || this.editing.depthDragging) { await this.editing.end(); return; }
     const tapped = this.tapping && !this.dragged && this.tapOrigin.distance(source.getPosition() ?? source.getOrigin()) < .02;
     this.tapping = false; this.dragged = false;
+    if (this.tool === "views") {
+      if (tapped && !this.isMenuTargeted && this.ready()) await this.references.pick(source);
+      return;
+    }
     if (this.tool === "annotate") {
       if ((tapped || this.editing.dragging) && !this.isMenuTargeted && this.ready()) await this.editing.click(source);
       return;
@@ -199,7 +214,7 @@ export class ImmersiveTools {
 
   private refresh() {
     const model = this.measurement();
-    this.ui.render({ active: this.tool !== "navigate", tool: this.tool, editing: this.editing, records: model.records, selectedId: this.selectedId,
+    this.ui.render({ active: this.tool !== "navigate", tool: this.tool, editing: this.editing, references: this.references, records: model.records, selectedId: this.selectedId,
       name: this.name, message: this.message, style: model.style, busy: this.busy });
   }
   destroy() {
@@ -210,6 +225,6 @@ export class ImmersiveTools {
     app.xr?.input.off("selectstart", this.selectStart, this); app.xr?.input.off("selectend", this.selectEnd, this);
     app.xr?.input.off("remove", this.cancelPointer, this);
     app.off("update", this.trackTap, this); app.off("update", this.previewPoint, this);
-    this.editing.destroy(); this.ui.destroy(); this.releaseInput(); this.pointPreview.destroy();
+    this.references.destroy(); this.editing.destroy(); this.ui.destroy(); this.releaseInput(); this.pointPreview.destroy();
   }
 }

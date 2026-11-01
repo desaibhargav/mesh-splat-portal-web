@@ -20,3 +20,18 @@ it("rotates both formats and their anchors about a stable pivot without changing
   space.destroy(); expect(asset.parent).toBe(parent); expect(asset.getLocalTransform().equals(original)).toBe(true);
   parent.destroy();
 });
+
+it("keeps a saved orientation local under translated, rotated and scaled XR presentation", () => {
+  const parent=new Entity(),asset=new Entity();parent.addChild(asset);
+  const pivot=new Vec3(3,-2,5),space=new ViewerSpace(asset,pivot),presentation=new Entity();
+  parent.addChild(presentation);presentation.addChild(space.root);
+  presentation.setPosition(2,1,-4);presentation.setEulerAngles(20,-35,15);presentation.setLocalScale(2,2,2);
+  const expected=presentation.getWorldTransform().transformPoint(pivot);
+  const rotation=new Quat().setFromEulerAngles(-10,40,25);
+  space.setRotation(rotation);
+  expect(space.rotation.equalsApprox(rotation)).toBe(true);
+  expect(space.toWorld(pivot).equalsApprox(expected,1e-5)).toBe(true);
+  const point=new Vec3(1,2,3);
+  expect(space.toLocal(space.toWorld(point)).equalsApprox(point,1e-5)).toBe(true);
+  space.destroy();parent.destroy();
+});

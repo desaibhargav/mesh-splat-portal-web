@@ -9,9 +9,10 @@ import type { SelectionTool } from "../selection/types";
 import { selectionColors, encodeColor } from "../selection/selectionColors";
 import { SpatialPanel } from "./SpatialPanel";
 import { SpatialUiAnchor } from "./SpatialUiAnchor";
+import type { ImmersiveReferences } from "./ImmersiveReferences";
 
 interface PanelState {
-  tool?: SelectionTool; editing?: ImmersiveEditing;
+  tool?: SelectionTool; editing?: ImmersiveEditing; references?: ImmersiveReferences;
   active: boolean; records: readonly MeasurementRecord[]; selectedId: number | null;
   name: string; message: string; style: MeasurementStyle; busy: boolean;
 }
@@ -33,6 +34,8 @@ export class ToolPanel {
   private textInput: { label: string; value: string; change(value: string): void; done?(): void } | null = null;
   private upper = false;
   private savedScroll = 0;
+  private chooseView = false;
+  private referenceScroll = 0;
   private state: PanelState | null = null;
   private readonly font: string;
   private readonly gold: string;
@@ -47,7 +50,7 @@ export class ToolPanel {
     this.anchor = new SpatialUiAnchor(app, camera, () => this.targeted ||
       !!app.xr?.input.inputSources.some(source => source.selecting || source.squeezing));
     const redraw = () => { if (this.state) this.render(this.state); };
-    this.toolbar = new SpatialPanel(app, "XR tool bar", 214, new Vec3(-.13, .25, -.8), this.anchor.root, redraw, false, 0, true);
+    this.toolbar = new SpatialPanel(app, "XR tool bar", 312, new Vec3(-.30, .25, -.8), this.anchor.root, redraw, false, 0, true);
     this.options = new SpatialPanel(app, "XR measurement options", 270, new Vec3(.10, -.35, -.8), this.anchor.root, redraw, true, 1, true);
     this.keyboard = new SpatialPanel(app, "XR text keyboard", 350, new Vec3(-.23, -.19, -.65), this.anchor.root, redraw, false, 2);
     this.options.enabled = this.keyboard.enabled = false;
@@ -90,8 +93,8 @@ export class ToolPanel {
     this.state = state;
     if (!state.active) this.typing = false;
     const bar = this.toolbar, ctx = bar.begin(50);
-    ctx.fillStyle = this.theme.toolbar; ctx.fillRect(0, 0, 214, 50);
-    tools.filter(item => ["navigate", "select", "measure", "annotate"].includes(item.tool)).forEach((item, index) => {
+    ctx.fillStyle = this.theme.toolbar; ctx.fillRect(0, 0, 312, 50);
+    tools.filter(item => ["navigate", "select", "measure", "annotate", "views", "section"].includes(item.tool)).forEach((item, index) => {
       const x = 11 + index * 49, selected = (state.tool ?? (state.active ? "measure" : "navigate")) === item.tool;
       this.box(ctx, x, 7, 42, 36, this.theme.button, selected || bar.isHovered(item.label) ? this.gold : this.theme.border);
       ctx.save(); ctx.translate(x + 10, 14); ctx.scale(21 / 24, 21 / 24);
@@ -99,7 +102,7 @@ export class ToolPanel {
       if (item.tool === "select") ctx.setLineDash([3, 2]);
       ctx.stroke(new Path2D(item.path)); ctx.restore();
       bar.controls.push({ label: item.label, x, y: 7, width: 42, height: 36,
-        activate: () => { this.typing = false; this.collapsed = false; this.actions.tool(item.tool); } });
+        activate: () => { this.typing = false; this.collapsed = false; this.chooseView = false; this.savedScroll = 0; this.actions.tool(item.tool); } });
     });
     bar.finish();
     this.options.enabled = state.active;
@@ -110,6 +113,7 @@ export class ToolPanel {
   }
 
   private drawOptions(state: PanelState) {
+    if (state.references?.mode) { this.drawReferences(state.references); return; }
     if (state.editing && (state.tool === "select" || state.tool === "annotate")) { this.drawEditing(state.editing); return; }
     const selected = state.records.find(record => record.id === state.selectedId);
     const allSaved = state.records.filter(record => record.saved);
@@ -209,6 +213,101 @@ export class ToolPanel {
     this.textInput = { label, value, change, done }; this.typing = true; this.render(this.state!);
   }
   private type(value: string) { if (this.textInput) { this.textInput.value = value; this.textInput.change(value); } }
+  private drawReferences(editor: ImmersiveReferences) {
+    const views = editor.mode === "views", model = editor.section;
+    const records = views ? editor.views.records : model.sections.records;
+    this.savedScroll = Math.min(this.savedScroll, Math.max(0, records.length - 3));
+    const visible = records.slice(this.savedScroll, this.savedScroll + 3);
+    const listHeight = visible.length ? 34 + visible.length * 36 : 0;
+    const height = this.collapsed ? 18 : listHeight + (views ? editor.drafting ? 354 : 90 : model.state.editing === null ? 460 : 496) +
+      (!views && this.chooseView ? Math.min(editor.views.records.length, 5) * 32 : 0) + 18;
+    const panel = this.options, ctx = panel.begin(height);
+    const action = (name: string, value?: string | number) => editor.action(name, value);
+    if (!this.collapsed) {
+      if (visible.length) {
+        this.box(ctx, 0, 0, 270, listHeight - 8, this.theme.panel);
+        this.text(ctx, views ? "Views" : "Sections", 8, 16);
+        visible.forEach((record, i) => {
+          const y = 29 + i * 36;
+          this.button(panel, record.name, 8, y, 216, 30, () => action("open", record.id));
+          if ((views ? editor.editing : model.state.editing) === record.id) {
+            ctx.strokeStyle=this.gold;ctx.strokeRect(8.5,y+.5,215,29);
+          }
+          this.centered(panel, `Delete ${views ? "view" : "section"} ${record.name}`, 230, y, 22, 30,
+            () => action("remove", record.id), undefined, false, "−", "#ff7474");
+        });
+        if (records.length > 3) {
+          ctx.fillStyle="#777";ctx.fillRect(257,29+this.savedScroll/(records.length-3)*74,5,28);
+          panel.controls.push({label:"Scroll saved items",x:254,y:29,width:12,height:102,axis:"y",drag:true,
+            activate:f=>{this.savedScroll=Math.round(f*(records.length-3));this.render(this.state!);}});
+        }
+      }
+      let y = listHeight;
+      this.box(ctx, 0, y, 270, height-listHeight-18, this.theme.panel); y += 20;
+      this.text(ctx, views ? editor.drafting ? editor.editing === null ? "Create view" : "Edit view" : "Views" : "Cross section", 8, y, 14); y += 22;
+      const button = (label: string, name: string, color?: string, disabled = false) => {
+        const selected = name === "flip" ? model.state.options.flip : name === "plane" && model.state.showPlane;
+        this.centered(panel,label,8,y,254,30,()=>action(name),color,disabled,label,selected?this.gold:undefined); y+=36;
+      };
+      const field = (label: string, value: string) => {
+        this.text(ctx,label,8,y); y+=12;
+        this.button(panel,label,8,y,254,30,()=>this.editText(label,value,v=>action("name",v)),{text:value,color:this.theme.input}); y+=40;
+      };
+      if (views) {
+        if (!editor.drafting) button("Create view","create");
+        else {
+          field("View name",editor.name);
+          if (editor.picking) {
+            this.text(ctx,editor.message || editor.pointMessage,8,y); y+=28;
+            button("Cancel three-point alignment","cancel-points",this.resetColor);
+          } else {
+            ["Front","Back","Left","Right","Top","Bottom"].forEach((label,i)=>
+              this.centered(panel,label,8+(i%3)*85,y+Math.floor(i/3)*32,80,28,()=>action("direction",label)));
+            y+=64;
+            button("Align to three points","points");
+            button("Reset orientation","reset",this.resetColor);
+            button(editor.editing === null ? "Save view" : "Update view","save",this.saveColor,!editor.name.trim());
+            button("Cancel","cancel",this.resetColor);
+          }
+        }
+      } else {
+        this.text(ctx,"View",8,y); y+=12;
+        const current = editor.views.records.find(view=>String(view.id)===model.state.source);
+        this.button(panel,"Section reference",8,y,254,30,()=>{this.chooseView=!this.chooseView;this.render(this.state!);},
+          {text:`${model.state.source === "camera" ? "Current camera" : current?.name ?? "Deleted view (captured)"}  ▾`,disabled:!editor.views.records.length}); y+=36;
+        if (this.chooseView) {
+          const start=y;
+          this.referenceScroll=Math.min(this.referenceScroll,Math.max(0,editor.views.records.length-5));
+          for (const view of editor.views.records.slice(this.referenceScroll,this.referenceScroll+5)) {
+            this.button(panel,`Use view ${view.name}`,12,y,234,28,()=>{this.chooseView=false;action("view",view.id);}); y+=32;
+          }
+          if(editor.views.records.length>5) {
+            ctx.fillStyle="#777";ctx.fillRect(257,start+this.referenceScroll/(editor.views.records.length-5)*132,5,28);
+            panel.controls.push({label:"Scroll section references",x:254,y:start,width:12,height:160,axis:"y",drag:true,
+              activate:f=>{this.referenceScroll=Math.round(f*(editor.views.records.length-5));this.render(this.state!);}});
+          }
+        }
+        this.text(ctx,"Cutting-plane normal",8,y); y+=12;
+        (["view","X","Y","Z"] as const).forEach((axis,i)=>this.centered(panel,axis==="view"?"View":axis,8+i*64,y,60,28,
+          ()=>action("align",axis),undefined,false,axis==="view"?"View":axis,model.state.alignment===axis?this.gold:undefined)); y+=38;
+        button(model.state.enabled ? "Disable section" : "Enable section","enable");
+        button("Flip retained side","flip");
+        button("Show cutting plane","plane");
+        button("From current camera","camera");
+        button("Look perpendicular to cut","look");
+        button("Reset section position","reset",this.resetColor);
+        field("Section name",model.state.name);
+        button(model.state.editing===null?"Save section":"Update section","save",this.saveColor,!model.state.enabled||!model.state.name.trim());
+        if(model.state.editing!==null)button("New section","new");
+      }
+    }
+    const y=height-18;
+    ctx.fillStyle=this.theme.toolbar;ctx.strokeStyle=this.gold;ctx.beginPath();ctx.moveTo(192,y);ctx.lineTo(258,y);ctx.lineTo(270,height);ctx.lineTo(180,height);ctx.closePath();ctx.fill();ctx.stroke();
+    this.text(ctx,this.collapsed?"‹":"›",222,y+9,20,this.gold);
+    panel.controls.push({label:this.collapsed?"Expand tool options":"Collapse tool options",x:180,y,width:90,height:18,
+      activate:()=>{this.collapsed=!this.collapsed;this.render(this.state!);}});
+    panel.finish();
+  }
   private drawEditing(editing: ImmersiveEditing) {
     const panel = this.options, selection = editing.tool === "select";
     const saved = selection ? editing.selection.areas.filter(area => area.saved).map(area => ({ id: area.id, name: area.name })) :

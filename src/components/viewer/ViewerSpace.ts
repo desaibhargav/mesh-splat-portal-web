@@ -11,10 +11,10 @@ export class ViewerSpace extends EventHandler {
     this.parent = asset.parent!;
     this.parent.addChild(this.root); this.root.addChild(asset);
   }
-  get rotation() { return this.root.getRotation().clone(); }
+  get rotation() { return this.root.getLocalRotation().clone(); }
   setRotation(rotation: Quat) {
-    this.root.setRotation(rotation);
-    this.root.setPosition(this.pivot.clone().sub(rotation.transformVector(this.pivot)));
+    this.root.setLocalRotation(rotation);
+    this.root.setLocalPosition(this.pivot.clone().sub(rotation.transformVector(this.pivot)));
     this.fire("change");
   }
   toWorld(point: Vec3, result = new Vec3()) { return this.root.getWorldTransform().transformPoint(point, result); }

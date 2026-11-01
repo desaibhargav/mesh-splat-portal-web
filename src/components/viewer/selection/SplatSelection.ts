@@ -4,7 +4,7 @@ import type { SelectionVolume } from "./volume/SelectionVolume";
 import { constrainMask, type SelectionScope } from "./selectionScope";
 import {
   BoundingBox, Color, FILTER_NEAREST, Mat4, PIXELFORMAT_R8, PIXELFORMAT_RGBA8, Texture, Vec3, WORKBUFFER_UPDATE_ONCE,
-  type AppBase, type CameraComponent, type GSplatComponent
+  type AppBase, type CameraComponent, type Entity, type GSplatComponent
 } from "playcanvas";
 import { currentSelectionArea, paintSelection, decodeColor, discardDraftSelection, recordSelectionGesture, selectionAreaAt, selectionHoverOpacity, updateSelectionAreas, visiblePaint, visibleSelections, type PaintState } from "./selectionColors";
 import type { SelectionOperation } from "./rectangle";
@@ -278,9 +278,9 @@ export class SplatSelection {
     this.currentArea = currentSelectionArea(this.state, this.selectionAreas);
     this.update(); return this.summary;
   }
-  bounds(state: SelectionState | null = this.state) {
+  bounds(state: SelectionState | null = this.state, relativeTo?: Entity) {
     if ((state === null || !state.masks.some(mask => mask.some(Boolean))) && this.scope) state = { masks: [...this.scope], isolated: false };
-    const bounds = new SelectionBounds(), transform = this.component.entity.getWorldTransform();
+    const bounds = new SelectionBounds(), transform = relativeTo ? new Mat4().mul2(new Mat4().invert(relativeTo.getWorldTransform()), this.component.entity.getWorldTransform()) : this.component.entity.getWorldTransform();
     const mask = state === null ? null : state.masks[0]!, selected = mask !== null && mask.some(Boolean);
     if (!selected) {
       const whole = new BoundingBox(); whole.setFromTransformedAabb(this.component.resource!.aabb, transform);

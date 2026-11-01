@@ -63,6 +63,7 @@ export class ImmersiveInput {
     rig.script!.create(XrManipulation, { properties: { target, scalePivot: "hands", enableScale: false } });
     app.on("update", this.update, this);
     app.on("prerender", this.drawRays, this);
+    app.on("portal:sectionchange", this.invalidate, this);
   }
 
   private nameModel(source: XrInputSource, entity: Entity) { entity.name = `XR controller ${source.handedness}`; }
@@ -160,6 +161,7 @@ export class ImmersiveInput {
   destroy() {
     this.disposed = true; this.hits.clear(); this.extraTarget = null;
     this.app.off("prerender", this.drawRays, this);
+    this.app.off("portal:sectionchange", this.invalidate, this);
     this.app.off("update", this.update, this); this.app.off("xr:controller:add", this.nameModel, this);
     this.app.xr?.input.off("remove", this.remove, this);
     this.rig.script?.destroy("xrManipulation");

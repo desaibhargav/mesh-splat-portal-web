@@ -2,7 +2,7 @@ import { EventHandler, type Quat } from "playcanvas";
 import { Annotations } from "../annotations/Annotations";
 import { Measurement } from "../measurement/Measurement";
 import { SavedPresets } from "../presets/SavedPresets";
-import type { NamedSection, SectionSession } from "../section/SectionControls";
+import { SectionDocument, type NamedSection, type SectionSession } from "../section/SectionDocument";
 import { SelectionHistory } from "../selection/SelectionHistory";
 import { packSelection, unpackSelection } from "../selection/selectionSnapshot";
 import type { PaintState } from "../selection/selectionColors";
@@ -13,7 +13,8 @@ import { captureFrame, recallFrame, type NamedView } from "../views/viewFrame";
 export class WorkspaceDocument {
   readonly annotations = new Annotations();
   readonly measurement = new Measurement();
-  readonly sectionSession: SectionSession = {};
+  readonly section: SectionDocument;
+  get sectionSession(): SectionSession { return this.section.state; }
   readonly sections = new SavedPresets<NamedSection>();
   history?: SelectionHistory;
   areas: readonly SelectionArea[] = [];
@@ -21,7 +22,9 @@ export class WorkspaceDocument {
   color = 0;
   constructor(public readonly id: number, public name: string,
     readonly region: SelectionSnapshot | null, public selection: SelectionSnapshot, public colors: PaintState,
-    readonly views: SavedPresets<NamedView>) {}
+    readonly views: SavedPresets<NamedView>, handle: SelectionHandle) {
+    this.section = new SectionDocument(handle, this.sections, views);
+  }
 }
 
 // Documents own edits; the viewer owns one set of geometry and GPU resources.
@@ -41,7 +44,7 @@ export class SegmentWorkspaces extends EventHandler {
     const selection = handle.selection;
     this.empty = packSelection({ masks: selection.state.masks.map(mask => new Uint8Array(mask.length)), isolated: false });
     this.emptyColors = selection.colors.map(colors => new Uint32Array(colors.length));
-    this.asset = this.current = new WorkspaceDocument(0, "Asset", null, packSelection(selection.state), selection.colors, this.views);
+    this.asset = this.current = new WorkspaceDocument(0, "Asset", null, packSelection(selection.state), selection.colors, this.views, handle);
     this.asset.areas = selection.areas;
   }
   create(name: string, region: SelectionSnapshot) {
@@ -52,7 +55,7 @@ export class SegmentWorkspaces extends EventHandler {
       throw new Error("Create the segment within the current workspace.");
     }
     if (!name.trim() || !region.masks.some(mask => mask.bits.some(Boolean))) throw new Error("Name and select a segment first.");
-    const record = new WorkspaceDocument(this.nextId++, name.trim(), region, this.empty, this.emptyColors, this.views);
+    const record = new WorkspaceDocument(this.nextId++, name.trim(), region, this.empty, this.emptyColors, this.views, this.handle);
     this.records.push(record); this.open(record.id); return record;
   }
   open(id: number) {

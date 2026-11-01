@@ -1,5 +1,5 @@
 import type { SelectionScope } from "./selectionScope";
-import type { AppBase, BoundingBox, CameraComponent, Vec3 } from "playcanvas";
+import type { AppBase, BoundingBox, CameraComponent, Entity, Vec3 } from "playcanvas";
 import type { ViewerViewports } from "../viewports/ViewerViewports";
 import type { ViewerSpace } from "../ViewerSpace";
 import type { PaintState } from "./selectionColors";
@@ -37,7 +37,7 @@ export interface SelectionController {
   paint(color: number, workspaceColor?: number): SelectionSummary;
   restore(state: SelectionState, colors?: PaintState, areas?: readonly SelectionArea[], scope?: SelectionScope): SelectionSummary;
   // null measures the entire asset; omitted measures the current selection/object.
-  bounds(state?: SelectionState | null): BoundingBox | null;
+  bounds(state?: SelectionState | null, relativeTo?: Entity): BoundingBox | null;
   readonly summary: SelectionSummary;
   select(region: SelectionRegion, operation: SelectionOperation, camera: SelectionCamera, hits?: Uint8Array[]): SelectionSummary;
   clear(): SelectionSummary;

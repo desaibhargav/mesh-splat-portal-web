@@ -241,6 +241,145 @@ try {
     await page.waitForFunction(()=>document.querySelector('.viewer-frame')?.dataset.immersive==="false");
     console.log("PASS known surface: desktop/XR preview and clicks, transformed endpoints/line, no extra scene camera, level toolbar dead zone/follow");
   }
+  async function referenceRegression(h, id) {
+    let menu=await h.evaluateHandle(h=>h.app.xr.input._callbacks.get('selectstart').find(c=>c.scope?.references)?.scope);
+    const refs=await menu.evaluateHandle(m=>m.references);
+    const aim=async (origin,direction=[0,0,-1])=>{
+      const rotation=await h.evaluate((h,d)=>{
+        const V=h.app.root.getPosition().constructor,Q=h.app.root.getRotation().constructor;
+        return new Q().setFromDirections(new V(0,0,-1),new V(...d)).toArray();
+      },direction);
+      await page.evaluate(q=>{const c=window.xrDevice.controllers.right;c.position.set(0,0,0);c.quaternion.set(...q);},rotation);await settle(h);
+      const offset=await h.evaluate(h=>h.app.xr.input.inputSources.find(s=>s.handedness==='right').getOrigin().toArray());
+      await page.evaluate(p=>window.xrDevice.controllers.right.position.set(...p),origin.map((v,i)=>v-offset[i]));await settle(h);
+    };
+    const trigger=async value=>{await page.evaluate(v=>window.xrDevice.controllers.right.updateButtonValue('trigger',v),value);await settle(h);};
+    const control=async(name,label)=>{
+      const target=await h.evaluate((h,name,label)=>{
+        const e=h.app.root.findByName(name),p=e.element._callbacks.get('click')[0].scope;
+        const c=p.controls.find(c=>c.label===label);if(!c)throw Error('Missing '+label+' in '+p.controls.map(c=>c.label));
+        const a=e.element.worldCorners,u=(c.x+c.width/2)/e.element.width,v=1-(c.y+c.height/2)/e.element.height;
+        return [a[0].x+(a[1].x-a[0].x)*u+(a[3].x-a[0].x)*v,a[0].y+(a[1].y-a[0].y)*u+(a[3].y-a[0].y)*v,a[0].z+.2];
+      },name,label);
+      await aim(target);check(await menu.evaluate(m=>m.isMenuTargeted),'Controller did not target '+label);
+      await trigger(1);await trigger(0);
+    };
+    const bar='XR tool bar',panel='XR measurement options';
+    const type=async(field,text)=>{await control(panel,field);for(const char of text)await control('XR text keyboard',char);await control('XR text keyboard','Done');};
+    const leftButton=async button=>{await page.evaluate(b=>window.xrDevice.controllers.left.updateButtonValue(b,1),button);await settle(h);
+      await page.evaluate(b=>window.xrDevice.controllers.left.updateButtonValue(b,0),button);await settle(h);};
+    const rotate=async axis=>{
+      let changed=false;
+      const attempts=[];
+      for(const fraction of [.12,.32,.55,.8]) {
+        const target=await refs.evaluate((r,[axis,f])=>{
+          const g=r.gizmo,s=g._shapes[axis],d=s.triData[0],t=d.tris[Math.floor(d.tris.length*f)],V=t.v0.constructor;
+          const matrix=s.entity.getWorldTransform().clone().mul(d.transform);
+          const point=matrix.transformPoint(t.v0.clone().add(t.v1).add(t.v2).mulScalar(1/3));
+          const normal=matrix.transformVector(new V().cross(t.v1.clone().sub(t.v0),t.v2.clone().sub(t.v0))).normalize();
+          const axisVector=g.root.getRotation().transformVector(new V(axis==='x'?1:0,axis==='y'?1:0,axis==='z'?1:0));
+          const tangent=new V().cross(axisVector,point.clone().sub(g.root.getPosition())).normalize();
+          return {origin:point.clone().add(normal.clone().mulScalar(.15)).toArray(),direction:normal.mulScalar(-1).toArray(),tangent:tangent.toArray()};
+        },[axis,fraction]);
+        await aim(target.origin,target.direction);
+        if(await menu.evaluate(m=>m.isMenuTargeted)){attempts.push({fraction,menu:true});continue;}
+        const before=await refs.evaluate(r=>r.mode==='views'?r.handle.space.rotation.toArray():[r.section.state.options.tiltX,r.section.state.options.tiltY]);
+        await trigger(1);
+        const selected=await refs.evaluate(r=>r.gizmo?._selectedAxis);
+        if(selected!==axis){attempts.push({fraction,selected,detail:await refs.evaluate(r=>{
+          const s=r.handle.app.xr.input.inputSources.find(s=>s.handedness==='right');
+          return {mode:r.mode,offset:!!r.offsetDrag,drag:r.gizmo.dragging,nativeDrag:r.gizmo._dragging,
+            nodes:r.gizmo.nodes.length,reference:r.reference.getPosition().toArray(),local:r.reference.getLocalPosition().toArray(),
+            presentation:r.scene.root.getPosition().toArray(),camera:r.gizmo.camera.entity.getPosition().toArray(),state:r.section.state.enabled,
+            enabled:r.gizmo.enabled,scale:r.gizmo.root.getLocalScale().toArray(),target:r.gizmo.target(s)?.toArray(),
+            centre:r.gizmo.root.getPosition().toArray(),origin:s.getOrigin().toArray(),direction:s.getDirection().toArray()};
+        })});await trigger(0);continue;}
+        await page.evaluate(d=>{const p=window.xrDevice.controllers.right.position;p.set(p.x+d[0]*.08,p.y+d[1]*.08,p.z+d[2]*.08);},target.tangent);await settle(h);
+        await trigger(0);
+        const after=await refs.evaluate(r=>r.mode==='views'?r.handle.space.rotation.toArray():[r.section.state.options.tiltX,r.section.state.options.tiltY]);
+        attempts.push({fraction,selected,before,after});
+        if(after.some((v,i)=>Math.abs(v-before[i])>1e-4)){changed=true;break;}
+      }
+      check(changed,'Native XR rotation ring '+axis+' did not rotate the reference: '+JSON.stringify(attempts));
+    };
+    check(await menu.evaluate(m=>m.currentTool==='navigate'),'XR auto-opened a reference tool');
+    check(await h.evaluate(h=>!h.viewports.split&&h.viewports.visible.length===1),'XR has a split-view layout');
+    await control(bar,'Views');await control(panel,'Create view');
+    check(await refs.evaluate(r=>!!r.gizmo?.enabled),'Creating an XR view did not display native rotation handles');
+    const initial=await h.evaluate(h=>h.space.rotation.toArray());
+    await rotate('z');const rotated=await h.evaluate(h=>h.space.rotation.toArray());
+    await leftButton('x-button');check(await h.evaluate((h,v)=>h.space.rotation.toArray().every((x,i)=>Math.abs(x-v[i])<1e-4),initial),'XR view Undo failed');
+    await leftButton('y-button');check(await h.evaluate((h,v)=>h.space.rotation.toArray().every((x,i)=>Math.abs(x-v[i])<1e-4),rotated),'XR view Redo failed');
+    await type('View name','xr');await control(panel,'Save view');
+    check(await refs.evaluate(r=>r.views.records.some(v=>v.name==='xr')),'XR view was not saved');
+    await control(panel,'Create view');await control(panel,'Align to three points');
+    const alignmentTargets=await h.evaluate(h=>{
+      const s=h.selection,V=h.app.root.getPosition().constructor,targets=[];
+      const sources=s.centers?[{centers:s.centers,transform:s.component.entity.getWorldTransform()}]:
+        s.parts.map(p=>({centers:p.centers,transform:p.source.node.getWorldTransform()}));
+      for(const source of sources){const c=source.centers,step=Math.max(1,Math.floor(c.length/3/48))*3;
+        for(let i=0;i<c.length;i+=step)targets.push(source.transform.transformPoint(new V(c[i],c[i+1],c[i+2])).toArray());}
+      return targets;
+    });
+    const alignmentHits=[];
+    for(const target of alignmentTargets) {
+      if(!await refs.evaluate(r=>r.picking))break;
+      await aim([target[0],target[1]+.25,target[2]+.25],[0,-Math.SQRT1_2,-Math.SQRT1_2]);
+      if(await menu.evaluate(m=>m.isMenuTargeted))continue;
+      const hit=await menu.evaluate(async m=>{const s=m.handle.app.xr.input.inputSources.find(s=>s.handedness==='right');return (await m.input.pick(s))?.point.toArray();});
+      if(!hit||alignmentHits.some(p=>p.every((v,i)=>Math.abs(v-hit[i])<1e-4)))continue;
+      alignmentHits.push(hit);await trigger(1);await trigger(0);
+    }
+    check(await refs.evaluate(r=>!r.picking&&r.drafting&&r.gizmo?.enabled),'XR three-point alignment did not return to the view editor: '+
+      JSON.stringify(await refs.evaluate(r=>({points:r.points.map(p=>p.toArray()),message:r.message,drafting:r.drafting,picking:r.picking}))));
+    await control(panel,'Cancel');
+    await control(panel,'xr');await control(panel,'Reset orientation');await control(bar,'Navigate (Q)');
+    check(await h.evaluate((h,v)=>h.space.rotation.toArray().every((x,i)=>Math.abs(x-v[i])<1e-4),rotated),'Exiting Views kept an unsaved orientation');
+    await control(bar,'Cross section');await control(panel,'Section reference');await control(panel,'Use view xr');
+    await control(panel,'Enable section');await control(panel,'X');await settle(h);
+    const oldOffset=await refs.evaluate(r=>r.section.state.options.offset);
+    const offset=await refs.evaluate(r=>({point:r.offsetHandle.getPosition().toArray(),axis:r.scene.root.getWorldTransform().transformVector(r.section.frame.rotation.transformVector(r.scene.root.getPosition().constructor.BACK)).normalize().toArray()}));
+    await aim([offset.point[0],offset.point[1],offset.point[2]+.3]);await trigger(1);
+    check(await refs.evaluate(r=>!!r.offsetDrag),'Yellow section handle did not capture the trigger');
+    await page.evaluate(d=>{const p=window.xrDevice.controllers.right.position;p.set(p.x+d[0]*.1,p.y+d[1]*.1,p.z+d[2]*.1);},offset.axis);await settle(h);await trigger(0);
+    check(await refs.evaluate((r,old)=>Math.abs(r.section.state.options.offset-old)>.01,oldOffset),'Yellow handle did not change section offset');
+    await leftButton('x-button');check(await refs.evaluate((r,old)=>Math.abs(r.section.state.options.offset-old)<1e-5,oldOffset),'Offset Undo failed');await leftButton('y-button');
+    await rotate('x');await rotate('y');
+    check(await h.evaluate(h=>!h.app.root.findByName('XR measurement options').element._callbacks.get('click')[0].scope.controls.some(c=>['Offset','Tilt 1','Tilt 2'].includes(c.label))), 'XR section panel contains desktop sliders');
+    await type('Section name','cut');await control(panel,'Save section');
+    check(await refs.evaluate(r=>r.section.sections.records.some(s=>s.name==='cut')),'XR section was not saved');
+    await control(bar,'Views');check(await menu.evaluate(m=>m.currentTool==='views'),'Tall section options obscured the Views toolbar icon');
+    await control(bar,'Cross section');check(await menu.evaluate(m=>m.currentTool==='section'),'Options obscured the Cross section toolbar icon');
+    await page.screenshot({path:path.join(output,`${id}-xr-view-section.png`)});
+    await control(bar,'Measure distance');
+    check(await h.evaluate(h=>h.app.graphicsDevice.scope.resolve('portalSectionEnabled').getValue()===1),'Switching tools lost the saved cut');
+    const bounds=await h.evaluate(h=>{const b=h.selection.bounds(null);return {c:b.center.toArray(),half:b.halfExtents.toArray()};});
+    let points=0,last=null;
+    for(const [x,y] of [[0,0],[-.2,0],[.2,0],[0,.2],[0,-.2],[-.4,.2],[.4,.2],[-.4,-.2],[.4,-.2]]) {
+      await aim([bounds.c[0]+bounds.half[0]*x,bounds.c[1]+bounds.half[1]*y,bounds.c[2]+bounds.half[2]+.3]);
+      if(await menu.evaluate(m=>m.isMenuTargeted))continue;
+      const hit=await menu.evaluate(async m=>{
+        const s=m.handle.app.xr.input.inputSources.find(s=>s.handedness==='right');return (await m.input.pick(s))?.point.toArray();
+      });
+      if(!hit||last&&hit.every((v,i)=>Math.abs(v-last[i])<1e-3))continue;
+      await trigger(1);await trigger(0);last=hit;
+      const count=await menu.evaluate(m=>m.measurement().records.at(-1)?.points.length??0);if(count===2){points=2;break;}
+    }
+    check(points===2,'Could not place a measurement on retained section surfaces');
+    await control(panel,'Save measurement');await control(panel,'Collapse tool options');
+    await page.screenshot({path:path.join(output,`${id}-xr-section-measure.png`)});
+    check(await menu.evaluate(m=>m.measurement().records.some(r=>r.saved&&r.points.length===2)),'Section measurement not saved');
+    await h.evaluate(async h=>await new Promise(resolve=>h.app.xr.end(resolve)));
+    await page.waitForFunction(()=>document.querySelector('.viewer-frame')?.dataset.immersive==='false');
+    check(await h.evaluate(h=>!h.app.root.findByName('XR reference rotation')&&!h.app.root.findByName('XR section offset handle')),'XR reference handles leaked on exit');
+    await page.click('[aria-label="View in VR"]');
+    await page.waitForFunction(()=>document.querySelector('.viewer-frame')?.dataset.immersive==='true');await settle(h);
+    await menu.dispose(); menu=await h.evaluateHandle(h=>h.app.xr.input._callbacks.get('selectstart').find(c=>c.scope?.references)?.scope);
+    await control(bar,'Cross section');
+    check(await h.evaluate(h=>!!h.app.root.findByName('XR section offset handle')),'Saved cut did not reopen in a new XR session');
+    await page.$eval('.back-link',link=>link.click());await page.waitForSelector('.catalog-page');
+    console.log('PASS',id,'XR native view rotation/history/save, section offset/tilt/save → retained-surface measurement, teardown');
+  }
   async function editingRegression(h, id) {
     const workspace = () => page.evaluateHandle(() => {
       const node=document.querySelector('.selection-toolbar'); let f=node[Object.keys(node).find(k=>k.startsWith('__reactFiber$'))];
@@ -804,6 +943,19 @@ try {
     if (assets[id].type === 'splat') {
       check(await h.evaluate(h => !h.app.scene.gsplat.enableIds && !h.app.scene.gsplat.material.shaderChunks.glsl.get('gsplatVS') &&
         !h.selection.component.getParameter('portalPaint')), 'A pristine splat eagerly installed edit textures/shaders');
+    }
+    if(process.env.XR_REFERENCES_ONLY) {
+      await page.click(process.env.XR_EDITING_AR?'[aria-label="View in your room"]':'[aria-label="View in VR"]');
+      await page.waitForFunction(()=>document.querySelector('.viewer-frame')?.dataset.immersive==='true');await settle(h);
+      if(process.env.XR_EDITING_AR){
+        await page.evaluate(()=>{const c=window.xrDevice.controllers.left;c.position.set(.3,1.3,-.5);c.quaternion.set(-Math.sin(7*Math.PI/36),0,0,Math.cos(7*Math.PI/36));});
+        await page.waitForFunction(h=>h.app.root.findByName('AR placement target')?.enabled,{timeout:15000},h);
+        await page.evaluate(()=>window.xrDevice.controllers.left.updateButtonValue('trigger',1));await settle(h);
+        await page.evaluate(()=>window.xrDevice.controllers.left.updateButtonValue('trigger',0));await settle(h);
+        await page.evaluate(()=>{window.xrDevice.controllers.left.updateButtonValue('trigger',1);window.xrDevice.controllers.right.updateButtonValue('trigger',1);});await settle(h);
+        await page.evaluate(()=>{window.xrDevice.controllers.left.updateButtonValue('trigger',0);window.xrDevice.controllers.right.updateButtonValue('trigger',0);});await settle(h);
+      }
+      await referenceRegression(h,id);continue;
     }
     if (process.env.XR_PANEL_EDGES_ONLY) {
       for (const label of ['View in VR', 'View in your room']) {
@@ -1415,8 +1567,9 @@ try {
     await h.dispose();
   }
   if (errors.length) throw Error(errors.join("\n"));
-  console.log(process.env.XR_PASSIVE_ONLY ? "PASS passive viewer rendering and navigation" :
-    "PASS XR denied-entry recovery, placement, head tracking, AR alpha, stereo mesh/splat rendering, four-view restoration, teardown", output);
+  console.log("PASS browser checks", { mode: process.env.XR_REFERENCES_ONLY ? "XR references" : process.env.XR_EDITING_ONLY ? "XR editing" :
+    process.env.XR_PANEL_EDGES_ONLY ? "XR panel edges" : process.env.XR_RENDERING_ONLY ? "XR rendering" :
+    process.env.XR_PASSIVE_ONLY ? "passive rendering" : "full XR integration", output });
 } catch (error) {
   for (const page of await browser.pages()) console.log("XR FAILURE", page.url(), await page.evaluate(() => document.body.innerText));
   throw error;

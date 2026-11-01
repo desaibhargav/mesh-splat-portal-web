@@ -1,5 +1,6 @@
 import { Entity, Mat4, Quat, Vec3, Vec4, type BoundingBox } from "playcanvas";
 import type { SelectionHandle } from "../selection/types";
+import type { NamedView, ViewFrame } from "../views/viewFrame";
 
 // Presentation defaults in metres; source scans are not physically calibrated.
 const displaySize = 1;
@@ -10,7 +11,8 @@ const viewingDistance = 1.5;
 export class ImmersiveScene {
   readonly root = new Entity("Immersive artifact");
   private readonly parent;
-  private readonly section: Float32Array;
+  private section: Float32Array;
+  private sectionDirty = true;
   private readonly sectionTransform = new Mat4();
   private readonly previous = new Mat4();
   private readonly coefficients = new Vec4();
@@ -24,13 +26,35 @@ export class ImmersiveScene {
   private initialScale = 1;
   private grounded = false;
 
-  constructor(private readonly handle: SelectionHandle, private readonly bounds: BoundingBox) {
+  constructor(private readonly handle: SelectionHandle, readonly bounds: BoundingBox) {
     this.parent = handle.space.root.parent!;
     this.section = new Float32Array(handle.app.graphicsDevice.scope.resolve("portalSectionPlane").getValue());
     handle.app.root.addChild(this.root); this.root.addChild(handle.space.root);
     const scale = displaySize / (2 * Math.max(bounds.halfExtents.x, bounds.halfExtents.y, bounds.halfExtents.z));
     this.root.setLocalScale(scale, scale, scale);
     handle.app.on("prerender", this.updateSection, this);
+    handle.app.on("portal:sectionchange", this.changeSection, this);
+  }
+
+  captureView(camera: Entity): NamedView {
+    const inverse = new Mat4().invert(this.root.getWorldTransform());
+    const position = inverse.transformPoint(camera.getPosition());
+    return { id: 0, name: "", assetRotation: this.handle.space.rotation,
+      frame: { origin: this.bounds.center.clone(), rotation: this.root.getRotation().clone().invert().mul(camera.getRotation()),
+        distance: position.distance(this.bounds.center), fov: camera.camera?.fov ?? 45 } };
+  }
+  restoreView(view: NamedView, camera: Entity) {
+    this.handle.space.setRotation(view.assetRotation); this.look(view.frame, camera);
+  }
+  look(frame: ViewFrame, camera: Entity) {
+    // Head tracking owns the camera. Present the equivalent source-space view
+    // by moving the artifact, retaining its current XR presentation scale.
+    const rotation = camera.getRotation().clone().mul(frame.rotation.clone().invert());
+    this.root.setRotation(rotation);
+    const scale = this.root.getLocalScale().x;
+    const target = camera.getPosition().clone().addScaled(camera.forward, Math.max(camera.camera?.nearClip ?? .01, frame.distance * scale));
+    this.root.setPosition(target.sub(rotation.transformVector(frame.origin).mulScalar(scale)));
+    this.updateSection();
   }
 
   place(camera: Entity) {
@@ -103,10 +127,14 @@ export class ImmersiveScene {
     this.root.setPosition(this.root.getPosition().add(this.offset));
   }
 
+  private changeSection(plane: Float32Array | null) {
+    this.section = plane ? plane.slice() : new Float32Array(4); this.sectionDirty = true; this.updateSection();
+  }
   private updateSection() {
     if (!this.handle.app.graphicsDevice.scope.resolve("portalSectionEnabled").getValue()) return;
     const transform = this.root.getWorldTransform();
-    if (this.previous.equals(transform)) return;
+    if (!this.sectionDirty && this.previous.equals(transform)) return;
+    this.sectionDirty = false;
     this.previous.copy(transform);
     // The saved cut is in source scene coordinates. Move its plane with the
     // artifact using the engine's inverse-transpose and vector operations.
@@ -118,6 +146,7 @@ export class ImmersiveScene {
 
   destroy() {
     this.handle.app.off("prerender", this.updateSection, this);
+    this.handle.app.off("portal:sectionchange", this.changeSection, this);
     this.handle.app.graphicsDevice.scope.resolve("portalSectionPlane").setValue(this.section);
     if (this.handle.space.root.parent) this.parent.addChild(this.handle.space.root);
     this.root.destroy();

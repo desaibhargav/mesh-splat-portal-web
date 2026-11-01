@@ -82,7 +82,7 @@ export function ViewControls({ handle, active, views, openRequest }: {
     setEditing(view.id); setName(view.name); setFrame(copyFrame(view.frame));
     setPicking(false); setDrafting(true);
   }
-  const openRequested = useEffectEvent(open);
+  const openRequested = useEffectEvent((view: NamedView) => { if (!handle.app.xr?.active) open(view); });
   useEffect(() => {
     views.on("open", openRequested);
     return () => { views.off("open", openRequested); };
